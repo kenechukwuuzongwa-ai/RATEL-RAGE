@@ -16,6 +16,12 @@ Serve this directory with any static HTTP server, then open the shown localhost 
 python -m http.server 4173
 ```
 
+Or with Node (if Python is not installed):
+
+```powershell
+npx http-server -p 4173
+```
+
 ## Controls
 
 - Move: WASD / arrows / left stick
