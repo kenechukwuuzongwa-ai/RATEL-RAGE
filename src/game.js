@@ -6,6 +6,8 @@ const VIEW_W = 1280;
 const VIEW_H = 720;
 const WORLD_W = 6400;
 const GROUND_Y = 620;          // top of the road surface the player stands on
+const LANE_TOP = 610;
+const LANE_BOTTOM = 700;
 const TILE = 64;
 
 const SHEET = {
@@ -26,6 +28,7 @@ const PLAYER = {
   coyoteTime: 0.1,
   jumpBuffer: 0.12,
   hitW: 70,                    // collision box, narrower than the art
+  depthSpeed: 190,
 };
 
 const canvas = document.getElementById('game');
@@ -444,12 +447,14 @@ function drawPole(x, nextX) {
 
 /* ------------------------------------------------------------ game state */
 
-const input = { left: false, right: false, jumpHeld: false, jumpPressed: false };
+const input = { left: false, right: false, up: false, down: false, jumpHeld: false, jumpPressed: false };
 
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left',
   ArrowRight: 'right', KeyD: 'right',
-  Space: 'jump', ArrowUp: 'jump', KeyW: 'jump',
+  ArrowUp: 'up', KeyW: 'up',
+  ArrowDown: 'down', KeyS: 'down',
+  Space: 'jump',
 };
 
 window.addEventListener('keydown', (e) => {
@@ -470,7 +475,7 @@ window.addEventListener('keyup', (e) => {
 });
 
 const player = {
-  x: 320, y: GROUND_Y, vx: 0, vy: 0,
+  x: 320, y: GROUND_Y, vx: 0, depthV: 0, jumpY: 0, vy: 0,
   facing: 1, grounded: true,
   coyote: 0, buffer: 0,
   anim: 'idle', frame: 0, animTime: 0,
@@ -480,12 +485,23 @@ let sprite = null;
 let tileAtlas = null;
 let groundMap = null;
 let props = null;
+let enemies = [];
 let cameraX = 0;
+
+function buildEnemies() {
+  return [
+    { x: 980, y: 638, direction: 1, speed: 46, color: '#8f2438' },
+    { x: 1760, y: 684, direction: -1, speed: 58, color: '#315b8f' },
+    { x: 2860, y: 652, direction: 1, speed: 52, color: '#65438f' },
+    { x: 4180, y: 695, direction: -1, speed: 64, color: '#8a4b24' },
+  ];
+}
 
 /* --------------------------------------------------------------- update */
 
 function update(dt) {
   const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  const depthDir = (input.down ? 1 : 0) - (input.up ? 1 : 0);
   if (dir !== 0) {
     player.vx += dir * PLAYER.accel * dt;
     player.vx = Math.max(-PLAYER.maxSpeed, Math.min(PLAYER.maxSpeed, player.vx));
@@ -509,25 +525,29 @@ function update(dt) {
 
   player.vy += PLAYER.gravity * dt;
   player.x += player.vx * dt;
-  player.y += player.vy * dt;
+  player.depthV = depthDir * PLAYER.depthSpeed;
+  player.y += player.depthV * dt;
+  player.jumpY += player.vy * dt;
 
   const half = PLAYER.hitW / 2;
   player.x = Math.max(half, Math.min(WORLD_W - half, player.x));
+  player.y = Math.max(LANE_TOP, Math.min(LANE_BOTTOM, player.y));
 
-  if (player.y >= GROUND_Y) {
-    player.y = GROUND_Y;
+  if (player.jumpY >= 0) {
+    player.jumpY = 0;
     player.vy = 0;
     player.grounded = true;
   } else {
     player.grounded = false;
   }
 
-  const next = !player.grounded ? 'jump' : (Math.abs(player.vx) > 12 ? 'walk' : 'idle');
+  const moving = Math.abs(player.vx) > 12 || Math.abs(player.depthV) > 12;
+  const next = !player.grounded ? 'jump' : (moving ? 'walk' : 'idle');
   if (next !== player.anim) { player.anim = next; player.frame = 0; player.animTime = 0; }
 
   const spec = sprite.anims[player.anim];
   const rate = player.anim === 'walk'
-    ? spec.fps * Math.max(0.45, Math.abs(player.vx) / PLAYER.maxSpeed)
+    ? spec.fps * Math.max(0.45, Math.abs(player.vx) / PLAYER.maxSpeed, Math.abs(player.depthV) / PLAYER.depthSpeed)
     : spec.fps;
   player.animTime += dt * rate;
   player.frame = spec.frames[Math.floor(player.animTime) % spec.frames.length];
@@ -535,6 +555,11 @@ function update(dt) {
   const target = player.x - VIEW_W * 0.42;
   cameraX += (target - cameraX) * Math.min(1, dt * 6);
   cameraX = Math.max(0, Math.min(WORLD_W - VIEW_W, cameraX));
+
+  for (const enemy of enemies) {
+    enemy.x += enemy.direction * enemy.speed * dt;
+    if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
+  }
 }
 
 /* ----------------------------------------------------------------- draw */
@@ -609,15 +634,44 @@ function drawPlayer() {
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath();
-  const squash = player.grounded ? 1 : Math.max(0.5, 1 - (GROUND_Y - player.y) / 500);
-  ctx.ellipse(screenX, GROUND_Y + 6, drawW * 0.36 * squash, 11 * squash, 0, 0, Math.PI * 2);
+  const squash = player.grounded ? 1 : Math.max(0.5, 1 + player.jumpY / 500);
+  ctx.ellipse(screenX, player.y + 6, drawW * 0.36 * squash, 11 * squash, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
-  ctx.translate(screenX, player.y);
+  ctx.translate(screenX, player.y + player.jumpY);
   if (player.facing !== SHEET.faces) ctx.scale(-1, 1);
   ctx.drawImage(frames[player.frame], -drawW / 2, -drawH); // feet on the ground line
   ctx.restore();
+}
+
+function drawEnemy(enemy) {
+  const screenX = enemy.x - cameraX;
+  if (screenX < -80 || screenX > VIEW_W + 80) return;
+  ctx.fillStyle = 'rgba(0,0,0,.28)';
+  ctx.beginPath();
+  ctx.ellipse(screenX, enemy.y + 5, 35, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = enemy.color;
+  ctx.fillRect(screenX - 27, enemy.y - 92, 54, 72);
+  ctx.fillStyle = '#2b1914';
+  ctx.beginPath();
+  ctx.arc(screenX, enemy.y - 108, 24, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#e2b08b';
+  ctx.beginPath();
+  ctx.arc(screenX, enemy.y - 105, 20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#16191f';
+  ctx.fillRect(screenX - 23, enemy.y - 20, 18, 20);
+  ctx.fillRect(screenX + 5, enemy.y - 20, 18, 20);
+}
+
+function drawActors() {
+  const actors = enemies.map((enemy) => ({ depth: enemy.y, draw: () => drawEnemy(enemy) }));
+  actors.push({ depth: player.y, draw: drawPlayer });
+  actors.sort((a, b) => a.depth - b.depth);
+  for (const actor of actors) actor.draw();
 }
 
 function drawHud() {
@@ -630,7 +684,7 @@ function drawHud() {
   ctx.fillText('RAGE OF RATELS — LAGOS STREET SLICE', 28, 22);
   ctx.fillStyle = '#cfd8ea';
   ctx.font = '15px system-ui, sans-serif';
-  ctx.fillText('Move: A/D or ←/→   Jump: Space/W/↑', 28, 48);
+  ctx.fillText('Move: WASD or arrows   Jump: Space', 28, 48);
 }
 
 function draw() {
@@ -639,7 +693,7 @@ function draw() {
   drawStreet();
   drawSidewalkBand();
   drawRoad();
-  drawPlayer();
+  drawActors();
   drawHud();
 }
 
@@ -648,6 +702,7 @@ function draw() {
 // dev hook (manual §3: development HUD/state must be inspectable)
 window.__ror = {
   player, input,
+  get enemies() { return enemies; },
   get cameraX() { return cameraX; },
   frames: 0,
   step(dt) { update(dt); draw(); }, // deterministic tick for tests
@@ -669,6 +724,7 @@ function loop(ts) {
     tileAtlas = buildTileAtlas();
     groundMap = buildGroundMap();
     props = buildStreetProps();
+    enemies = buildEnemies();
     loadingEl.classList.add('hidden');
     canvas.focus();
     requestAnimationFrame(loop);
