@@ -58,5 +58,13 @@
   {
     "role": "user",
     "content": "Please include z deot so charcter can also walk up and down the road lanes and over lap with enemies"
+  },
+  {
+    "role": "assistant",
+    "content": "You've hit your session limit · resets 1:10am (Africa/Lagos)"
+  },
+  {
+    "role": "user",
+    "content": "hi"
   }
 ]
