@@ -12,6 +12,7 @@
     "debugMode": false,
     "visualDebug": false,
     "iterativeMode": false,
-    "unbound": false
+    "unbound": false,
+    "claudeCodeSessionId": "eebb7bdc-39f8-475f-b759-80405bc3b0fd"
   }
 ]

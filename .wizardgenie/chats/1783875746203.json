@@ -14,5 +14,13 @@
   {
     "role": "user",
     "content": "hi"
+  },
+  {
+    "role": "assistant",
+    "content": "Hi! I'm ready to help with your RAGE OF RATELS project. What would you like to work on?"
+  },
+  {
+    "role": "user",
+    "content": "What does the game doc say its about?"
   }
 ]
