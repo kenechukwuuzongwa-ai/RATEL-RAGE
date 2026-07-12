@@ -1,0 +1,27 @@
+{
+  "name": "store_insight",
+  "description": "Explicitly store an important decision, discovery, convention, or lesson learned into long-term project memory. Use this when you make a significant decision, discover something important, or learn from a debugging session. These memories persist across sessions and can be recalled later with recall_memory.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "content": {
+        "type": "string",
+        "description": "The insight, decision, or discovery to remember"
+      },
+      "category": {
+        "type": "string",
+        "description": "Category: \"decision\", \"discovery\", \"error\", \"convention\", \"preference\"",
+        "enum": [
+          "decision",
+          "discovery",
+          "error",
+          "convention",
+          "preference"
+        ]
+      }
+    },
+    "required": [
+      "content"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "browse_click",
+  "description": "Click an element on the page identified by its ref from a browse_snapshot result. The user can see your clicks highlighted in the browser window.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "ref": {
+        "type": "string",
+        "description": "Element reference from browse_snapshot (e.g. \"e2\")."
+      },
+      "description": {
+        "type": "string",
+        "description": "What element you are clicking and why."
+      }
+    },
+    "required": [
+      "ref",
+      "description"
+    ]
+  }
+}

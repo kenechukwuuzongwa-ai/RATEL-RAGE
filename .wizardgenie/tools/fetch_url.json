@@ -1,0 +1,20 @@
+{
+  "name": "fetch_url",
+  "description": "Fetch the text content of a web page or API endpoint. Returns the page body as text (HTML, JSON, or plain text). Use this to read documentation, check APIs, or gather information from the web without needing the Agent Browser. For interactive browsing (clicking, filling forms), use browse_* tools instead.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Full URL to fetch (e.g. \"https://example.com/docs\")"
+      },
+      "max_length": {
+        "type": "integer",
+        "description": "Max characters to return (default: 20000). Truncates if longer."
+      }
+    },
+    "required": [
+      "url"
+    ]
+  }
+}

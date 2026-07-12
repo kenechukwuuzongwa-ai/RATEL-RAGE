@@ -1,0 +1,9 @@
+{
+  "name": "browse_back",
+  "description": "Navigate back to the previous page in browser history.",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

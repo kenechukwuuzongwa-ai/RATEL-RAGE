@@ -1,0 +1,24 @@
+{
+  "name": "search_files",
+  "description": "Search file contents using exact text or regex patterns. Use this when you know the specific string or pattern to find. For broad conceptual searches (\"where is authentication handled?\"), use semantic_search instead. When doing an open-ended search that may require multiple rounds, try semantic_search first.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "pattern": {
+        "type": "string",
+        "description": "Text or regex pattern to search for"
+      },
+      "path": {
+        "type": "string",
+        "description": "Directory to search in. Defaults to \".\""
+      },
+      "file_pattern": {
+        "type": "string",
+        "description": "Filter files (e.g. \"*.js\")"
+      }
+    },
+    "required": [
+      "pattern"
+    ]
+  }
+}

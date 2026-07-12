@@ -1,0 +1,17 @@
+[
+  {
+    "id": "1783875746203",
+    "name": "General",
+    "createdAt": "2026-07-12T17:02:26.203Z",
+    "model": "codex-chatgpt",
+    "executorModel": null,
+    "thinking": false,
+    "enhanced": false,
+    "tokenSaver": false,
+    "workingKnowledge": false,
+    "debugMode": false,
+    "visualDebug": false,
+    "iterativeMode": false,
+    "unbound": false
+  }
+]

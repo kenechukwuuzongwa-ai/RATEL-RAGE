@@ -1,0 +1,64 @@
+{
+  "name": "preview_interact",
+  "description": "Interact with game preview (1280x720) and capture screenshot. Send input actions then get visual result.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "actions": {
+        "type": "array",
+        "description": "Input actions to execute.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "keypress",
+                "keydown",
+                "keyup",
+                "click",
+                "mousemove",
+                "scroll",
+                "wait"
+              ]
+            },
+            "key": {
+              "type": "string",
+              "description": "Key name (w, a, s, d, space, ArrowUp, etc.)"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "deltaX": {
+              "type": "number"
+            },
+            "deltaY": {
+              "type": "number"
+            },
+            "scrollDelta": {
+              "type": "number"
+            },
+            "ms": {
+              "type": "number",
+              "description": "Duration in ms. Default 100."
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      },
+      "description": {
+        "type": "string",
+        "description": "What you are testing"
+      }
+    },
+    "required": [
+      "actions",
+      "description"
+    ]
+  }
+}

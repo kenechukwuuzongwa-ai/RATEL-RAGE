@@ -1,0 +1,29 @@
+{
+  "name": "browse_type",
+  "description": "Type text into an input element identified by its ref from browse_snapshot. Optionally clear the field first and/or press Enter to submit.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "ref": {
+        "type": "string",
+        "description": "Element reference from browse_snapshot (e.g. \"e1\")."
+      },
+      "text": {
+        "type": "string",
+        "description": "Text to type."
+      },
+      "clear": {
+        "type": "boolean",
+        "description": "Clear the field before typing. Default: false."
+      },
+      "submit": {
+        "type": "boolean",
+        "description": "Press Enter after typing. Default: false."
+      }
+    },
+    "required": [
+      "ref",
+      "text"
+    ]
+  }
+}

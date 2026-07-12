@@ -1,0 +1,37 @@
+{
+  "name": "sorceress_generate_speech",
+  "description": "Convert text to spoken audio (MiniMax Speech 2.8 HD) with a preset or cloned voice, and save the mp3 into the project (default assets/sorceress/audio). Cost: 1 credit per 2,000 characters (min 1), charged only on success. Call sorceress_list_voices first to get a valid voice_id. Waits for completion and returns the saved file path.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "Text to speak (max 10,000 chars)."
+      },
+      "voice_id": {
+        "type": "string",
+        "description": "A preset voice id (e.g. \"Wise_Woman\") or one of the user's cloned voice ids — from sorceress_list_voices."
+      },
+      "speed": {
+        "type": "number",
+        "description": "Speech rate 0.5–2.0 (default 1)."
+      },
+      "pitch": {
+        "type": "number",
+        "description": "Pitch -12 to 12 (default 0)."
+      },
+      "emotion": {
+        "type": "string",
+        "description": "none | happy | calm | sad | angry | fearful | disgusted | surprised (default none)."
+      },
+      "save_dir": {
+        "type": "string",
+        "description": "Optional project-relative folder (default \"assets/sorceress/audio\")."
+      }
+    },
+    "required": [
+      "text",
+      "voice_id"
+    ]
+  }
+}

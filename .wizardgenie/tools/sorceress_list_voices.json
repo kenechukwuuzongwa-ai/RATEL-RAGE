@@ -1,0 +1,9 @@
+{
+  "name": "sorceress_list_voices",
+  "description": "List the speech voices available to this account: 17 preset voices plus the user's own cloned voice ids. Call this BEFORE sorceress_generate_speech to pick a valid voice_id. Returns immediately.",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

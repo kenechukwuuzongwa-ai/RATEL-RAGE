@@ -1,0 +1,24 @@
+{
+  "name": "pixellab_poll",
+  "description": "Poll a Pixel Lab background job (from pixellab_generate/animate/edit) until it completes, then import its assets into the project. Pass the job_id you were given. When completed, files land under assets/pixellab/ and are listed back to you. Pass wait_seconds to block until done; otherwise it checks once.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "job_id": {
+        "type": "string",
+        "description": "The background_job_id returned by a previous Pixel Lab generation."
+      },
+      "save_to": {
+        "type": "string",
+        "description": "Override the destination folder slug under assets/pixellab/."
+      },
+      "wait_seconds": {
+        "type": "integer",
+        "description": "Block and poll up to N seconds (default 0 = single check)."
+      }
+    },
+    "required": [
+      "job_id"
+    ]
+  }
+}

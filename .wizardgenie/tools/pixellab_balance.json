@@ -1,0 +1,9 @@
+{
+  "name": "pixellab_balance",
+  "description": "Check the user's Pixel Lab credit balance. Call this before a batch of generations so you can warn the user if credits are low. Requires a Pixel Lab API key in Settings.",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

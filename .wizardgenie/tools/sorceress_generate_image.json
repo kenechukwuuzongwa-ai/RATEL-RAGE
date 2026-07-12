@@ -1,0 +1,40 @@
+{
+  "name": "sorceress_generate_image",
+  "description": "Generate an image with a Sorceress image model and save it into the project (default assets/sorceress/). Credits are deducted from the API key owner's Sorceress account automatically; cost varies by model, resolution/quality, and reference images. Call sorceress_list_tools first if unsure which model to use or what it costs. This waits for completion and returns the saved file path(s).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "model": {
+        "type": "string",
+        "description": "Model key, e.g. \"seedream-4.5\", \"nano-banana-2\", \"gpt-image-2\", \"flux-2-pro\", \"grok-imagine\", \"z-image\". See sorceress_list_tools."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "Text description of the image to generate."
+      },
+      "aspect_ratio": {
+        "type": "string",
+        "description": "Aspect ratio, e.g. \"1:1\", \"16:9\", \"9:16\". Must be supported by the chosen model."
+      },
+      "params": {
+        "type": "object",
+        "description": "Model-specific options that affect cost, e.g. {\"resolution\":\"2K\"} or {\"quality\":\"high\"}."
+      },
+      "ref_images": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Optional publicly-reachable reference image URLs (for models that support image input)."
+      },
+      "save_dir": {
+        "type": "string",
+        "description": "Optional project-relative folder to save into (default \"assets/sorceress\")."
+      }
+    },
+    "required": [
+      "model",
+      "prompt"
+    ]
+  }
+}

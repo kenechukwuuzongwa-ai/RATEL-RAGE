@@ -1,0 +1,42 @@
+{
+  "name": "sorceress_generate_music",
+  "description": "Generate a song (vocal or instrumental) from a description or custom lyrics/style (Suno) and save the mp3(s) into the project (default assets/sorceress/audio). Returns ~2 variations. Flat 10 credits, charged only on success. Waits for completion and returns the saved file path(s).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "description": "Simple mode: a description of the song. Advanced (customMode): the actual lyrics. Leave empty for auto-lyrics/instrumental."
+      },
+      "customMode": {
+        "type": "boolean",
+        "description": "false = Simple (describe the song). true = Advanced (provide lyrics + style + title). Default false."
+      },
+      "instrumental": {
+        "type": "boolean",
+        "description": "true = no vocals. Default false."
+      },
+      "model": {
+        "type": "string",
+        "description": "Suno version: V5_5 (default), V5, V4_5PLUS, V4_5, V4."
+      },
+      "style": {
+        "type": "string",
+        "description": "Advanced only: musical style/genre (e.g. \"epic orchestral, cinematic\")."
+      },
+      "title": {
+        "type": "string",
+        "description": "Advanced only: song title (max 80 chars)."
+      },
+      "vocalGender": {
+        "type": "string",
+        "description": "Advanced only: \"m\" or \"f\"."
+      },
+      "save_dir": {
+        "type": "string",
+        "description": "Optional project-relative folder (default \"assets/sorceress/audio\")."
+      }
+    },
+    "required": []
+  }
+}

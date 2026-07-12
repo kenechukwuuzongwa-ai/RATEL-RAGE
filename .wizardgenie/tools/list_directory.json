@@ -1,0 +1,16 @@
+{
+  "name": "list_directory",
+  "description": "List directory contents.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Directory path relative to project root. \".\" for root."
+      }
+    },
+    "required": [
+      "path"
+    ]
+  }
+}

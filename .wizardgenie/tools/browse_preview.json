@@ -1,0 +1,14 @@
+{
+  "name": "browse_preview",
+  "description": "Open the current project's live preview (localhost) in the Agent Browser. Use this to test web apps, games, and HTML pages you are building — you can then interact with the preview using browse_snapshot, browse_click, browse_type, etc. Optionally specify a file path (e.g. \"index.html\") to preview a specific entry point.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Optional file path relative to project root (e.g. \"index.html\", \"src/app.html\"). Defaults to root \"/\"."
+      }
+    },
+    "required": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "map_codebase",
+  "description": "Generate a codebase map (file tree, frameworks, key files). Cached and auto-injected into context.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "refresh": {
+        "type": "boolean",
+        "description": "Force regenerate. Default: false."
+      }
+    },
+    "required": []
+  }
+}

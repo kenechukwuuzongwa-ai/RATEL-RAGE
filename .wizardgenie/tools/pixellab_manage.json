@@ -1,0 +1,54 @@
+{
+  "name": "pixellab_manage",
+  "description": "List, fetch, tag, delete, or download existing Pixel Lab characters/objects/tilesets, list local Pixel Lab jobs, or download a finished character as files. Use download_character to pull a completed character (all rotations + animations) into assets/pixellab/characters/.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "enum": [
+          "list_characters",
+          "get_character",
+          "download_character",
+          "delete_character",
+          "update_character_tags",
+          "list_objects",
+          "get_object",
+          "delete_object",
+          "update_object_tags",
+          "select_object_frames",
+          "dismiss_object_review",
+          "list_tilesets",
+          "get_tileset",
+          "list_isometric_tiles",
+          "get_isometric_tile",
+          "get_tiles_pro",
+          "list_jobs"
+        ]
+      },
+      "character_id": {
+        "type": "string"
+      },
+      "object_id": {
+        "type": "string"
+      },
+      "tileset_id": {
+        "type": "string"
+      },
+      "tile_id": {
+        "type": "string"
+      },
+      "params": {
+        "type": "object",
+        "description": "Body fields for PATCH/POST ops (e.g. tags array, frame indices)."
+      },
+      "save_to": {
+        "type": "string",
+        "description": "For download_character: destination folder slug."
+      }
+    },
+    "required": [
+      "operation"
+    ]
+  }
+}

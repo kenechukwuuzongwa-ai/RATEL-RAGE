@@ -1,0 +1,16 @@
+{
+  "name": "create_checkpoint",
+  "description": "Snapshot current project state for rollback.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "What this checkpoint captures"
+      }
+    },
+    "required": [
+      "message"
+    ]
+  }
+}

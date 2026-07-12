@@ -1,0 +1,16 @@
+{
+  "name": "run_command",
+  "description": "Execute a shell command in the project directory. Timeout: 5 minutes. Use for installing packages (npm install, pip install), one-shot build scripts, git operations, and general terminal tasks. IMPORTANT: Do NOT use this to read files (use read_file), search files (use search_files/semantic_search), or start dev/preview servers (npm run dev, npm start, vite, npx serve, etc.) — WizardGenie has a built-in preview; starting a server will hang the agent. This is a Windows environment — use PowerShell or cmd-compatible commands only (no wc, grep, cat, etc.). Use node -e for cross-platform one-liners.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Shell command to execute"
+      }
+    },
+    "required": [
+      "command"
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "browse_snapshot",
+  "description": "Capture the current page structure (accessibility tree) and optionally a screenshot. Returns element refs (ref=eN) that you can use with browse_click and browse_type. ALWAYS call this before interacting with elements to get fresh refs.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "screenshot": {
+        "type": "boolean",
+        "description": "Include a screenshot image. Default: true."
+      },
+      "selector": {
+        "type": "string",
+        "description": "Optional CSS selector to also extract text from a specific element."
+      }
+    },
+    "required": []
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "edit_file",
+  "description": "Find-and-replace edit for existing files. This is the PREFERRED tool for modifying code. CRITICAL: old_text must match the file content EXACTLY, including all whitespace and indentation. Include at least 3-5 lines of context before and after the change point to ensure uniqueness. This tool replaces ONE occurrence — make separate calls for multiple changes. Always use read_file first to verify the exact content before editing.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "File path relative to project root"
+      },
+      "old_text": {
+        "type": "string",
+        "description": "Exact text to find (must match file content precisely, including whitespace and indentation. Include enough surrounding context to be unique)"
+      },
+      "new_text": {
+        "type": "string",
+        "description": "Replacement text. Ensure the result is idiomatic, correct code. Do not leave the code in a broken state"
+      }
+    },
+    "required": [
+      "path",
+      "old_text",
+      "new_text"
+    ]
+  }
+}

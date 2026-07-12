@@ -1,0 +1,20 @@
+{
+  "name": "wait",
+  "description": "Pause for a number of seconds, then continue automatically on the SAME turn. Use this whenever you are waiting on something asynchronous — most importantly an async tool that returned a job_id / a \"processing\" status (e.g. an MCP image/sound/speech/music generation), a background build, or a server that needs a moment to come up. After the wait returns, immediately take your next action (poll the job, re-check status, read the result). CRITICAL: never just SAY \"I'll wait 20s then poll\" in prose and stop — writing that text ends your turn and nothing actually waits. To truly wait you MUST call this tool; the loop only resumes after a real tool result. Typical pattern: start job(s) → wait(15) → poll → if still processing, wait(15) → poll again, until done. Max 60 seconds per call; for longer waits, call it repeatedly in a poll loop.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "seconds": {
+        "type": "number",
+        "description": "How long to pause, in seconds (1–60). Use ~10–20s between polls of a generation job."
+      },
+      "reason": {
+        "type": "string",
+        "description": "Optional short note on what you are waiting for (e.g. \"sound effect jobs to finish\")."
+      }
+    },
+    "required": [
+      "seconds"
+    ]
+  }
+}

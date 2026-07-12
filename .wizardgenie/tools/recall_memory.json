@@ -1,0 +1,20 @@
+{
+  "name": "recall_memory",
+  "description": "PRIORITY: Use this BEFORE investigating bugs or making changes. Search long-term project memory for relevant past context — decisions, discoveries, debugging outcomes, conventions, and prior conversations. Prevents repeating past mistakes and provides instant project context without reading files.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Natural language query describing what you want to recall (e.g. \"what did we decide about the auth system?\" or \"how did we fix the rendering bug?\")"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max results to return (default 5, max 20)"
+      }
+    },
+    "required": [
+      "query"
+    ]
+  }
+}

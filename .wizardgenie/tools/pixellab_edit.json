@@ -1,0 +1,47 @@
+{
+  "name": "pixellab_edit",
+  "description": "Edit / post-process existing PIXEL ART via Pixel Lab. Provide source image(s) via \"image_inputs\" (field → project path, auto base64); other fields go in \"params\". Results import to assets/pixellab/edits/. Some ops are async (return job_id).\n\nREQUIRED FIELDS PER OPERATION (image_size is {\"width\":N,\"height\":N} of the SOURCE image unless noted):\n- remove_background: image_inputs.image + params.image_size.\n- image_to_pixelart: image_inputs.image + params.image_size + params.output_size {width,height} (the target pixel-art resolution).\n- resize: top-level description + image_inputs.reference_image + params.reference_image_size + params.target_size {width,height}.\n- inpaint / inpaint_pro: top-level description + params.image_size + image_inputs.inpainting_image + image_inputs.mask_image (white = area to regenerate).\n- rotate: image_inputs.from_image + params.image_size + params.from_direction/to_direction (e.g. \"south\"→\"east\") or from_view/to_view.\n- rotations_8_v2 / rotations_8_v3: image_inputs.from_image (+ image_size) to produce 8 directional rotations.\n- edit_image / edit_images_pro: image_inputs.image(s) + top-level description of the change.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "enum": [
+          "edit_image",
+          "edit_images_pro",
+          "inpaint",
+          "inpaint_pro",
+          "image_to_pixelart",
+          "resize",
+          "remove_background",
+          "rotate",
+          "rotations_8_v2",
+          "rotations_8_v3"
+        ]
+      },
+      "description": {
+        "type": "string",
+        "description": "Edit instruction where the endpoint accepts one."
+      },
+      "params": {
+        "type": "object",
+        "description": "Other request fields (width/height for resize, from_direction/to_direction for rotate, image_size, etc.)."
+      },
+      "image_inputs": {
+        "type": "object",
+        "description": "Map of API image field → project path. e.g. {\"image\":\"assets/pixellab/images/hero.png\"} or for inpaint {\"image\":\"a.png\",\"mask\":\"m.png\"}."
+      },
+      "save_to": {
+        "type": "string",
+        "description": "Folder slug under assets/pixellab/edits/."
+      },
+      "wait_seconds": {
+        "type": "integer",
+        "description": "Block and poll up to N seconds for async ops (default 0)."
+      }
+    },
+    "required": [
+      "operation"
+    ]
+  }
+}

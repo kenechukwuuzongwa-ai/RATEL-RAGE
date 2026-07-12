@@ -1,0 +1,32 @@
+{
+  "name": "pixellab_enhance_prompt",
+  "description": "Improve a prompt before generating, using Pixel Lab's prompt enhancers. Returns enhanced prompt text — pass it as the description to pixellab_generate/pixellab_animate. Does not create assets.\n- pixen: description + params.image_size.\n- character_v3: description + params.image_size.\n- animation_v3: NO description — image_inputs.first_frame + params.action.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "enum": [
+          "pixen",
+          "character_v3",
+          "animation_v3"
+        ]
+      },
+      "description": {
+        "type": "string",
+        "description": "The draft prompt to enhance (pixen / character_v3)."
+      },
+      "params": {
+        "type": "object",
+        "description": "Extra fields: image_size for pixen/character_v3; action for animation_v3."
+      },
+      "image_inputs": {
+        "type": "object",
+        "description": "For animation_v3: {\"first_frame\":\"path.png\"}."
+      }
+    },
+    "required": [
+      "operation"
+    ]
+  }
+}

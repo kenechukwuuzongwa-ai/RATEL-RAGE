@@ -1,0 +1,24 @@
+{
+  "name": "sorceress_generate_sound_effect",
+  "description": "Generate a sound effect from a text description (e.g. 'sword unsheathing', '8-bit coin pickup', 'rain ambience') and save the mp3 into the project (default assets/sorceress/audio). Flat 3 credits, charged to the API key owner only on success. Waits for completion and returns the saved file path.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "prompt": {
+        "type": "string",
+        "description": "Description of the sound effect. Max 500 chars."
+      },
+      "loop": {
+        "type": "boolean",
+        "description": "Generate a seamlessly loopable sound (e.g. ambience). Default false."
+      },
+      "save_dir": {
+        "type": "string",
+        "description": "Optional project-relative folder (default \"assets/sorceress/audio\")."
+      }
+    },
+    "required": [
+      "prompt"
+    ]
+  }
+}

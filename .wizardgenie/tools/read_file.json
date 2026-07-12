@@ -1,0 +1,24 @@
+{
+  "name": "read_file",
+  "description": "Read file contents with line numbers. Use start_line/end_line for targeted reads of large files (reading only what you need saves tokens). Prefer semantic_search to find relevant code by meaning first, then read_file to see the exact content. ALWAYS read a file before editing it — never edit blind.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "File path relative to project root"
+      },
+      "start_line": {
+        "type": "integer",
+        "description": "First line to read (1-based). Optional."
+      },
+      "end_line": {
+        "type": "integer",
+        "description": "Last line to read (inclusive). Optional."
+      }
+    },
+    "required": [
+      "path"
+    ]
+  }
+}

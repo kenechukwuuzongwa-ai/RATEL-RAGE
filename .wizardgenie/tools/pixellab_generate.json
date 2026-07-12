@@ -1,0 +1,69 @@
+{
+  "name": "pixellab_generate",
+  "description": "Generate game-ready PIXEL ART via the Pixel Lab API: static sprites/props, full directional characters, tilesets, and map objects. Output PNGs (and multi-file characters) are saved under assets/pixellab/ and indexed in assets/pixellab/manifest.json — then wire them into the game with edit_file/write_file.\n\nAsync operations (characters, tilesets, map/objects) return a job_id; either pass wait_seconds to block, or call pixellab_poll later. Sync operations (images, isometric tile) import immediately.\n\nCRITICAL — almost every operation REQUIRES image_size in params as an object {\"width\":N,\"height\":N} (pixel art is small: 16/32/48/64/128). Put endpoint-specific fields in \"params\"; supply reference/init/color/style images via \"image_inputs\" (API field name → project file path, auto-converted to base64).\n\nREQUIRED FIELDS PER OPERATION (top-level \"description\" is used unless noted; everything else goes in \"params\"):\n- image_pixflux / image_pixen / image_bitforge: description + params.image_size. (single static sprite/prop, SYNC.)\n- character_v3: description. params.image_size optional; view default \"low top-down\", template_id default \"mannequin\". (ASYNC, returns character — use pixellab_manage download_character or pixellab_poll.)\n- character_4dir / character_8dir: description + params.image_size. (ASYNC directional character.)\n- tileset / tileset_topdown: NO description field — instead params.lower_description AND params.upper_description (both required), optional params.transition_description, params.tile_size {width,height}. (ASYNC.)\n- tileset_sidescroller: NO description — params.lower_description (required), optional params.transition_description, params.tile_size. (ASYNC.)\n- tileset_isometric: description + params.image_size. (SYNC.)\n- map_object: description (params.image_size default 128x128). (ASYNC.)\n- object_1dir / object_8dir: description. (ASYNC.)\nCommon optional params: negative_description, view, direction, outline, shading, detail, text_guidance_scale, no_background, seed.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "description": "Which generator to use.",
+        "enum": [
+          "image_pixflux",
+          "image_pixen",
+          "image_bitforge",
+          "image_pro",
+          "image_style_pro",
+          "ui_pro",
+          "character_4dir",
+          "character_8dir",
+          "character_pro",
+          "character_v3",
+          "character_state",
+          "character_animation",
+          "tileset",
+          "tileset_topdown",
+          "tileset_sidescroller",
+          "tileset_sidescroller_async",
+          "tileset_isometric",
+          "tileset_pro",
+          "map_object",
+          "object_1dir",
+          "object_8dir",
+          "object_animation",
+          "object_state"
+        ]
+      },
+      "description": {
+        "type": "string",
+        "description": "Main text prompt describing the asset (maps to the endpoint's description field)."
+      },
+      "params": {
+        "type": "object",
+        "description": "Any other Pixel Lab request fields for this operation (image_size, view, outline, shading, detail, direction, no_background, seed, template_id, tileset descriptions, etc.)."
+      },
+      "image_inputs": {
+        "type": "object",
+        "description": "Map of API image field name → project-relative image path (or array of paths). e.g. {\"reference_image\":\"assets/ref.png\"} or {\"style_images\":[\"a.png\",\"b.png\"]}."
+      },
+      "character_id": {
+        "type": "string",
+        "description": "Existing character id (for character_state / character_animation)."
+      },
+      "object_id": {
+        "type": "string",
+        "description": "Existing object id (for object_state / object_animation)."
+      },
+      "save_to": {
+        "type": "string",
+        "description": "Folder slug under assets/pixellab/ to save into. Defaults to a slug from the description."
+      },
+      "wait_seconds": {
+        "type": "integer",
+        "description": "For async ops, block and poll up to this many seconds before returning (default 0 = return job_id immediately). Use 60–120 for things you want in one turn."
+      }
+    },
+    "required": [
+      "operation"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.cache/
+*.log
+.DS_Store
+*.tmp
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/

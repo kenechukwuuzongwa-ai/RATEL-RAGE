@@ -1,0 +1,20 @@
+{
+  "name": "semantic_search",
+  "description": "Find code by meaning using the codebase vector index. Returns ranked chunks with file paths, line ranges, and content.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Natural language description of what you're looking for"
+      },
+      "num_results": {
+        "type": "integer",
+        "description": "Number of results (default 10, max 20)"
+      }
+    },
+    "required": [
+      "query"
+    ]
+  }
+}

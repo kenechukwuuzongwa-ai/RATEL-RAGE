@@ -1,0 +1,21 @@
+{
+  "name": "write_file",
+  "description": "Create a NEW file or fully overwrite an existing one. IMPORTANT: For modifying existing files, ALWAYS use edit_file instead — rewriting a whole file to change a few lines wastes tokens and risks losing code. Both \"path\" and \"content\" are required. Write one file at a time with complete content.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "File path relative to project root"
+      },
+      "content": {
+        "type": "string",
+        "description": "Complete file content"
+      }
+    },
+    "required": [
+      "path",
+      "content"
+    ]
+  }
+}

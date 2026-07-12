@@ -1,0 +1,40 @@
+{
+  "name": "add_to_scene",
+  "description": "Add a .wg3d.js model to the open scene at a position.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Path to .wg3d.js model file"
+      },
+      "position": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "z": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "z"
+        ]
+      },
+      "name": {
+        "type": "string",
+        "description": "Display name for the object"
+      }
+    },
+    "required": [
+      "file_path",
+      "position"
+    ]
+  }
+}

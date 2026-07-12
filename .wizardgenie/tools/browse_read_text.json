@@ -1,0 +1,14 @@
+{
+  "name": "browse_read_text",
+  "description": "Extract the readable text content from the current page or a specific element. Useful for reading articles, documentation, search results, etc.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "selector": {
+        "type": "string",
+        "description": "CSS selector to read text from a specific element. If omitted, reads the entire page body."
+      }
+    },
+    "required": []
+  }
+}

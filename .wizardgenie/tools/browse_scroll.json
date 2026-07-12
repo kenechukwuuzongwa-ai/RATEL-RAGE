@@ -1,0 +1,22 @@
+{
+  "name": "browse_scroll",
+  "description": "Scroll the browser page up or down to see more content.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "direction": {
+        "type": "string",
+        "enum": [
+          "up",
+          "down"
+        ],
+        "description": "Scroll direction. Default: \"down\"."
+      },
+      "amount": {
+        "type": "number",
+        "description": "Pixels to scroll. Default: 400."
+      }
+    },
+    "required": []
+  }
+}

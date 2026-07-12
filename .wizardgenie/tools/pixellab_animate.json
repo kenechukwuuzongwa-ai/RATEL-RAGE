@@ -1,0 +1,45 @@
+{
+  "name": "pixellab_animate",
+  "description": "Create or edit PIXEL ART ANIMATIONS (walk cycles, attacks, VFX) via Pixel Lab. Async ops return a job_id (use wait_seconds or pixellab_poll). Frames import to assets/pixellab/animations/. Provide frame/reference images via \"image_inputs\" (field → project path, auto base64); other fields go in \"params\".\n\nREQUIRED FIELDS PER OPERATION:\n- animate_text_v3 (RECOMMENDED, image-to-animation): image_inputs.first_frame (required) + params.action (required text, e.g. \"walk\", \"swing sword\"). Optional image_inputs.last_frame, params.frame_count (default 8), no_background. NOTE: there is NO description field here — use params.action.\n- animate_text (v1): top-level description + params.action (required) + params.image_size {width,height} (required) + image_inputs.reference_image (required). Optional n_frames (default 4), view, direction.\n- animate_skeleton: params.image_size (required) + image_inputs.reference_image (required) + params.skeleton_keypoints.\n- interpolation_v2 / edit_animation_v2 / transfer_outfit_v2 / estimate_skeleton: provide the frames/sheet they operate on via image_inputs.\nPass an existing character's animation via pixellab_generate operation=character_animation with character_id instead.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "operation": {
+        "type": "string",
+        "enum": [
+          "animate_text",
+          "animate_text_v2",
+          "animate_text_v3",
+          "animate_skeleton",
+          "edit_animation_v2",
+          "interpolation_v2",
+          "transfer_outfit_v2",
+          "estimate_skeleton"
+        ]
+      },
+      "description": {
+        "type": "string",
+        "description": "Prompt / action description where the endpoint accepts one."
+      },
+      "params": {
+        "type": "object",
+        "description": "Other request fields (action, frame_count, seed, no_background, enhance_prompt, etc.)."
+      },
+      "image_inputs": {
+        "type": "object",
+        "description": "Map of API image field → project path (e.g. {\"first_frame\":\"a.png\",\"last_frame\":\"b.png\"})."
+      },
+      "save_to": {
+        "type": "string",
+        "description": "Folder slug under assets/pixellab/animations/."
+      },
+      "wait_seconds": {
+        "type": "integer",
+        "description": "Block and poll up to N seconds (default 0)."
+      }
+    },
+    "required": [
+      "operation"
+    ]
+  }
+}

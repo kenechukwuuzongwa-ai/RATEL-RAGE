@@ -1,0 +1,16 @@
+{
+  "name": "graph_query",
+  "description": "PRIORITY: Use this BEFORE read_file. Query the code knowledge graph for structural relationships — imports, dependencies, callers, exports, and related files. Shows which files are connected and what depends on what, so you only read the files you actually need. Always start here when investigating bugs or planning changes.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Symbol name, file path, or relationship question (e.g. \"PlayerController\", \"what depends on AuthService?\", \"imports of game-loop.js\")"
+      }
+    },
+    "required": [
+      "query"
+    ]
+  }
+}
