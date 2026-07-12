@@ -22,5 +22,13 @@
   {
     "role": "user",
     "content": "What does the game doc say its about?"
+  },
+  {
+    "role": "assistant",
+    "content": "Let me look for the game doc in the project.The doc — `Rage_of_Ratels_Fable_5_WizardGenie_Walkthrough.docx` — is a \"WizardGenie Production Manual\": a decision-complete build spec for making the game with Fable 5 inside a tool called WizardGenie. Here's what it says the game is about:\n\n**The game:** *Rage of Ratels* is a 2.5D lane-based arcade beat-'em-up where **Dark Ratel fights human fan armies led by fictional bosses**. Each level follows a fixed arc: social-media challenge → response cutscene → faction street battle → three-phase boss fight → a \"defeated-boss evidence paper\" collectible → teaser for the next case.\n\n**Locked, non-negotiable rules from the spec:**\n- Every combatant is human — no monsters, robots, or abstract enemies.\n- All real-world-inspired names and faces stay fictionalized unless written permission exists (the \"Dark Ratel and fictional lookalikes\" identity rule).\n- Combat is comic and non-lethal — bruises, torn clothes, knockouts; no gore or death.\n- Dark Ratel wins every gameplay encounter; there are no morality/reputation meters.\n- Female-inspired bosses field majority-female armies; male-inspired bosses, majority-male.\n\n**Scope of the first release:** a free three-level browser vertical slice with the cases **Sound Kleft**, **Receipt Queen**, and **Miracle Merchant** — which matches what the README says is already built in this repo.\n\n**Presentation targets:** 1280×720 16:9 canvas, 32-bit \"Afro-comic\" sprites rendered from rigged 3D characters via a Sorceress 3D-to-2D pipeline, 60 FPS target, Nigerian Pidgin and English dialogue with English subtitles, keyboard + gamepad, solo play first but co-op-ready.\n\nThe rest of the manual (sections 3–10 plus appendices) covers the project structure, asset pipeline, combat/AI systems, data templates, phased implementation directives, and release checks. Want me to dig into any particular section?"
+  },
+  {
+    "role": "user",
+    "content": "use the VDM walk sprite sheet and the available tiles to build a side scroller with movement and jump. make it look like Lagos street for a start"
   }
 ]
