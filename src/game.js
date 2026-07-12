@@ -10,17 +10,11 @@ const TILE = 64;
 
 const SHEET = {
   src: 'VDM-Walk .png',
-  cols: 4,
+  metaSrc: 'VDM-Walk.json',    // animation frames/fps come from here
+  cols: 4,                     // fallbacks if the JSON is missing
   rows: 4,
-  // Frames 0-9 are the coherent trouser walk cycle; 10-15 are wrapper-skirt
-  // stance poses that pop visually if mixed into the loop.
-  anims: {
-    idle: { frames: [0], fps: 1 },
-    walk: { frames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], fps: 24 },
-    jump: { frames: [5], fps: 1 },
-  },
-  faces: -1,                   // art faces left; flip when moving right
-  drawH: 200,
+  faces: 1,                    // art faces right; flip when moving left
+  drawH: 200,                  // character height on screen (opaque pixels)
 };
 
 const PLAYER = {
@@ -105,26 +99,101 @@ function keyOutBackground(frame) {
   fctx.putImageData(data, 0, 0);
 }
 
-async function loadPlayerFrames() {
-  const img = await loadImage(SHEET.src);
-  const fw = img.width / SHEET.cols;
-  const fh = img.height / SHEET.rows;
-  const drawH = SHEET.drawH;
-  const drawW = Math.round(drawH * (fw / fh));
+function opaqueBBox(c) {
+  const { width: w, height: h } = c;
+  const px = c.getContext('2d').getImageData(0, 0, w, h).data;
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (px[(y * w + x) * 4 + 3] > 16) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  return maxX < 0 ? null : { minX, minY, maxX, maxY };
+}
 
-  const frames = [];
-  for (let i = 0; i < SHEET.cols * SHEET.rows; i++) {
-    const sx = (i % SHEET.cols) * fw;
-    const sy = Math.floor(i / SHEET.cols) * fh;
-    const frame = makeCanvas(drawW, drawH);
-    const fc = frame.getContext('2d');
+// Animations come from the Sprite Analyzer JSON. Named/role sections win when
+// present; otherwise the whole defaultAnimation range is the walk cycle.
+function resolveAnims(meta, frameCount) {
+  const def = meta?.defaultAnimation ?? { start: 0, end: frameCount - 1, fps: 30 };
+  const range = (s, e) => Array.from({ length: e - s + 1 }, (_, i) => s + i);
+  const toFrames = (f) => Array.isArray(f) ? f : range(f?.start ?? 0, f?.end ?? frameCount - 1);
+
+  const anims = { walk: { frames: range(def.start, def.end), fps: def.fps ?? 30 } };
+
+  const sections = meta?.animation?.sections;
+  if (sections?.length) {
+    const pick = (re, role) =>
+      sections.find((s) => re.test(s.name ?? '')) ?? (role && sections.find((s) => s.role === role));
+    const use = (s, fallbackFps) => ({ frames: toFrames(s.frames), fps: s.fps ?? fallbackFps });
+    const w = pick(/walk|run|move/i, 'middle');
+    if (w) anims.walk = use(w, def.fps ?? 30);
+    const i = pick(/idle|stand/i);
+    if (i) anims.idle = use(i, 8);
+    const j = pick(/jump|air|leap/i);
+    if (j) anims.jump = use(j, 8);
+  }
+  anims.idle ??= { frames: [anims.walk.frames[0]], fps: 1 };
+  anims.jump ??= { frames: [anims.walk.frames[Math.floor(anims.walk.frames.length / 2)]], fps: 1 };
+  return anims;
+}
+
+async function loadPlayerFrames() {
+  const [img, meta] = await Promise.all([
+    loadImage(SHEET.src),
+    fetch(new URL('../' + encodeURI(SHEET.metaSrc), import.meta.url))
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+  ]);
+  const cols = meta?.sheet?.cols ?? SHEET.cols;
+  const rows = meta?.sheet?.rows ?? SHEET.rows;
+  const fw = img.width / cols;
+  const fh = img.height / rows;
+  const count = cols * rows;
+
+  // Pass 1: key out the background at a working scale and find the union
+  // opaque bounding box, so the character (not the frame padding) is what we
+  // anchor and scale. A shared box keeps the cycle from jittering.
+  const WORK_H = 480;
+  const workW = Math.round(WORK_H * (fw / fh));
+  const work = [];
+  let minX = workW, minY = WORK_H, maxX = -1, maxY = -1;
+  for (let i = 0; i < count; i++) {
+    const c = makeCanvas(workW, WORK_H);
+    const cc = c.getContext('2d');
+    cc.imageSmoothingEnabled = true;
+    cc.imageSmoothingQuality = 'high';
+    cc.drawImage(img, (i % cols) * fw, Math.floor(i / cols) * fh, fw, fh, 0, 0, workW, WORK_H);
+    keyOutBackground(c);
+    const b = opaqueBBox(c);
+    if (b) {
+      minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
+      maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
+    }
+    work.push(c);
+  }
+  if (maxX < 0) throw new Error('sprite sheet is fully transparent after keying');
+
+  // Pass 2: crop every frame to the union box, scaled so character height is
+  // drawH. Canvas bottom = lowest foot pixel, so feet sit on the ground line.
+  const bw = maxX - minX + 1;
+  const bh = maxY - minY + 1;
+  const drawH = SHEET.drawH;
+  const drawW = Math.round(bw * (drawH / bh));
+  const frames = work.map((c) => {
+    const f = makeCanvas(drawW, drawH);
+    const fc = f.getContext('2d');
     fc.imageSmoothingEnabled = true;
     fc.imageSmoothingQuality = 'high';
-    fc.drawImage(img, sx, sy, fw, fh, 0, 0, drawW, drawH);
-    keyOutBackground(frame);
-    frames.push(frame);
-  }
-  return { frames, drawW, drawH };
+    fc.drawImage(c, minX, minY, bw, bh, 0, 0, drawW, drawH);
+    return f;
+  });
+
+  return { frames, drawW, drawH, anims: resolveAnims(meta, count) };
 }
 
 /* ------------------------------------------------- Lagos street tileset */
@@ -402,7 +471,7 @@ window.addEventListener('keyup', (e) => {
 
 const player = {
   x: 320, y: GROUND_Y, vx: 0, vy: 0,
-  facing: -1, grounded: true,
+  facing: 1, grounded: true,
   coyote: 0, buffer: 0,
   anim: 'idle', frame: 0, animTime: 0,
 };
@@ -456,7 +525,7 @@ function update(dt) {
   const next = !player.grounded ? 'jump' : (Math.abs(player.vx) > 12 ? 'walk' : 'idle');
   if (next !== player.anim) { player.anim = next; player.frame = 0; player.animTime = 0; }
 
-  const spec = SHEET.anims[player.anim];
+  const spec = sprite.anims[player.anim];
   const rate = player.anim === 'walk'
     ? spec.fps * Math.max(0.45, Math.abs(player.vx) / PLAYER.maxSpeed)
     : spec.fps;
@@ -541,13 +610,13 @@ function drawPlayer() {
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath();
   const squash = player.grounded ? 1 : Math.max(0.5, 1 - (GROUND_Y - player.y) / 500);
-  ctx.ellipse(screenX, GROUND_Y + 8, 52 * squash, 11 * squash, 0, 0, Math.PI * 2);
+  ctx.ellipse(screenX, GROUND_Y + 6, drawW * 0.36 * squash, 11 * squash, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
   ctx.translate(screenX, player.y);
   if (player.facing !== SHEET.faces) ctx.scale(-1, 1);
-  ctx.drawImage(frames[player.frame], -drawW / 2, -drawH + 6);
+  ctx.drawImage(frames[player.frame], -drawW / 2, -drawH); // feet on the ground line
   ctx.restore();
 }
 

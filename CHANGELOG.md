@@ -10,10 +10,13 @@
   corrugated zinc roofs, danfo buses, power poles with sagging cables,
   harmattan-haze sky and parallax skyline.
 - Player uses `VDM-Walk .png` (4×4 sheet, frames auto-sized from the image;
-  the stale frame sizes in `VDM-Walk.json` are ignored). Frames 0–9 drive the
-  walk cycle; frames 10–15 (wrapper-skirt stance poses) are excluded from the
-  loop to avoid costume popping. Opaque sheet backgrounds are keyed out at
-  load by flood fill from the frame border.
+  the stale frame sizes in `VDM-Walk.json` are ignored). Animations are read
+  from `VDM-Walk.json` at load: `animation.sections` (walk/idle/jump matched
+  by name or role) when present, otherwise the full `defaultAnimation` range
+  drives the walk cycle. Opaque sheet backgrounds are keyed out at load by
+  flood fill from the frame border, then every frame is cropped to the union
+  opaque bounding box so the character — not the frame padding — is anchored
+  feet-down and centred over his shadow.
 - Added `tests/drive.html`: deterministic input-driven simulation harness
   (steps the game loop with fixed dt and logs player state) for headless
   verification.
