@@ -2,5 +2,13 @@
   {
     "role": "user",
     "content": "hi"
+  },
+  {
+    "role": "assistant",
+    "content": "Invalid API key · Fix external API key"
+  },
+  {
+    "role": "user",
+    "content": "hi"
   }
 ]
