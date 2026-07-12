@@ -3,7 +3,7 @@
     "id": "1783875746203",
     "name": "Hi",
     "createdAt": "2026-07-12T17:02:26.203Z",
-    "model": "codex-chatgpt",
+    "model": "codex-gpt-5.6-sol",
     "executorModel": null,
     "thinking": false,
     "enhanced": false,
