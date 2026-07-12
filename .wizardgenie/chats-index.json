@@ -1,9 +1,9 @@
 [
   {
     "id": "1783875746203",
-    "name": "General",
+    "name": "Hi",
     "createdAt": "2026-07-12T17:02:26.203Z",
-    "model": "codex-chatgpt",
+    "model": "deepseek-v4-flash",
     "executorModel": null,
     "thinking": false,
     "enhanced": false,
