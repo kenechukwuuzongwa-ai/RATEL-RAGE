@@ -19,6 +19,11 @@ const SHEET = {
   drawH: 200,                  // character height on screen (opaque pixels)
 };
 
+const IDLE_SHEET = {
+  src: 'VDM-Idle.png',
+  drawH: 200,
+};
+
 const PLAYER = {
   maxSpeed: 340,
   accel: 2600,
@@ -100,6 +105,19 @@ function keyOutBackground(frame) {
     stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
   }
   fctx.putImageData(data, 0, 0);
+}
+
+function keyOutGreen(frame) {
+  const frameCtx = frame.getContext('2d');
+  const image = frameCtx.getImageData(0, 0, frame.width, frame.height);
+  const pixels = image.data;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    if (green > 80 && green > red * 1.35 && green > blue * 1.25) pixels[index + 3] = 0;
+  }
+  frameCtx.putImageData(image, 0, 0);
 }
 
 function opaqueBBox(c) {
@@ -225,6 +243,31 @@ async function loadPlayerFrames() {
   });
 
   return { frames, anchors: frames.map(footAnchorX), drawW, drawH, anims: resolveAnims(meta, count) };
+}
+
+async function loadIdleFrame() {
+  const image = await loadImage(IDLE_SHEET.src);
+  const workHeight = 600;
+  const workWidth = Math.round(workHeight * (image.width / image.height));
+  const work = makeCanvas(workWidth, workHeight);
+  const workCtx = work.getContext('2d');
+  workCtx.imageSmoothingEnabled = true;
+  workCtx.imageSmoothingQuality = 'high';
+  workCtx.drawImage(image, 0, 0, workWidth, workHeight);
+  keyOutGreen(work);
+
+  const bounds = opaqueBBox(work);
+  if (!bounds) throw new Error('idle sprite is fully transparent after keying');
+  const sourceWidth = bounds.maxX - bounds.minX + 1;
+  const sourceHeight = bounds.maxY - bounds.minY + 1;
+  const drawHeight = IDLE_SHEET.drawH;
+  const drawWidth = Math.round(sourceWidth * (drawHeight / sourceHeight));
+  const frame = makeCanvas(drawWidth, drawHeight);
+  const frameCtx = frame.getContext('2d');
+  frameCtx.imageSmoothingEnabled = true;
+  frameCtx.imageSmoothingQuality = 'high';
+  frameCtx.drawImage(work, bounds.minX, bounds.minY, sourceWidth, sourceHeight, 0, 0, drawWidth, drawHeight);
+  return { frame, anchor: footAnchorX(frame), drawW: drawWidth, drawH: drawHeight };
 }
 
 /* ------------------------------------------------- Lagos street tileset */
@@ -510,6 +553,7 @@ const player = {
 };
 
 let sprite = null;
+let idleSprite = null;
 let tileAtlas = null;
 let groundMap = null;
 let props = null;
@@ -657,7 +701,11 @@ function drawStreet() {
 }
 
 function drawPlayer() {
-  const { frames, anchors, drawW, drawH } = sprite;
+  const idle = player.anim === 'idle' && idleSprite;
+  const frame = idle ? idleSprite.frame : sprite.frames[player.frame];
+  const anchor = idle ? idleSprite.anchor : sprite.anchors[player.frame];
+  const drawW = idle ? idleSprite.drawW : sprite.drawW;
+  const drawH = idle ? idleSprite.drawH : sprite.drawH;
   const screenX = player.x - cameraX;
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
@@ -669,7 +717,7 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(screenX, player.y + player.jumpY);
   if (player.facing !== SHEET.faces) ctx.scale(-1, 1);
-  ctx.drawImage(frames[player.frame], -anchors[player.frame], -drawH);
+  ctx.drawImage(frame, -anchor, -drawH);
   ctx.restore();
 }
 
@@ -748,7 +796,7 @@ function loop(ts) {
 
 (async function boot() {
   try {
-    sprite = await loadPlayerFrames();
+    [sprite, idleSprite] = await Promise.all([loadPlayerFrames(), loadIdleFrame()]);
     tileAtlas = buildTileAtlas();
     groundMap = buildGroundMap();
     props = buildStreetProps();
