@@ -703,9 +703,11 @@ function drawStreet() {
 function drawPlayer() {
   const idle = player.anim === 'idle' && idleSprite;
   const frame = idle ? idleSprite.frame : sprite.frames[player.frame];
-  const anchor = idle ? idleSprite.anchor : sprite.anchors[player.frame];
-  const drawW = idle ? idleSprite.drawW : sprite.drawW;
-  const drawH = idle ? idleSprite.drawH : sprite.drawH;
+  const drawW = sprite.drawW;
+  const drawH = sprite.drawH;
+  const anchor = idle
+    ? idleSprite.anchor * (drawW / idleSprite.drawW)
+    : sprite.anchors[player.frame];
   const screenX = player.x - cameraX;
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
@@ -717,7 +719,16 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(screenX, player.y + player.jumpY);
   if (player.facing !== SHEET.faces) ctx.scale(-1, 1);
-  ctx.drawImage(frame, -anchor, -drawH);
+  if (idle) {
+    const phase = player.animTime * Math.PI * 2;
+    const breathe = 1 + Math.sin(phase) * 0.018;
+    const sway = Math.sin(phase * 0.5) * 2;
+    ctx.translate(sway, 0);
+    ctx.scale(1 / breathe, breathe);
+    ctx.drawImage(frame, -anchor, -drawH, drawW, drawH);
+  } else {
+    ctx.drawImage(frame, -anchor, -drawH);
+  }
   ctx.restore();
 }
 
