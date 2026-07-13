@@ -119,6 +119,34 @@ function opaqueBBox(c) {
   return maxX < 0 ? null : { minX, minY, maxX, maxY };
 }
 
+function footAnchorX(frame) {
+  const { width, height } = frame;
+  const pixels = frame.getContext('2d').getImageData(0, 0, width, height).data;
+  let lowestY = -1;
+  for (let y = height - 1; y >= 0 && lowestY < 0; y--) {
+    for (let x = 0; x < width; x++) {
+      if (pixels[(y * width + x) * 4 + 3] > 16) {
+        lowestY = y;
+        break;
+      }
+    }
+  }
+  if (lowestY < 0) return width / 2;
+
+  const footTop = Math.max(0, lowestY - Math.round(height * 0.12));
+  let minX = width;
+  let maxX = -1;
+  for (let y = footTop; y <= lowestY; y++) {
+    for (let x = 0; x < width; x++) {
+      if (pixels[(y * width + x) * 4 + 3] > 16) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+      }
+    }
+  }
+  return maxX < 0 ? width / 2 : (minX + maxX) / 2;
+}
+
 // Animations come from the Sprite Analyzer JSON. Named/role sections win when
 // present; otherwise the whole defaultAnimation range is the walk cycle.
 function resolveAnims(meta, frameCount) {
@@ -196,7 +224,7 @@ async function loadPlayerFrames() {
     return f;
   });
 
-  return { frames, drawW, drawH, anims: resolveAnims(meta, count) };
+  return { frames, anchors: frames.map(footAnchorX), drawW, drawH, anims: resolveAnims(meta, count) };
 }
 
 /* ------------------------------------------------- Lagos street tileset */
@@ -629,7 +657,7 @@ function drawStreet() {
 }
 
 function drawPlayer() {
-  const { frames, drawW, drawH } = sprite;
+  const { frames, anchors, drawW, drawH } = sprite;
   const screenX = player.x - cameraX;
 
   ctx.fillStyle = 'rgba(0,0,0,.3)';
@@ -641,7 +669,7 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(screenX, player.y + player.jumpY);
   if (player.facing !== SHEET.faces) ctx.scale(-1, 1);
-  ctx.drawImage(frames[player.frame], -drawW / 2, -drawH); // feet on the ground line
+  ctx.drawImage(frames[player.frame], -anchors[player.frame], -drawH);
   ctx.restore();
 }
 
