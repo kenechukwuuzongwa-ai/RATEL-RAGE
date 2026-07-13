@@ -122,5 +122,13 @@
   {
     "role": "user",
     "content": "IDLE.json CHECK THIS FILE FOR IDLE INSTRUCTION"
+  },
+  {
+    "role": "assistant",
+    "content": "I’ll inspect `IDLE.json` and follow its frame/layout instructions exactly.`IDLE.json` isn’t inside the game folder. I’ll search the nearby `RAGE OF RATELS` directories for it.Found it in `ASSETS` and `Idle_sheets`. I’ll read the metadata and identify its matching image file.The metadata defines a 6×5, 30-frame idle sheet at 30 FPS. I’ll read its companion guide, then integrate that exact layout.The guide confirms `IDLE.png` is the real 30-frame sheet. I’ll copy both files into the game and make the loader consume the nested manifest entry directly.Assets are in place. Now I’m switching animation selection so idle uses its own JSON FPS and 30-frame sequence while walking keeps its own sheet.The separate idle loader is wired. I’m restoring the original walk metadata so each sheet follows only its own analyzer JSON.Metadata validation passes. I’ll inspect the actual idle sheet once to verify orientation and background handling match the loader.Integrated the correct idle sheet using `IDLE.json`.\n\n- Loads `IDLE.png` as a 6×5 grid.\n- Plays all 30 frames at the JSON-defined 30 FPS.\n- Uses `IDLE.json` as the authoritative metadata source.\n- Walk animation continues using `VDM-Walk.json`.\n- Both sheets render at the same 200-pixel character height.\n- Foot anchoring, shadows, facing, and Z-depth remain active.\n- Syntax and JSON parsing pass.\n\nImplementation: `src/game.js:22`, `src/game.js:195`, `src/game.js:704`."
+  },
+  {
+    "role": "user",
+    "content": "give me the play link"
   }
 ]

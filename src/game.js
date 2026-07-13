@@ -19,6 +19,16 @@ const SHEET = {
   drawH: 200,                  // character height on screen (opaque pixels)
 };
 
+const IDLE_SHEET = {
+  src: 'IDLE.png',
+  metaSrc: 'IDLE.json',
+  cols: 6,
+  rows: 5,
+  faces: 1,
+  drawH: SHEET.drawH,
+  manifest: true,
+};
+
 const PLAYER = {
   maxSpeed: 340,
   accel: 2600,
@@ -173,15 +183,16 @@ function resolveAnims(meta, frameCount) {
   return anims;
 }
 
-async function loadPlayerFrames() {
-  const [img, meta] = await Promise.all([
-    loadImage(SHEET.src),
-    fetch(new URL('../' + encodeURI(SHEET.metaSrc), import.meta.url))
+async function loadSpriteFrames(config, animationName = 'walk') {
+  const [img, manifest] = await Promise.all([
+    loadImage(config.src),
+    fetch(new URL('../' + encodeURI(config.metaSrc), import.meta.url))
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null),
   ]);
-  const cols = meta?.sheet?.cols ?? SHEET.cols;
-  const rows = meta?.sheet?.rows ?? SHEET.rows;
+  const meta = config.manifest ? manifest?.sprites?.[0] : manifest;
+  const cols = meta?.sheet?.cols ?? config.cols;
+  const rows = meta?.sheet?.rows ?? config.rows;
   const fw = img.width / cols;
   const fh = img.height / rows;
   const count = cols * rows;
@@ -213,7 +224,7 @@ async function loadPlayerFrames() {
   // drawH. Canvas bottom = lowest foot pixel, so feet sit on the ground line.
   const bw = maxX - minX + 1;
   const bh = maxY - minY + 1;
-  const drawH = SHEET.drawH;
+  const drawH = config.drawH;
   const drawW = Math.round(bw * (drawH / bh));
   const frames = work.map((c) => {
     const f = makeCanvas(drawW, drawH);
@@ -224,7 +235,9 @@ async function loadPlayerFrames() {
     return f;
   });
 
-  return { frames, anchors: frames.map(footAnchorX), drawW, drawH, anims: resolveAnims(meta, count) };
+  const anims = resolveAnims(meta, count);
+  if (animationName !== 'walk') anims[animationName] = anims.walk;
+  return { frames, anchors: frames.map(footAnchorX), drawW, drawH, anims };
 }
 
 /* ------------------------------------------------- Lagos street tileset */
@@ -510,6 +523,7 @@ const player = {
 };
 
 let sprite = null;
+let idleSprite = null;
 let tileAtlas = null;
 let groundMap = null;
 let props = null;
@@ -573,7 +587,8 @@ function update(dt) {
   const next = !player.grounded ? 'jump' : (moving ? 'walk' : 'idle');
   if (next !== player.anim) { player.anim = next; player.frame = 0; player.animTime = 0; }
 
-  const spec = sprite.anims[player.anim];
+  const animationSprite = player.anim === 'idle' ? idleSprite : sprite;
+  const spec = animationSprite.anims[player.anim];
   const rate = player.anim === 'walk'
     ? spec.fps * Math.max(0.45, Math.abs(player.vx) / PLAYER.maxSpeed, Math.abs(player.depthV) / PLAYER.depthSpeed)
     : spec.fps;
@@ -657,7 +672,8 @@ function drawStreet() {
 }
 
 function drawPlayer() {
-  const { frames, anchors, drawW, drawH } = sprite;
+  const animationSprite = player.anim === 'idle' ? idleSprite : sprite;
+  const { frames, anchors, drawW, drawH } = animationSprite;
   const frame = frames[player.frame];
   const anchor = anchors[player.frame];
   const screenX = player.x - cameraX;
@@ -750,7 +766,10 @@ function loop(ts) {
 
 (async function boot() {
   try {
-    sprite = await loadPlayerFrames();
+    [sprite, idleSprite] = await Promise.all([
+      loadSpriteFrames(SHEET),
+      loadSpriteFrames(IDLE_SHEET, 'idle'),
+    ]);
     tileAtlas = buildTileAtlas();
     groundMap = buildGroundMap();
     props = buildStreetProps();
