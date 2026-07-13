@@ -114,5 +114,13 @@
   {
     "role": "user",
     "content": "NO USE THE JASON DATA TO DRIVE THE ANIMATION"
+  },
+  {
+    "role": "assistant",
+    "content": "You’re right. I’ll remove the artificial breathing and define real walk/idle frame ranges in `VDM-Walk.json`, which the existing animation loader will drive.The JSON’s encoded note blocked the combined patch. I’m applying the code cleanup and metadata sections independently.The animation is now fully JSON-driven: frames `0–7` walk and `8–15` idle. I’m validating the metadata and loader together.Corrected. Animation is now entirely driven by `VDM-Walk.json`.\n\n- Walk: frames `0–7` at 12 FPS.\n- Idle: frames `8–15` at 6 FPS.\n- Removed artificial breathing and static idle rendering.\n- Both animations use the same sprite sheet, crop, height, and scale.\n- JSON parsing and JavaScript syntax checks pass.\n\nMetadata: `VDM-Walk.json:20`"
+  },
+  {
+    "role": "user",
+    "content": "IDLE.json CHECK THIS FILE FOR IDLE INSTRUCTION"
   }
 ]
