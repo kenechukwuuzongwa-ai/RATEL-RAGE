@@ -29,6 +29,17 @@ const IDLE_SHEET = {
   manifest: true,
 };
 
+const UPPERCUT_SHEET = {
+  src: 'VDM-Uppercut.png',
+  metaSrc: 'VDM-Uppercut.json', // manifest + combat pointer to VDM-Uppercut.hits.json
+  cols: 6,
+  rows: 5,
+  faces: 1,
+  drawH: SHEET.drawH,
+  bodyFrame: 0,                // scale this stance frame to drawH so his body
+  manifest: true,              // matches the walk sheet (the raised fist would
+};                             // otherwise shrink him via the union box)
+
 const PLAYER = {
   maxSpeed: 340,
   accel: 2600,
@@ -164,13 +175,16 @@ function resolveAnims(meta, frameCount) {
   const range = (s, e) => Array.from({ length: e - s + 1 }, (_, i) => s + i);
   const toFrames = (f) => Array.isArray(f) ? f : range(f?.start ?? 0, f?.end ?? frameCount - 1);
 
-  const anims = { walk: { frames: range(def.start, def.end), fps: def.fps ?? 30 } };
+  const anims = {
+    walk: { frames: range(def.start, def.end), fps: def.fps ?? 30, loop: def.loop !== false },
+  };
 
   const sections = meta?.animation?.sections;
   if (sections?.length) {
     const pick = (re, role) =>
       sections.find((s) => re.test(s.name ?? '')) ?? (role && sections.find((s) => s.role === role));
-    const use = (s, fallbackFps) => ({ frames: toFrames(s.frames), fps: s.fps ?? fallbackFps });
+    const use = (s, fallbackFps) =>
+      ({ frames: toFrames(s.frames), fps: s.fps ?? fallbackFps, loop: s.loop !== false });
     const w = pick(/walk|run|move/i, 'middle');
     if (w) anims.walk = use(w, def.fps ?? 30);
     const i = pick(/idle|stand/i);
@@ -178,8 +192,8 @@ function resolveAnims(meta, frameCount) {
     const j = pick(/jump|air|leap/i);
     if (j) anims.jump = use(j, 8);
   }
-  anims.idle ??= { frames: [anims.walk.frames[0]], fps: 1 };
-  anims.jump ??= { frames: [anims.walk.frames[Math.floor(anims.walk.frames.length / 2)]], fps: 1 };
+  anims.idle ??= { frames: [anims.walk.frames[0]], fps: 1, loop: true };
+  anims.jump ??= { frames: [anims.walk.frames[Math.floor(anims.walk.frames.length / 2)]], fps: 1, loop: true };
   return anims;
 }
 
@@ -203,6 +217,7 @@ async function loadSpriteFrames(config, animationName = 'walk') {
   const WORK_H = 480;
   const workW = Math.round(WORK_H * (fw / fh));
   const work = [];
+  const boxes = [];
   let minX = workW, minY = WORK_H, maxX = -1, maxY = -1;
   for (let i = 0; i < count; i++) {
     const c = makeCanvas(workW, WORK_H);
@@ -216,15 +231,21 @@ async function loadSpriteFrames(config, animationName = 'walk') {
       minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
       maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
     }
+    boxes.push(b);
     work.push(c);
   }
   if (maxX < 0) throw new Error('sprite sheet is fully transparent after keying');
 
   // Pass 2: crop every frame to the union box, scaled so character height is
   // drawH. Canvas bottom = lowest foot pixel, so feet sit on the ground line.
+  // With bodyFrame set, that frame's stance height (not the union box, which a
+  // raised fist inflates) is what maps to config.drawH.
   const bw = maxX - minX + 1;
   const bh = maxY - minY + 1;
-  const drawH = config.drawH;
+  const bodyBox = config.bodyFrame != null ? boxes[config.bodyFrame] : null;
+  const drawH = bodyBox
+    ? Math.round(config.drawH * bh / (bodyBox.maxY - bodyBox.minY + 1))
+    : config.drawH;
   const drawW = Math.round(bw * (drawH / bh));
   const frames = work.map((c) => {
     const f = makeCanvas(drawW, drawH);
@@ -237,7 +258,32 @@ async function loadSpriteFrames(config, animationName = 'walk') {
 
   const anims = resolveAnims(meta, count);
   if (animationName !== 'walk') anims[animationName] = anims.walk;
-  return { frames, anchors: frames.map(footAnchorX), drawW, drawH, anims };
+
+  // Combat pointer (analyzer format): map each listed frame's hitboxes from
+  // exported-frame pixel space into this sprite's draw space.
+  let hits = null;
+  if (meta?.combat) {
+    const hitData = await fetch(new URL('../' + encodeURI(meta.combat), import.meta.url))
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (hitData?.frames) {
+      const toDraw = (WORK_H / fh) * (drawH / bh);
+      const offX = minX * (drawH / bh);
+      const offY = minY * (drawH / bh);
+      hits = new Map();
+      for (const entry of hitData.frames) {
+        hits.set(entry.frame, (entry.hitboxes ?? []).map((hb) => ({
+          ...hb,
+          x: hb.x * toDraw - offX,
+          y: hb.y * toDraw - offY,
+          w: hb.w * toDraw,
+          h: hb.h * toDraw,
+        })));
+      }
+    }
+  }
+
+  return { frames, anchors: frames.map(footAnchorX), drawW, drawH, anims, hits };
 }
 
 /* ------------------------------------------------- Lagos street tileset */
@@ -488,7 +534,11 @@ function drawPole(x, nextX) {
 
 /* ------------------------------------------------------------ game state */
 
-const input = { left: false, right: false, up: false, down: false, jumpHeld: false, jumpPressed: false };
+const input = {
+  left: false, right: false, up: false, down: false,
+  jumpHeld: false, jumpPressed: false,
+  attackHeld: false, attackPressed: false,
+};
 
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left',
@@ -496,6 +546,7 @@ const KEYMAP = {
   ArrowUp: 'up', KeyW: 'up',
   ArrowDown: 'down', KeyS: 'down',
   Space: 'jump',
+  KeyJ: 'attack', KeyK: 'attack',
 };
 
 window.addEventListener('keydown', (e) => {
@@ -505,6 +556,9 @@ window.addEventListener('keydown', (e) => {
   if (act === 'jump') {
     if (!input.jumpHeld) input.jumpPressed = true;
     input.jumpHeld = true;
+  } else if (act === 'attack') {
+    if (!input.attackHeld) input.attackPressed = true;
+    input.attackHeld = true;
   } else input[act] = true;
 });
 
@@ -512,6 +566,7 @@ window.addEventListener('keyup', (e) => {
   const act = KEYMAP[e.code];
   if (!act) return;
   if (act === 'jump') input.jumpHeld = false;
+  else if (act === 'attack') input.attackHeld = false;
   else input[act] = false;
 });
 
@@ -520,10 +575,12 @@ const player = {
   facing: 1, grounded: true,
   coyote: 0, buffer: 0,
   anim: 'idle', frame: 0, animTime: 0,
+  attackHits: null,            // enemies already struck by the current swing
 };
 
 let sprite = null;
 let idleSprite = null;
+let uppercutSprite = null;
 let tileAtlas = null;
 let groundMap = null;
 let props = null;
@@ -531,19 +588,63 @@ let enemies = [];
 let cameraX = 0;
 
 function buildEnemies() {
+  const base = { state: 'walk', vx: 0, vy: 0, jumpY: 0, downTimer: 0 };
   return [
-    { x: 980, y: 638, direction: 1, speed: 46, color: '#8f2438' },
-    { x: 1760, y: 684, direction: -1, speed: 58, color: '#315b8f' },
-    { x: 2860, y: 652, direction: 1, speed: 52, color: '#65438f' },
-    { x: 4180, y: 695, direction: -1, speed: 64, color: '#8a4b24' },
+    { x: 980, y: 638, direction: 1, speed: 46, color: '#8f2438', ...base },
+    { x: 1760, y: 684, direction: -1, speed: 58, color: '#315b8f', ...base },
+    { x: 2860, y: 652, direction: 1, speed: 52, color: '#65438f', ...base },
+    { x: 4180, y: 695, direction: -1, speed: 64, color: '#8a4b24', ...base },
   ];
+}
+
+function spriteFor(anim) {
+  if (anim === 'idle') return idleSprite;
+  if (anim === 'uppercut') return uppercutSprite;
+  return sprite;
 }
 
 /* --------------------------------------------------------------- update */
 
+// The uppercut deals damage only on frames the hits file marks active. Boxes
+// are already in draw space; mirror them around the foot anchor when flipped.
+function resolveUppercutHits() {
+  const boxes = uppercutSprite.hits?.get(player.frame);
+  if (!boxes) return;
+  const anchor = uppercutSprite.anchors[player.frame];
+  for (const hb of boxes) {
+    if (hb.active === false) continue;
+    const left = player.facing === UPPERCUT_SHEET.faces
+      ? player.x - anchor + hb.x
+      : player.x + anchor - hb.x - hb.w;
+    const top = player.y + player.jumpY - uppercutSprite.drawH + hb.y;
+    for (const enemy of enemies) {
+      if (enemy.state !== 'walk' || player.attackHits.has(enemy)) continue;
+      if (Math.abs(enemy.y - player.y) > 32) continue;   // must share the lane
+      const hitX = left < enemy.x + 30 && left + hb.w > enemy.x - 30;
+      const hitY = top < enemy.y && top + hb.h > enemy.y - 132;
+      if (hitX && hitY) {
+        player.attackHits.add(enemy);
+        enemy.state = 'hit';
+        enemy.vx = player.facing * (hb.knockback?.x ?? 220);
+        enemy.vy = hb.knockback?.y ?? -440;
+      }
+    }
+  }
+}
+
 function update(dt) {
-  const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  const depthDir = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+  let attacking = player.anim === 'uppercut';
+  if (input.attackPressed && player.grounded && !attacking) {
+    player.anim = 'uppercut';
+    player.animTime = 0;
+    player.frame = uppercutSprite.anims.uppercut.frames[0];
+    player.attackHits = new Set();
+    attacking = true;
+  }
+  input.attackPressed = false;
+
+  const dir = attacking ? 0 : (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  const depthDir = attacking ? 0 : (input.down ? 1 : 0) - (input.up ? 1 : 0);
   if (dir !== 0) {
     player.vx += dir * PLAYER.accel * dt;
     player.vx = Math.max(-PLAYER.maxSpeed, Math.min(PLAYER.maxSpeed, player.vx));
@@ -557,7 +658,7 @@ function update(dt) {
   player.buffer = input.jumpPressed ? PLAYER.jumpBuffer : Math.max(0, player.buffer - dt);
   input.jumpPressed = false;
 
-  if (player.buffer > 0 && player.coyote > 0) {
+  if (!attacking && player.buffer > 0 && player.coyote > 0) {
     player.vy = -PLAYER.jumpVel;
     player.grounded = false;
     player.coyote = 0;
@@ -583,25 +684,51 @@ function update(dt) {
     player.grounded = false;
   }
 
-  const moving = Math.abs(player.vx) > 12 || Math.abs(player.depthV) > 12;
-  const next = !player.grounded ? 'jump' : (moving ? 'walk' : 'idle');
-  if (next !== player.anim) { player.anim = next; player.frame = 0; player.animTime = 0; }
+  if (!attacking) {
+    const moving = Math.abs(player.vx) > 12 || Math.abs(player.depthV) > 12;
+    const next = !player.grounded ? 'jump' : (moving ? 'walk' : 'idle');
+    if (next !== player.anim) { player.anim = next; player.frame = 0; player.animTime = 0; }
+  }
 
-  const animationSprite = player.anim === 'idle' ? idleSprite : sprite;
+  const animationSprite = spriteFor(player.anim);
   const spec = animationSprite.anims[player.anim];
   const rate = player.anim === 'walk'
     ? spec.fps * Math.max(0.45, Math.abs(player.vx) / PLAYER.maxSpeed, Math.abs(player.depthV) / PLAYER.depthSpeed)
     : spec.fps;
   player.animTime += dt * rate;
-  player.frame = spec.frames[Math.floor(player.animTime) % spec.frames.length];
+  const step = Math.floor(player.animTime);
+  if (spec.loop === false && step >= spec.frames.length) {
+    // one-shot animation (the uppercut) finished — settle back to idle
+    player.anim = 'idle';
+    player.frame = idleSprite.anims.idle.frames[0];
+    player.animTime = 0;
+    player.attackHits = null;
+  } else {
+    player.frame = spec.frames[step % spec.frames.length];
+    if (player.anim === 'uppercut') resolveUppercutHits();
+  }
 
   const target = player.x - VIEW_W * 0.42;
   cameraX += (target - cameraX) * Math.min(1, dt * 6);
   cameraX = Math.max(0, Math.min(WORLD_W - VIEW_W, cameraX));
 
   for (const enemy of enemies) {
-    enemy.x += enemy.direction * enemy.speed * dt;
-    if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
+    if (enemy.state === 'hit') {           // sailing back from the blow
+      enemy.x += enemy.vx * dt;
+      enemy.jumpY += enemy.vy * dt;
+      enemy.vy += 2200 * dt;
+      if (enemy.jumpY >= 0) {
+        enemy.jumpY = 0;
+        enemy.state = 'down';
+        enemy.downTimer = 1.6;
+      }
+    } else if (enemy.state === 'down') {   // KO'd on the tarmac, then back up
+      enemy.downTimer -= dt;
+      if (enemy.downTimer <= 0) enemy.state = 'walk';
+    } else {
+      enemy.x += enemy.direction * enemy.speed * dt;
+      if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
+    }
   }
 }
 
@@ -672,7 +799,7 @@ function drawStreet() {
 }
 
 function drawPlayer() {
-  const animationSprite = player.anim === 'idle' ? idleSprite : sprite;
+  const animationSprite = spriteFor(player.anim);
   const { frames, anchors, drawW, drawH } = animationSprite;
   const frame = frames[player.frame];
   const anchor = anchors[player.frame];
@@ -689,28 +816,69 @@ function drawPlayer() {
   if (player.facing !== SHEET.faces) ctx.scale(-1, 1);
   ctx.drawImage(frame, -anchor, -drawH);
   ctx.restore();
+
+  if (window.__ror?.debugHitboxes && player.anim === 'uppercut') {
+    const boxes = animationSprite.hits?.get(player.frame) ?? [];
+    ctx.strokeStyle = '#ff3355';
+    ctx.lineWidth = 2;
+    for (const hb of boxes) {
+      const left = player.facing === UPPERCUT_SHEET.faces
+        ? screenX - anchor + hb.x
+        : screenX + anchor - hb.x - hb.w;
+      ctx.strokeRect(left, player.y + player.jumpY - drawH + hb.y, hb.w, hb.h);
+    }
+  }
 }
 
 function drawEnemy(enemy) {
   const screenX = enemy.x - cameraX;
-  if (screenX < -80 || screenX > VIEW_W + 80) return;
+  if (screenX < -100 || screenX > VIEW_W + 100) return;
   ctx.fillStyle = 'rgba(0,0,0,.28)';
   ctx.beginPath();
   ctx.ellipse(screenX, enemy.y + 5, 35, 9, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  if (enemy.state === 'down') {
+    // knocked out flat on the tarmac — comic and non-lethal, stars circling
+    ctx.fillStyle = enemy.color;
+    ctx.fillRect(screenX - 44, enemy.y - 24, 74, 20);
+    ctx.fillStyle = '#16191f';
+    ctx.fillRect(screenX - 44, enemy.y - 24, 20, 20);
+    ctx.fillStyle = '#e2b08b';
+    ctx.beginPath();
+    ctx.arc(screenX + 44, enemy.y - 16, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffd23f';
+    for (let i = 0; i < 3; i++) {
+      const a = enemy.downTimer * 5 + i * (Math.PI * 2 / 3);
+      ctx.beginPath();
+      ctx.arc(screenX + 44 + Math.cos(a) * 26, enemy.y - 42 + Math.sin(a) * 7, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+
+  const y = enemy.y + enemy.jumpY;
+  ctx.save();
+  if (enemy.state === 'hit') {             // tilt backwards while airborne
+    ctx.translate(screenX, y - 60);
+    ctx.rotate(Math.sign(enemy.vx || 1) * 0.4);
+    ctx.translate(-screenX, -(y - 60));
+  }
   ctx.fillStyle = enemy.color;
-  ctx.fillRect(screenX - 27, enemy.y - 92, 54, 72);
+  ctx.fillRect(screenX - 27, y - 92, 54, 72);
   ctx.fillStyle = '#2b1914';
   ctx.beginPath();
-  ctx.arc(screenX, enemy.y - 108, 24, 0, Math.PI * 2);
+  ctx.arc(screenX, y - 108, 24, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#e2b08b';
   ctx.beginPath();
-  ctx.arc(screenX, enemy.y - 105, 20, 0, Math.PI * 2);
+  ctx.arc(screenX, y - 105, 20, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#16191f';
-  ctx.fillRect(screenX - 23, enemy.y - 20, 18, 20);
-  ctx.fillRect(screenX + 5, enemy.y - 20, 18, 20);
+  ctx.fillRect(screenX - 23, y - 20, 18, 20);
+  ctx.fillRect(screenX + 5, y - 20, 18, 20);
+  ctx.restore();
 }
 
 function drawActors() {
@@ -730,7 +898,7 @@ function drawHud() {
   ctx.fillText('RAGE OF RATELS — LAGOS STREET SLICE', 28, 22);
   ctx.fillStyle = '#cfd8ea';
   ctx.font = '15px system-ui, sans-serif';
-  ctx.fillText('Move: WASD or arrows   Jump: Space', 28, 48);
+  ctx.fillText('Move: WASD or arrows   Jump: Space   Uppercut: J / K', 28, 48);
 }
 
 function draw() {
@@ -748,6 +916,7 @@ function draw() {
 // dev hook (manual §3: development HUD/state must be inspectable)
 window.__ror = {
   player, input,
+  get sprites() { return { sprite, idleSprite, uppercutSprite }; },
   get enemies() { return enemies; },
   get cameraX() { return cameraX; },
   frames: 0,
@@ -766,9 +935,10 @@ function loop(ts) {
 
 (async function boot() {
   try {
-    [sprite, idleSprite] = await Promise.all([
+    [sprite, idleSprite, uppercutSprite] = await Promise.all([
       loadSpriteFrames(SHEET),
       loadSpriteFrames(IDLE_SHEET, 'idle'),
+      loadSpriteFrames(UPPERCUT_SHEET, 'uppercut'),
     ]);
     tileAtlas = buildTileAtlas();
     groundMap = buildGroundMap();

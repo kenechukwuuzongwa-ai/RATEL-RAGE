@@ -36,6 +36,30 @@
         dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }));
         for (let i = 0; i < 60; i++) s.step(DT);
         snap('idle1s');
+        const us = s.sprites.uppercutSprite;
+        const hb11 = us.hits.get(11)[0];
+        log.textContent += `upc: drawW=${us.drawW} drawH=${us.drawH} anchor11=${us.anchors[11].toFixed(0)} hb11=${hb11.x.toFixed(0)},${hb11.y.toFixed(0)} ${hb11.w.toFixed(0)}x${hb11.h.toFixed(0)}\n`;
+        // Uppercut: teleport into range of enemy 0 (same lane), swing, verify.
+        window.__ror.debugHitboxes = true;
+        const e = s.enemies[0];
+        const esnap = (tag) =>
+          log.textContent += `${tag}: enemy0 state=${e.state} x=${e.x.toFixed(0)} jumpY=${e.jumpY.toFixed(0)}\n`;
+        s.player.x = e.x - 110; s.player.y = e.y; s.player.vx = 0; s.player.facing = 1;
+        dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }));
+        for (let i = 0; i < 22; i++) s.step(DT);   // ~frame 11, strike active
+        snap('atk.37s'); esnap('atk.37s');
+        for (let i = 0; i < 38; i++) s.step(DT);   // 1s total: attack over, enemy landed
+        snap('atk1s'); esnap('atk1s');
+        for (let i = 0; i < 100; i++) s.step(DT);  // down timer expires
+        esnap('atk2.6s');
+        dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ' }));
+        // Leave the sim mid-strike on enemy 1 so the screenshot shows the
+        // uppercut pose, debug hitbox, and the enemy reacting.
+        const e1 = s.enemies[1];
+        s.player.x = e1.x - 100; s.player.y = e1.y; s.player.vx = 0; s.player.facing = 1;
+        dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }));
+        for (let i = 0; i < 26; i++) s.step(DT);
+        snap('atk2.43s'); log.textContent += `enemy1: state=${e1.state} jumpY=${e1.jumpY.toFixed(0)}\n`;
       }, 800);
     });
   </script>

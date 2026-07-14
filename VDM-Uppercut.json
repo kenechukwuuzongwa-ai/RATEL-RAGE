@@ -1,0 +1,66 @@
+{
+  "generatedBy": "Hand-authored in Sorceress Sprite Analyzer manifest format (no analyzer export existed for this sheet; ASSETS/sprite_sheets.json has combatFiles: 0). Replace with a real analyzer export when available.",
+  "spriteCount": 1,
+  "combatFiles": 1,
+  "sprites": [
+    {
+      "sprite": "VDM-Uppercut",
+      "image": "VDM-Uppercut.png",
+      "frameWidth": 1024,
+      "frameHeight": 836,
+      "sheet": {
+        "cols": 6,
+        "rows": 5,
+        "frames": 30,
+        "imageWidth": 6144,
+        "imageHeight": 4180
+      },
+      "combat": "VDM-Uppercut.hits.json",
+      "defaultAnimation": {
+        "start": 0,
+        "end": 26,
+        "fps": 30,
+        "loop": false
+      },
+      "animation": {
+        "phases": [],
+        "sections": [
+          {
+            "role": "custom",
+            "name": "uppercut windup",
+            "description": "Dark Ratel coils into the stance before the rising blow",
+            "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            "fps": 30,
+            "loop": false,
+            "pingPong": false,
+            "reverse": false,
+            "playback": "plays once"
+          },
+          {
+            "role": "custom",
+            "name": "uppercut strike",
+            "description": "the rising blow — the damage frames, see VDM-Uppercut.hits.json",
+            "frames": [9, 10, 11, 12, 13, 14],
+            "fps": 30,
+            "loop": false,
+            "pingPong": false,
+            "reverse": false,
+            "playback": "plays once"
+          },
+          {
+            "role": "custom",
+            "name": "uppercut recovery",
+            "description": "arm held extended then settles back to stance",
+            "frames": [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26],
+            "fps": 30,
+            "loop": false,
+            "pingPong": false,
+            "reverse": false,
+            "playback": "plays once"
+          }
+        ]
+      },
+      "note": "6x5 grid but only frames 0-26 are drawn; grid cells 27-29 are empty and excluded from defaultAnimation."
+    }
+  ]
+}
