@@ -1,16 +1,16 @@
 {
   "name": "sorceress_generate_sound_effect",
-  "description": "Generate a sound effect from a text description (e.g. 'sword unsheathing', '8-bit coin pickup', 'rain ambience') and save the mp3 into the project (default assets/sorceress/audio). Flat 3 credits, charged to the API key owner only on success. Waits for completion and returns the saved file path.",
+  "description": "Generate a sound effect from a text description (e.g. 'sword unsheathing', '8-bit coin pickup', 'rain ambience') with BytePlus Seed Audio 1.0 and save the mp3 into the project (default assets/sorceress/audio). Billed at 1 credit per second of finished audio (min 1), charged to the API key owner only on success. Waits for completion and returns the saved file path.",
   "input_schema": {
     "type": "object",
     "properties": {
       "prompt": {
         "type": "string",
-        "description": "Description of the sound effect. Max 500 chars."
+        "description": "Description of the sound effect. Max 1800 chars."
       },
-      "loop": {
-        "type": "boolean",
-        "description": "Generate a seamlessly loopable sound (e.g. ambience). Default false."
+      "targetDuration": {
+        "type": "number",
+        "description": "Approximate length in seconds (1-120). Default 3. Billed 1 credit per second of finished audio."
       },
       "save_dir": {
         "type": "string",

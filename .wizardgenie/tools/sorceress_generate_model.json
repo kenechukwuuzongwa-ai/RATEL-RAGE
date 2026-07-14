@@ -1,0 +1,39 @@
+{
+  "name": "sorceress_generate_model",
+  "description": "Generate a 3D model (GLB) from an image or a text prompt and save it into the project (default assets/sorceress/models). Models: 'hunyuan3d-3.1' (image-to-3D only), 'tripo-v3.1' and 'meshy-6' (text- OR image-to-3D). For image-to-3D, FIRST create a reference image with sorceress_generate_image, then pass that image's URL as imageUrl here. Credits are charged to the API key owner only on success; cost varies by model/mode/options (Hunyuan ~30, Tripo ~45-50, Meshy ~45). Call sorceress_list_tools for exact costs. Waits for completion and returns the saved .glb path.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "model": {
+        "type": "string",
+        "description": "One of: 'hunyuan3d-3.1' (image-to-3D only), 'tripo-v3.1', 'meshy-6'."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "Text description for text-to-3D (tripo-v3.1 / meshy-6 only)."
+      },
+      "imageUrl": {
+        "type": "string",
+        "description": "https image URL for image-to-3D (required for hunyuan3d-3.1). Use a URL returned by sorceress_generate_image."
+      },
+      "imageUrls": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Multiple https image URLs for multi-view (tripo-v3.1 / meshy-6). Up to 4, ordered front, left, back, right."
+      },
+      "params": {
+        "type": "object",
+        "description": "Model-specific options that can affect cost (e.g. Meshy {\"should_texture\":true,\"should_remesh\":false}; Tripo {\"texture\":\"HD\",\"quad\":false})."
+      },
+      "save_dir": {
+        "type": "string",
+        "description": "Optional project-relative folder (default \"assets/sorceress/models\")."
+      }
+    },
+    "required": [
+      "model"
+    ]
+  }
+}
