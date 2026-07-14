@@ -57,7 +57,9 @@
         // uppercut pose, debug hitbox, and the enemy reacting.
         const e1 = s.enemies[1];
         s.player.x = e1.x - 100; s.player.y = e1.y; s.player.vx = 0; s.player.facing = 1;
-        dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }));
+        // this swing comes from the right mouse button
+        document.getElementById('game')
+          .dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
         for (let i = 0; i < 26; i++) s.step(DT);
         snap('atk2.43s'); log.textContent += `enemy1: state=${e1.state} jumpY=${e1.jumpY.toFixed(0)}\n`;
       }, 800);

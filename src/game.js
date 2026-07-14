@@ -570,6 +570,15 @@ window.addEventListener('keyup', (e) => {
   else input[act] = false;
 });
 
+// Right mouse button throws the uppercut (mouse aiming comes later).
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) {
+    e.preventDefault();
+    input.attackPressed = true;
+  }
+});
+
 const player = {
   x: 320, y: GROUND_Y, vx: 0, depthV: 0, jumpY: 0, vy: 0,
   facing: 1, grounded: true,
@@ -898,7 +907,7 @@ function drawHud() {
   ctx.fillText('RAGE OF RATELS — LAGOS STREET SLICE', 28, 22);
   ctx.fillStyle = '#cfd8ea';
   ctx.font = '15px system-ui, sans-serif';
-  ctx.fillText('Move: WASD or arrows   Jump: Space   Uppercut: J / K', 28, 48);
+  ctx.fillText('Move: WASD or arrows   Jump: Space   Uppercut: right-click (or J / K)', 28, 48);
 }
 
 function draw() {
