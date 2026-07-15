@@ -21,6 +21,13 @@
         const s = window.__ror;
         if (!s) { log.textContent = 'no hook'; return; }
         const DT = 1 / 60;
+        if (p.has('walkshot')) { // stop mid-stride for a visual check
+          dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' }));
+          const n = Number(p.get('walkshot')) || 100;
+          for (let i = 0; i < n; i++) s.step(DT);
+          log.textContent = `walkshot: anim=${s.player.anim} frame=${s.player.frame}`;
+          return;
+        }
         const snap = (tag) =>
           log.textContent += `${tag}: x=${s.player.x.toFixed(0)} y=${s.player.y.toFixed(0)} vx=${s.player.vx.toFixed(0)} vy=${s.player.vy.toFixed(0)} cam=${s.cameraX.toFixed(0)} anim=${s.player.anim} frame=${s.player.frame} grounded=${s.player.grounded} facing=${s.player.facing}\n`;
         snap('start');

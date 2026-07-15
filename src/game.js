@@ -1,6 +1,7 @@
 // Rage of Ratels — Lagos street side-scroller slice.
-// Player sprite: "VDM-Walk .png" (4x4 sheet). Street tiles are code-rendered
-// into an atlas at boot per the production manual (no external tile art).
+// Player walk: "Newwalksprite.png" (5x4 sheet, manifest-driven). Street tiles
+// are code-rendered into an atlas at boot per the production manual (no
+// external tile art).
 
 const VIEW_W = 1280;
 const VIEW_H = 720;
@@ -11,9 +12,9 @@ const LANE_BOTTOM = 700;
 const TILE = 64;
 
 const SHEET = {
-  src: 'VDM-Walk .png',
-  metaSrc: 'VDM-Walk.json',    // animation frames/fps come from here
-  cols: 4,                     // fallbacks if the JSON is missing
+  src: 'Newwalksprite.png',
+  metaSrc: 'Newwalksprite.json', // animation frames/fps come from here
+  cols: 5,                     // fallbacks if the JSON is missing
   rows: 4,
   faces: 1,                    // art faces right; flip when moving left
   drawH: 200,                  // character height on screen (opaque pixels)

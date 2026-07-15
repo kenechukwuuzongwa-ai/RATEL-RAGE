@@ -48,3 +48,14 @@
 - `tests/drive.html`: added a deterministic uppercut scenario (teleport into
   range, swing, assert enemy hit → down → recovered) plus a mid-strike
   screenshot state; `window.__ror.debugHitboxes = true` draws live hitboxes.
+
+## 2026-07-15 — New walk cycle (Newwalksprite sheet)
+
+- Swapped the player's walk cycle from `VDM-Walk .png` (4×4) to
+  `Newwalksprite.png` (5×4 grid, 512×418 frames). Animation is fully
+  manifest-driven from `Newwalksprite.json` (copied from ASSETS): 20-frame
+  loop, frames 0–19 at 27 fps per `defaultAnimation` — no sections defined.
+  Same load pipeline (background key-out, union-box crop, foot anchoring);
+  idle and uppercut sheets unchanged.
+- `tests/drive.html`: added a `?walkshot=N` mode that walks N fixed steps and
+  stops mid-stride for visual screenshot checks.
