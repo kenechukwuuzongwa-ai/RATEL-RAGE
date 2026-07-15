@@ -402,7 +402,12 @@ async function loadBuildings() {
     // trim to opaque pixels so the base sits flush on the pavement
     const bb = opaqueBBox(c);
     const t = makeCanvas(bb.maxX - bb.minX + 1, bb.maxY - bb.minY + 1);
-    t.getContext('2d').drawImage(c, -bb.minX, -bb.minY);
+    const tc = t.getContext('2d');
+    tc.drawImage(c, -bb.minX, -bb.minY);
+    // bake in harmattan haze so the block reads as distant
+    tc.globalCompositeOperation = 'source-atop';
+    tc.fillStyle = 'rgba(218, 209, 190, 0.38)';
+    tc.fillRect(0, 0, t.width, t.height);
     return t;
   }));
 }
@@ -522,18 +527,19 @@ function buildGroundMap() {
 
 function buildStreetProps(buildingImgs) {
   const rng = mulberry32(7);
-  // painted building cutouts, shuffled bag so the mix never repeats side by side
+  // painted building cutouts, shuffled bag so the mix never repeats side by
+  // side; scaled down because they sit a block behind the street
   const structures = [];
-  let x = 140;
+  let x = 60;
   let bag = [];
-  while (x < WORLD_W - 500) {
+  while (x < WORLD_W - 400) {
     if (!bag.length) bag = buildingImgs.map((_, i) => i).sort(() => rng() - 0.5);
     const idx = bag.pop();
     const img = buildingImgs[idx];
-    const s = 0.85 + rng() * 0.3;
+    const s = (0.85 + rng() * 0.3) * 0.72;
     const w = img.width * s;
     structures.push({ x, idx, w, h: img.height * s });
-    x += w + 40 + Math.floor(rng() * 180);
+    x += w + 24 + Math.floor(rng() * 140);
   }
 
   const poles = [];
@@ -821,13 +827,11 @@ function drawSky() {
 
 function drawSkyline() {
   const off = cameraX * 0.2;
-  ctx.fillStyle = 'rgba(94,110,128,.55)';
+  ctx.fillStyle = 'rgba(105,120,138,.35)'; // far towers, mostly eaten by haze
   for (const b of props.skyline) {
     const sx = ((b.x - off) % (WORLD_W * 0.35) + WORLD_W * 0.35) % (WORLD_W * 0.35) - 100;
     ctx.fillRect(sx, GROUND_Y - 120 - b.h, b.w, b.h + 60);
   }
-  ctx.fillStyle = 'rgba(232,202,160,.45)'; // haze over the skyline
-  ctx.fillRect(0, GROUND_Y - 220, VIEW_W, 170);
 }
 
 function drawSidewalkBand() {
@@ -853,14 +857,29 @@ function drawRoad() {
   }
 }
 
+// Distant building row: slower parallax than the street, feet on the far
+// side of the sidewalk, under a fog wash that thickens toward the ground.
+const BUILDING_PARALLAX = 0.75;
+const BUILDING_BASE = SIDEWALK_TOP - 8; // on the red-earth strip behind the walkway
+
+function drawBackdrop() {
+  const off = cameraX * BUILDING_PARALLAX;
+  for (const st of props.structures) {
+    const sx = st.x - off;
+    if (sx + st.w > -60 && sx < VIEW_W + 60) {
+      ctx.drawImage(buildingImgs[st.idx], sx, BUILDING_BASE - st.h, st.w, st.h);
+    }
+  }
+  const g = ctx.createLinearGradient(0, BUILDING_BASE - 460, 0, BUILDING_BASE);
+  g.addColorStop(0, 'rgba(226,214,192,0)');
+  g.addColorStop(1, 'rgba(226,214,192,.42)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VIEW_W, BUILDING_BASE);
+}
+
 function drawStreet() {
   ctx.save();
   ctx.translate(-cameraX, 0);
-  for (const st of props.structures) {
-    if (st.x + st.w > cameraX - 60 && st.x < cameraX + VIEW_W + 60) {
-      ctx.drawImage(buildingImgs[st.idx], st.x, GROUND_Y - 4 - st.h, st.w, st.h);
-    }
-  }
   for (const x of props.danfos) {
     if (x + 240 > cameraX && x < cameraX + VIEW_W) drawDanfo(x);
   }
@@ -977,6 +996,7 @@ function drawHud() {
 function draw() {
   drawSky();
   drawSkyline();
+  drawBackdrop();
   drawStreet();
   drawSidewalkBand();
   drawRoad();

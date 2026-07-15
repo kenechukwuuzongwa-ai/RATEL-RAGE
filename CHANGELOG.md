@@ -79,3 +79,17 @@
 - Street placement mixes the five cutouts in a shuffled bag with 0.85–1.15×
   scale variation and 40–220 px gaps; danfo buses moved to fixed positions.
   Buildings still render behind the power poles, sidewalk and road.
+
+## 2026-07-15 — Depth + fog for the building row
+
+- Pushed the painted buildings into the background: they now scroll at 0.75×
+  camera speed in their own backdrop layer, are scaled to 0.72× of their
+  former size, and stand on the red-earth strip behind the sidewalk
+  (BUILDING_BASE) instead of the kerb line.
+- Fog: a harmattan haze tint (rgba 218,209,190 @ .38) is baked into each
+  cutout at load, plus a per-frame vertical fog gradient over the backdrop
+  that thickens toward the buildings' bases. Poles, wires, danfos, road and
+  actors stay unfogged in front for depth contrast.
+- Replaced the old hard-edged haze band with the gradient and softened the
+  far parallax skyline boxes to a fainter blue-gray so all three distance
+  layers (skyline → buildings → street) read as receding planes.
