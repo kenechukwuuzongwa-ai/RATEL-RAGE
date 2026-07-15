@@ -571,10 +571,10 @@ window.addEventListener('keyup', (e) => {
   else input[act] = false;
 });
 
-// Right mouse button throws the uppercut (mouse aiming comes later).
+// Either mouse button throws the uppercut (it's the only attack for now).
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 2) {
+  if (e.button === 0 || e.button === 2) {
     e.preventDefault();
     input.attackPressed = true;
   }
@@ -908,7 +908,7 @@ function drawHud() {
   ctx.fillText('RAGE OF RATELS — LAGOS STREET SLICE', 28, 22);
   ctx.fillStyle = '#cfd8ea';
   ctx.font = '15px system-ui, sans-serif';
-  ctx.fillText('Move: WASD or arrows   Jump: Space   Uppercut: right-click (or J / K)', 28, 48);
+  ctx.fillText('Move: WASD or arrows   Jump: Space   Uppercut: mouse click (or J / K)', 28, 48);
 }
 
 function draw() {
