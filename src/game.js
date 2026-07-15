@@ -88,8 +88,9 @@ function makeCanvas(w, h) {
 /* ------------------------------------------------------- sprite loading */
 
 // Remove an opaque uniform background (if any) by flood-filling inward from
-// the frame border. Tight tolerance so the dark character outline survives.
-function keyOutBackground(frame) {
+// the frame border. Tight default tolerance so dark outlines survive; keyed
+// JPEG paper backgrounds need a looser one.
+function keyOutBackground(frame, tol = 25) {
   const { width: w, height: h } = frame;
   const fctx = frame.getContext('2d');
   const data = fctx.getImageData(0, 0, w, h);
@@ -98,7 +99,7 @@ function keyOutBackground(frame) {
   const corner = [px[0], px[1], px[2], px[3]];
   if (corner[3] < 16) return; // already transparent
 
-  const TOL2 = 25 * 25;
+  const TOL2 = tol * tol;
   const isBg = (i) => {
     if (px[i + 3] === 0) return false;
     const dr = px[i] - corner[0], dg = px[i + 1] - corner[1], db = px[i + 2] - corner[2];
@@ -287,6 +288,125 @@ async function loadSpriteFrames(config, animationName = 'walk') {
   return { frames, anchors: frames.map(footAnchorX), drawW, drawH, anims, hits };
 }
 
+/* ---------------------------------------------------- building cutouts */
+
+// Paper-background remover for the building paintings. A plain border flood
+// fill stalls at thin drawn wires, leaving sealed-off background pockets, so:
+// flood a coarse 1/8-scale copy (wires average away there, pockets reconnect
+// to the border), then at full scale erase pixels that are BOTH inside the
+// coarse background region AND close to the paper colour — wires and painted
+// white walls fail one of the two tests and survive.
+function keyOutPaper(frame, tol) {
+  const { width: w, height: h } = frame;
+  const fctx = frame.getContext('2d');
+  const data = fctx.getImageData(0, 0, w, h);
+  const px = data.data;
+  const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4];
+  const bg = [0, 1, 2].map((c) => corners.reduce((s, i) => s + px[i + c], 0) / 4);
+  const dist2 = (i) => {
+    const dr = px[i] - bg[0], dg = px[i + 1] - bg[1], db = px[i + 2] - bg[2];
+    return dr * dr + dg * dg + db * db;
+  };
+
+  const S = 8;
+  const cw = Math.max(8, Math.ceil(w / S));
+  const ch = Math.max(8, Math.ceil(h / S));
+  const coarse = makeCanvas(cw, ch);
+  const cc = coarse.getContext('2d');
+  cc.imageSmoothingEnabled = true;
+  cc.drawImage(frame, 0, 0, cw, ch);
+  const cpx = cc.getImageData(0, 0, cw, ch).data;
+  const cTol2 = (tol * 1.5) * (tol * 1.5);
+  const isBgCell = (ci) => {
+    const i = ci * 4;
+    const dr = cpx[i] - bg[0], dg = cpx[i + 1] - bg[1], db = cpx[i + 2] - bg[2];
+    return dr * dr + dg * dg + db * db < cTol2;
+  };
+  const mask = new Uint8Array(cw * ch);
+  const stack = [];
+  for (let x = 0; x < cw; x++) stack.push(x, 0, x, ch - 1);
+  for (let y = 0; y < ch; y++) stack.push(0, y, cw - 1, y);
+  while (stack.length) {
+    const y = stack.pop(), x = stack.pop();
+    if (x < 0 || y < 0 || x >= cw || y >= ch) continue;
+    const ci = y * cw + x;
+    if (mask[ci]) continue;
+    if (!isBgCell(ci)) continue;
+    mask[ci] = 1;
+    stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+  }
+
+  // Dilate the mask so boundary cells (mixed wire + paper) are candidates
+  // too; the per-pixel colour test below still protects the artwork.
+  for (let pass = 0; pass < 2; pass++) {
+    const grown = mask.slice();
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const ci = y * cw + x;
+        if (mask[ci]) continue;
+        if ((x > 0 && mask[ci - 1]) || (x < cw - 1 && mask[ci + 1]) ||
+            (y > 0 && mask[ci - cw]) || (y < ch - 1 && mask[ci + cw])) grown[ci] = 1;
+      }
+    }
+    mask.set(grown);
+  }
+
+  const TOL2 = tol * tol;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ci = Math.min(ch - 1, (y / S) | 0) * cw + Math.min(cw - 1, (x / S) | 0);
+      if (!mask[ci]) continue;
+      const i = (y * w + x) * 4;
+      if (dist2(i) < TOL2) px[i + 3] = 0;
+    }
+  }
+  fctx.putImageData(data, 0, 0);
+}
+
+// Buildings come from painted source images (buildings/buildings.json). Two
+// boundary styles: a crop rect + flood-fill key for uniform paper
+// backgrounds, or a cutout polygon for images whose background is a scene.
+async function loadBuildings() {
+  const cfg = await fetch(new URL('../buildings/buildings.json', import.meta.url))
+    .then((r) => r.json());
+  return Promise.all(cfg.buildings.map(async (b) => {
+    const img = await loadImage(b.src);
+    let cx, cy, cw, ch;
+    if (b.polygon) {
+      const xs = b.polygon.map((p) => p[0]);
+      const ys = b.polygon.map((p) => p[1]);
+      cx = Math.min(...xs); cy = Math.min(...ys);
+      cw = Math.max(...xs) - cx; ch = Math.max(...ys) - cy;
+    } else {
+      ({ x: cx, y: cy, w: cw, h: ch } = b.crop);
+    }
+    const scale = b.drawH / ch;
+    const c = makeCanvas(Math.max(1, Math.round(cw * scale)), b.drawH);
+    const cc = c.getContext('2d');
+    cc.imageSmoothingEnabled = true;
+    cc.imageSmoothingQuality = 'high';
+    if (b.polygon) {
+      cc.save();
+      cc.scale(scale, scale);
+      cc.beginPath();
+      b.polygon.forEach(([px, py], i) =>
+        i ? cc.lineTo(px - cx, py - cy) : cc.moveTo(px - cx, py - cy));
+      cc.closePath();
+      cc.clip();
+      cc.drawImage(img, -cx, -cy);
+      cc.restore();
+    } else {
+      cc.drawImage(img, cx, cy, cw, ch, 0, 0, c.width, c.height);
+      keyOutPaper(c, b.key?.tol ?? 30);
+    }
+    // trim to opaque pixels so the base sits flush on the pavement
+    const bb = opaqueBBox(c);
+    const t = makeCanvas(bb.maxX - bb.minX + 1, bb.maxY - bb.minY + 1);
+    t.getContext('2d').drawImage(c, -bb.minX, -bb.minY);
+    return t;
+  }));
+}
+
 /* ------------------------------------------------- Lagos street tileset */
 
 // Ground tiles are painted once into an atlas, then the level composes them.
@@ -400,96 +520,36 @@ function buildGroundMap() {
 
 /* ------------------------------------------------ street scenery layers */
 
-const SIGN_NAMES = [
-  ['MAMA NKECHI BUKA', '#f4e04d', '#7a1f1f'],
-  ['DE LAGOS BARBERS', '#ffffff', '#144d8a'],
-  ['POS • RECHARGE CARD', '#ffe45e', '#111111'],
-  ['SUYA SPOT', '#ffd23f', '#8a2b14'],
-  ['VULCANIZER', '#e8e8e8', '#20242c'],
-  ['CHOP LIFE RESTAURANT', '#ffffff', '#0d6b3f'],
-  ['OK TAILORS', '#111111', '#e8c33a'],
-  ['NAIJA KIOSK', '#ffffff', '#5a2d82'],
-];
-
-const SHOP_COLORS = ['#c94f3d', '#2f7fb8', '#3f9d5a', '#c78a2b', '#7a4fa3', '#b8542f', '#2d8f86'];
-
-function buildStreetProps() {
+function buildStreetProps(buildingImgs) {
   const rng = mulberry32(7);
-  const shops = [];
-  let x = 240;
-  let sign = 0;
+  // painted building cutouts, shuffled bag so the mix never repeats side by side
+  const structures = [];
+  let x = 140;
+  let bag = [];
   while (x < WORLD_W - 500) {
-    const w = 260 + Math.floor(rng() * 140);
-    shops.push({
-      x, w,
-      h: 200 + Math.floor(rng() * 70),
-      color: SHOP_COLORS[Math.floor(rng() * SHOP_COLORS.length)],
-      sign: SIGN_NAMES[sign++ % SIGN_NAMES.length],
-      awning: rng() < 0.5,
-    });
-    x += w + 60 + Math.floor(rng() * 220);
+    if (!bag.length) bag = buildingImgs.map((_, i) => i).sort(() => rng() - 0.5);
+    const idx = bag.pop();
+    const img = buildingImgs[idx];
+    const s = 0.85 + rng() * 0.3;
+    const w = img.width * s;
+    structures.push({ x, idx, w, h: img.height * s });
+    x += w + 40 + Math.floor(rng() * 180);
   }
 
   const poles = [];
   for (let px = 160; px < WORLD_W; px += 620) poles.push(px);
 
-  const danfos = [3, 8].map((i) => shops[Math.min(i, shops.length - 1)])
-    .map((s) => s.x + s.w + 6);
+  const danfos = [1780, 4260];
 
   const skyline = [];
   const srng = mulberry32(11);
   for (let sx = 0; sx < WORLD_W * 0.35; sx += 90 + srng() * 120) {
     skyline.push({ x: sx, w: 70 + srng() * 90, h: 90 + srng() * 190 });
   }
-  return { shops, poles, danfos, skyline };
+  return { structures, poles, danfos, skyline };
 }
 
-const SIDEWALK_TOP = GROUND_Y - 56; // shops and poles stand on this band
-
-function drawShop(s) {
-  const baseY = GROUND_Y - 6;
-  const bodyTop = baseY - s.h;
-  ctx.fillStyle = s.color;
-  ctx.fillRect(s.x, bodyTop, s.w, s.h);
-  ctx.fillStyle = 'rgba(0,0,0,.18)';
-  ctx.fillRect(s.x, bodyTop, 12, s.h);
-
-  // corrugated zinc roof
-  ctx.fillStyle = '#9aa0a8';
-  ctx.fillRect(s.x - 12, bodyTop - 26, s.w + 24, 26);
-  ctx.strokeStyle = 'rgba(40,44,52,.5)';
-  ctx.lineWidth = 2;
-  for (let rx = s.x - 8; rx < s.x + s.w + 8; rx += 12) {
-    ctx.beginPath(); ctx.moveTo(rx, bodyTop - 24); ctx.lineTo(rx, bodyTop - 2); ctx.stroke();
-  }
-
-  // signboard
-  const [name, fg, bg] = s.sign;
-  ctx.fillStyle = bg;
-  ctx.fillRect(s.x + 8, bodyTop + 10, s.w - 16, 40);
-  ctx.fillStyle = fg;
-  ctx.font = '700 19px Impact, "Arial Narrow Bold", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(name, s.x + s.w / 2, bodyTop + 31, s.w - 28);
-
-  // door and window
-  ctx.fillStyle = '#241c14';
-  ctx.fillRect(s.x + 26, baseY - 110, 56, 110);
-  ctx.fillStyle = '#cfe3ef';
-  ctx.fillRect(s.x + s.w - 96, baseY - 104, 62, 52);
-  ctx.strokeStyle = '#20242c';
-  ctx.strokeRect(s.x + s.w - 96, baseY - 104, 62, 52);
-
-  if (s.awning) {
-    ctx.fillStyle = '#e8e2d2';
-    ctx.fillRect(s.x + s.w - 112, baseY - 118, 94, 12);
-    ctx.fillStyle = s.color === '#c94f3d' ? '#2f7fb8' : '#c94f3d';
-    for (let ax = s.x + s.w - 112; ax < s.x + s.w - 22; ax += 24) {
-      ctx.fillRect(ax, baseY - 118, 12, 12);
-    }
-  }
-}
+const SIDEWALK_TOP = GROUND_Y - 56; // buildings and poles stand on this band
 
 function drawDanfo(x) {
   const y = GROUND_Y - 4;
@@ -592,6 +652,7 @@ let sprite = null;
 let idleSprite = null;
 let uppercutSprite = null;
 let tileAtlas = null;
+let buildingImgs = null;
 let groundMap = null;
 let props = null;
 let enemies = [];
@@ -795,8 +856,10 @@ function drawRoad() {
 function drawStreet() {
   ctx.save();
   ctx.translate(-cameraX, 0);
-  for (const s of props.shops) {
-    if (s.x + s.w > cameraX - 50 && s.x < cameraX + VIEW_W + 50) drawShop(s);
+  for (const st of props.structures) {
+    if (st.x + st.w > cameraX - 60 && st.x < cameraX + VIEW_W + 60) {
+      ctx.drawImage(buildingImgs[st.idx], st.x, GROUND_Y - 4 - st.h, st.w, st.h);
+    }
   }
   for (const x of props.danfos) {
     if (x + 240 > cameraX && x < cameraX + VIEW_W) drawDanfo(x);
@@ -945,14 +1008,15 @@ function loop(ts) {
 
 (async function boot() {
   try {
-    [sprite, idleSprite, uppercutSprite] = await Promise.all([
+    [sprite, idleSprite, uppercutSprite, buildingImgs] = await Promise.all([
       loadSpriteFrames(SHEET),
       loadSpriteFrames(IDLE_SHEET, 'idle'),
       loadSpriteFrames(UPPERCUT_SHEET, 'uppercut'),
+      loadBuildings(),
     ]);
     tileAtlas = buildTileAtlas();
     groundMap = buildGroundMap();
-    props = buildStreetProps();
+    props = buildStreetProps(buildingImgs);
     enemies = buildEnemies();
     loadingEl.classList.add('hidden');
     canvas.focus();

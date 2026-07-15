@@ -1,0 +1,100 @@
+{
+  "note": "Street building cutouts. crop = source-pixel rect bounding the building (excludes paint splatter, faint background washes, watermarks). key.tol = flood-fill tolerance for removing the uniform paper background from the frame border inward. polygon (source pixels) is used instead for images whose background is a full scene: everything outside the outline is discarded. drawH = on-screen height before per-placement scale variation.",
+  "buildings": [
+    {
+      "id": "shanty_tower",
+      "src": "buildings/shanty1.jpg",
+      "crop": {
+        "x": 36,
+        "y": 0,
+        "w": 674,
+        "h": 714
+      },
+      "key": {
+        "tol": 46
+      },
+      "drawH": 430
+    },
+    {
+      "id": "stacked_house",
+      "src": "buildings/shanty2.jpg",
+      "crop": {
+        "x": 64,
+        "y": 48,
+        "w": 628,
+        "h": 872
+      },
+      "key": {
+        "tol": 40
+      },
+      "drawH": 470
+    },
+    {
+      "id": "corner_poles",
+      "src": "buildings/corner1.jpg",
+      "crop": {
+        "x": 12,
+        "y": 20,
+        "w": 716,
+        "h": 702
+      },
+      "key": {
+        "tol": 40
+      },
+      "drawH": 440
+    },
+    {
+      "id": "corner_red",
+      "src": "buildings/corner2.jpg",
+      "crop": {
+        "x": 28,
+        "y": 6,
+        "w": 700,
+        "h": 710
+      },
+      "key": {
+        "tol": 40
+      },
+      "drawH": 440
+    },
+    {
+      "id": "tenement",
+      "src": "buildings/tenement.png",
+      "polygon": [
+        [
+          339,
+          130
+        ],
+        [
+          933,
+          130
+        ],
+        [
+          933,
+          913
+        ],
+        [
+          971,
+          913
+        ],
+        [
+          971,
+          1840
+        ],
+        [
+          332,
+          1840
+        ],
+        [
+          332,
+          918
+        ],
+        [
+          339,
+          918
+        ]
+      ],
+      "drawH": 600
+    }
+  ]
+}

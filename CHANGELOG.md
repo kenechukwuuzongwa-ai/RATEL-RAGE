@@ -59,3 +59,23 @@
   idle and uppercut sheets unchanged.
 - `tests/drive.html`: added a `?walkshot=N` mode that walks N fixed steps and
   stops mid-stride for visual screenshot checks.
+
+## 2026-07-15 — Painted building backdrops (BUILDINGS folder)
+
+- Replaced the code-drawn shop buildings (drawShop, SIGN_NAMES, SHOP_COLORS)
+  with the five painted buildings from `../BUILDINGS`, copied to
+  `buildings/` as shanty1/shanty2/corner1/corner2 (.jpg) and tenement.png.
+- Background removal is data-driven from `buildings/buildings.json`. Each
+  entry defines its boundary: a source-pixel crop rect + paper-key tolerance
+  for the four watercolor pieces (excludes splatter and background washes),
+  or a cutout polygon for tenement.png, whose background is a full city
+  scene (the polygon also excludes the bottom watermark).
+- New `keyOutPaper()` removes the paper backgrounds: a border flood fill on a
+  1/8-scale copy finds the background region (thin drawn wires vanish at that
+  scale, so pockets they seal off reconnect to the border), the mask is
+  dilated 2 cells, then full-res pixels are erased only when inside the mask
+  AND within colour tolerance of the paper — preserving wires and painted
+  white walls.
+- Street placement mixes the five cutouts in a shuffled bag with 0.85–1.15×
+  scale variation and 40–220 px gaps; danfo buses moved to fixed positions.
+  Buildings still render behind the power poles, sidewalk and road.
