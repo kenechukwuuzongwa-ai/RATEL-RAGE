@@ -103,3 +103,16 @@
   the world, 0.7–0.82× scale, drawn at 85% alpha inside the parallax
   backdrop under the fog gradient — wheels hidden behind the walkway.
   drawDanfo() now takes an explicit baseline for reuse at any depth.
+
+## 2026-07-15 — Project structure + design docs (RageOfRatel/)
+
+- Created the formal project tree `RageOfRatel/` (docs, assets, sprites,
+  sounds, music, cutscenes, levels) per the production brief.
+- Wrote the six docs: instruction.md (working agreement: combat first,
+  arcade first, animation/combat rules), game_design.md, combat_design.md
+  (attack anatomy: startup/active/recovery, hit stop, knockback, sparks,
+  shake; enemy archetypes; boss phases), asset_pipeline.md (Sprite Analyzer
+  format + runtime pipeline as implemented), prompt_library.md, and
+  mvp_checklist.md (prioritized, with current implementation state checked).
+- Runtime stays at the repo root for now; migration into the tree is a
+  checklist item so the playable slice never breaks mid-reorg.
