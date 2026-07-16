@@ -93,3 +93,13 @@
 - Replaced the old hard-edged haze band with the gradient and softened the
   far parallax skyline boxes to a fainter blue-gray so all three distance
   layers (skyline → buildings → street) read as receding planes.
+
+## 2026-07-15 — Buildings grounded, moving danfo traffic
+
+- Lowered the building row ~2 scene metres (BUILDING_BASE now GROUND_Y − 10):
+  the raised walkway hides their feet so they read as planted, not floating.
+- Replaced the two parked danfos with six moving buses on the far lane
+  (BUS_LANE_Y): random speeds 130–240 px/s in both directions, wrap around
+  the world, 0.7–0.82× scale, drawn at 85% alpha inside the parallax
+  backdrop under the fog gradient — wheels hidden behind the walkway.
+  drawDanfo() now takes an explicit baseline for reuse at any depth.

@@ -545,20 +545,29 @@ function buildStreetProps(buildingImgs) {
   const poles = [];
   for (let px = 160; px < WORLD_W; px += 620) poles.push(px);
 
-  const danfos = [1780, 4260];
-
   const skyline = [];
   const srng = mulberry32(11);
   for (let sx = 0; sx < WORLD_W * 0.35; sx += 90 + srng() * 120) {
     skyline.push({ x: sx, w: 70 + srng() * 90, h: 90 + srng() * 190 });
   }
-  return { structures, poles, danfos, skyline };
+  return { structures, poles, skyline };
+}
+
+// danfo traffic on the far lane, both directions
+function buildBuses() {
+  const rng = mulberry32(23);
+  return Array.from({ length: 6 }, (_, i) => ({
+    x: 300 + i * (WORLD_W - 600) / 6 + rng() * 320,
+    dir: rng() < 0.5 ? -1 : 1,
+    speed: 130 + rng() * 110,
+    scale: 0.7 + rng() * 0.12,
+  }));
 }
 
 const SIDEWALK_TOP = GROUND_Y - 56; // buildings and poles stand on this band
 
-function drawDanfo(x) {
-  const y = GROUND_Y - 4;
+function drawDanfo(x, baseY) {
+  const y = baseY;
   ctx.fillStyle = '#e6b400';                       // Lagos danfo yellow
   ctx.beginPath();
   ctx.roundRect(x, y - 96, 220, 92, 10);
@@ -659,6 +668,7 @@ let idleSprite = null;
 let uppercutSprite = null;
 let tileAtlas = null;
 let buildingImgs = null;
+let buses = [];
 let groundMap = null;
 let props = null;
 let enemies = [];
@@ -789,6 +799,12 @@ function update(dt) {
   cameraX += (target - cameraX) * Math.min(1, dt * 6);
   cameraX = Math.max(0, Math.min(WORLD_W - VIEW_W, cameraX));
 
+  for (const bus of buses) {
+    bus.x += bus.dir * bus.speed * dt;
+    if (bus.x < -320) bus.x = WORLD_W + 300;
+    if (bus.x > WORLD_W + 320) bus.x = -300;
+  }
+
   for (const enemy of enemies) {
     if (enemy.state === 'hit') {           // sailing back from the blow
       enemy.x += enemy.vx * dt;
@@ -857,10 +873,12 @@ function drawRoad() {
   }
 }
 
-// Distant building row: slower parallax than the street, feet on the far
-// side of the sidewalk, under a fog wash that thickens toward the ground.
+// Distant building row: slower parallax than the street, under a fog wash
+// that thickens toward the ground. Bases sit ~2 m below the walkway top, so
+// the raised sidewalk hides their feet and they read as firmly planted.
 const BUILDING_PARALLAX = 0.75;
-const BUILDING_BASE = SIDEWALK_TOP - 8; // on the red-earth strip behind the walkway
+const BUILDING_BASE = GROUND_Y - 10;
+const BUS_LANE_Y = SIDEWALK_TOP + 12;   // far lane; wheels hide behind the walkway
 
 function drawBackdrop() {
   const off = cameraX * BUILDING_PARALLAX;
@@ -868,6 +886,18 @@ function drawBackdrop() {
     const sx = st.x - off;
     if (sx + st.w > -60 && sx < VIEW_W + 60) {
       ctx.drawImage(buildingImgs[st.idx], sx, BUILDING_BASE - st.h, st.w, st.h);
+    }
+  }
+  // danfo traffic on the far lane — nearer than the buildings, still faint
+  for (const bus of buses) {
+    const sx = bus.x - off;
+    if (sx > -280 && sx < VIEW_W + 60) {
+      ctx.save();
+      ctx.translate(sx, BUS_LANE_Y);
+      ctx.scale(bus.scale, bus.scale);
+      ctx.globalAlpha = 0.85;
+      drawDanfo(0, 0);
+      ctx.restore();
     }
   }
   const g = ctx.createLinearGradient(0, BUILDING_BASE - 460, 0, BUILDING_BASE);
@@ -880,9 +910,6 @@ function drawBackdrop() {
 function drawStreet() {
   ctx.save();
   ctx.translate(-cameraX, 0);
-  for (const x of props.danfos) {
-    if (x + 240 > cameraX && x < cameraX + VIEW_W) drawDanfo(x);
-  }
   for (let i = 0; i < props.poles.length; i++) {
     const x = props.poles[i];
     if (x > cameraX - 700 && x < cameraX + VIEW_W + 700) drawPole(x, props.poles[i + 1]);
@@ -1037,6 +1064,7 @@ function loop(ts) {
     tileAtlas = buildTileAtlas();
     groundMap = buildGroundMap();
     props = buildStreetProps(buildingImgs);
+    buses = buildBuses();
     enemies = buildEnemies();
     loadingEl.classList.add('hidden');
     canvas.focus();
