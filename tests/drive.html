@@ -21,6 +21,18 @@
         const s = window.__ror;
         if (!s) { log.textContent = 'no hook'; return; }
         const DT = 1 / 60;
+        if (p.has('enemywatch')) { // observe enemy anim/facing while patrolling and approached
+          const e = s.enemies[0];
+          const snapE = (tag) => log.textContent +=
+            `${tag}: state=${e.state} anim=${e.anim} frame=${e.frame} facing=${e.facing} dir=${e.direction} x=${e.x.toFixed(0)}\n`;
+          for (let i = 0; i < 20; i++) s.step(DT); snapE('t20');
+          for (let i = 0; i < 20; i++) s.step(DT); snapE('t40');
+          for (let i = 0; i < 20; i++) s.step(DT); snapE('t60');
+          s.player.x = e.x - 120; s.player.y = e.y;      // step into guard range
+          for (let i = 0; i < 10; i++) s.step(DT); snapE('near10');
+          for (let i = 0; i < 20; i++) s.step(DT); snapE('near30');
+          return;
+        }
         if (p.has('jumpshot')) { // walk, jump, freeze mid-air
           dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' }));
           for (let i = 0; i < 60; i++) s.step(DT);

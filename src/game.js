@@ -56,8 +56,8 @@ const GINGER_SHEET = {          // street enemy: idle/walk/hit sections in one s
   metaSrc: 'Ginger.json',
   cols: 9,
   rows: 9,
-  faces: -1,                   // art faces left
-  drawH: 185,
+  faces: 1,                    // art faces right
+  drawH: 205,
 };
 
 const WIZARD_SHEET = {          // second enemy type: walk-only sheet
@@ -65,8 +65,8 @@ const WIZARD_SHEET = {          // second enemy type: walk-only sheet
   metaSrc: 'EnemyWizard-Walk.json',
   cols: 6,
   rows: 6,
-  faces: -1,
-  drawH: 190,
+  faces: 1,                    // art faces right
+  drawH: 210,
 };
 
 const PLAYER = {
@@ -867,12 +867,25 @@ function update(dt) {
       enemy.downTimer -= dt;
       if (enemy.downTimer <= 0) enemy.state = 'walk';
     } else {
-      // guard up when the player is close, otherwise patrol
-      const near = Math.abs(player.x - enemy.x) < 170 && Math.abs(player.y - enemy.y) < 60;
-      enemy.state = near ? 'guard' : 'walk';
-      if (near) {
-        enemy.facing = Math.sign(player.x - enemy.x) || enemy.facing;
+      // seek: advance on the player when in sight, guard at punching range,
+      // patrol only when the player is far away
+      const dx = player.x - enemy.x;
+      const dy = player.y - enemy.y;
+      const inSight = Math.abs(dx) < 560 && Math.abs(dy) < 90;
+      if (inSight) {
+        enemy.facing = Math.sign(dx) || enemy.facing;
+        enemy.direction = enemy.facing;
+        if (Math.abs(dx) > 130 || Math.abs(dy) > 12) {
+          enemy.state = 'walk';
+          if (Math.abs(dx) > 130) enemy.x += Math.sign(dx) * enemy.speed * dt;
+          const step = enemy.speed * 0.6 * dt;
+          enemy.y = Math.max(LANE_TOP, Math.min(LANE_BOTTOM,
+            enemy.y + Math.max(-step, Math.min(step, dy))));
+        } else {
+          enemy.state = 'guard';
+        }
       } else {
+        enemy.state = 'walk';
         enemy.x += enemy.direction * enemy.speed * dt;
         enemy.facing = enemy.direction;
         if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;

@@ -139,3 +139,17 @@
 - Note: `Jump_2048x1676_sheet.png` (raw 8×8 export) and
   `Wizard_Walk_sheet_xi56.png` (duplicate) are unused; the game reads
   `Jump.png` + `Jump.json` and `EnemyWizard-Walk.png` + `.json`.
+
+## 2026-07-17 — Enemy facing, seek AI, size up
+
+- Both enemy sheets actually face RIGHT (confirmed via sheet close-ups);
+  flipped `faces` on GINGER_SHEET and WIZARD_SHEET — this was the wizard
+  moonwalk and the wrong-way guard stance.
+- Replaced decorative patrolling with seek AI: enemies in sight (Δx < 560,
+  same lane band) advance on the player — including across lanes — and
+  switch to guard at punching range (Δx ≤ 130); they only patrol when the
+  player is far. Ginger's planted-feet guard shuffle now always moves toward
+  the player, so it reads as an advance instead of a backwards slide.
+- Scaled enemies up: Ginger 185 → 205, wizard 190 → 210.
+- `tests/drive.html`: new `?enemywatch=1` mode logging enemy state/anim/
+  frame/facing over time; full sim re-verified (hit chain, getup re-seek).

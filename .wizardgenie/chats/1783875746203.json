@@ -215,5 +215,13 @@
   {
     "role": "user",
     "content": "enemy is sliding away from plyer and facingn wrong direction. enemy walk animation is not playing, also scale enemy size up a little."
+  },
+  {
+    "role": "assistant",
+    "content": "Let me diagnose all three with a live test before changing anything — I'll add an enemy-watch mode to the test page and grab close-ups of the sheets to double-check native facing:All three complaints are fixed — refresh **http://localhost:4174/** to see it:\n\n1. **Facing wrong direction** — the root cause was my misreading of the art: both the Ginger and wizard sheets natively face *right*, but I had configured them as left-facing. I confirmed with frame close-ups and flipped the `faces` value on both. This is also what made the wizard look like he was moonwalking.\n\n2. **Sliding away / walk not playing** — two things combined here. The diagnostic run showed the walk animation *was* technically playing, but Ginger's walk segment is a guard shuffle with planted feet, so an enemy patrolling *away* from you read as sliding backwards with no stride. The real fix was behavioral: enemies now **seek the player** — when you're within sight (Δx < 560 on a nearby lane) they advance toward you, including crossing lanes to reach yours, and raise their guard when they get to punching range. A guard-shuffle *toward* you is exactly how classic beat-em-up enemies move, so it now reads correctly. They only fall back to patrolling when you're far away, and after a knockdown they get up and come back for more (the sim log shows the enemy re-approaching after recovery).\n\n3. **Size** — Ginger scaled up 185 → 205 and the wizard 190 → 210, so they stand nearly eye-to-eye with Dark Ratel now.\n\nThe full deterministic sim still passes (uppercut hit chain against both enemy types, jump, movement), and I added a permanent `?enemywatch=1` diagnostic mode to the test page that logs enemy state/animation/facing over time — it'll make future AI issues much faster to pin down."
+  },
+  {
+    "role": "user",
+    "content": "rmove the wizard enemy"
   }
 ]
