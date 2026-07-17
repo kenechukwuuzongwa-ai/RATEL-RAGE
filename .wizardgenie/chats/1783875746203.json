@@ -268,5 +268,13 @@
   {
     "role": "user",
     "content": "Can  you create a very basic UI control with glassmorphism material with sliders and inputs so i can control character scales and props placement. Also i think characters overlap in same lane and causes glitch.  create some boundaries to prevent characters overlaping on same line/lane and glitching"
+  },
+  {
+    "role": "assistant",
+    "content": "Usage credits are required for this model."
+  },
+  {
+    "role": "user",
+    "content": "hi"
   }
 ]
