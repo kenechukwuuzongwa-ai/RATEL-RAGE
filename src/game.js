@@ -60,15 +60,6 @@ const GINGER_SHEET = {          // street enemy: idle/walk/hit sections in one s
   drawH: 205,
 };
 
-const WIZARD_SHEET = {          // second enemy type: walk-only sheet
-  src: 'EnemyWizard-Walk.png',
-  metaSrc: 'EnemyWizard-Walk.json',
-  cols: 6,
-  rows: 6,
-  faces: 1,                    // art faces right
-  drawH: 210,
-};
-
 const PLAYER = {
   maxSpeed: 340,
   accel: 2600,
@@ -698,7 +689,6 @@ let idleSprite = null;
 let uppercutSprite = null;
 let jumpSprite = null;
 let gingerSprite = null;
-let wizardSprite = null;
 let tileAtlas = null;
 let buildingImgs = null;
 let buses = [];
@@ -714,14 +704,14 @@ function buildEnemies() {
   };
   return [
     { x: 980, y: 638, direction: 1, speed: 46, kind: 'ginger', ...base },
-    { x: 1760, y: 684, direction: -1, speed: 58, kind: 'wizard', ...base },
+    { x: 1760, y: 684, direction: -1, speed: 58, kind: 'ginger', ...base },
     { x: 2860, y: 652, direction: 1, speed: 52, kind: 'ginger', ...base },
     { x: 4180, y: 695, direction: -1, speed: 64, kind: 'ginger', ...base },
   ];
 }
 
-function enemySprite(enemy) {
-  return enemy.kind === 'wizard' ? wizardSprite : gingerSprite;
+function enemySprite() {
+  return gingerSprite;
 }
 
 function spriteFor(anim) {
@@ -1036,7 +1026,7 @@ function drawEnemy(enemy) {
   const screenX = enemy.x - cameraX;
   if (screenX < -140 || screenX > VIEW_W + 140) return;
   const es = enemySprite(enemy);
-  const config = enemy.kind === 'wizard' ? WIZARD_SHEET : GINGER_SHEET;
+  const config = GINGER_SHEET;
   const frame = es.frames[enemy.frame];
   const anchor = es.anchors[enemy.frame];
   const flip = enemy.facing !== config.faces;
@@ -1129,14 +1119,13 @@ function loop(ts) {
 
 (async function boot() {
   try {
-    [sprite, idleSprite, uppercutSprite, jumpSprite, gingerSprite, wizardSprite, buildingImgs] =
+    [sprite, idleSprite, uppercutSprite, jumpSprite, gingerSprite, buildingImgs] =
       await Promise.all([
         loadSpriteFrames(SHEET),
         loadSpriteFrames(IDLE_SHEET, 'idle'),
         loadSpriteFrames(UPPERCUT_SHEET, 'uppercut'),
         loadSpriteFrames(JUMP_SHEET, 'jump'),
         loadSpriteFrames(GINGER_SHEET),
-        loadSpriteFrames(WIZARD_SHEET),
         loadBuildings(),
       ]);
     tileAtlas = buildTileAtlas();

@@ -153,3 +153,10 @@
 - Scaled enemies up: Ginger 185 → 205, wizard 190 → 210.
 - `tests/drive.html`: new `?enemywatch=1` mode logging enemy state/anim/
   frame/facing over time; full sim re-verified (hit chain, getup re-seek).
+
+## 2026-07-17 — Removed the wizard enemy
+
+- Removed the wizard enemy type: WIZARD_SHEET config, sprite load, and the
+  kind branch are gone; all four spawns are Ginger now. Deleted the derived
+  `EnemyWizard-Walk.png` / `.json` (the original `Wizard_Walk_sheet_*.png`
+  uploads remain untouched in the folder). Sim re-verified.
