@@ -81,6 +81,24 @@ const PLAYER = {
   depthSpeed: 190,
 };
 
+// Live-tunable render/placement values, driven by the on-screen dev panel.
+// Scales here are draw-time multipliers (cosmetic preview) — once a value
+// feels right, bake it into the sheet's drawH. Defaults reproduce the
+// shipped look exactly.
+const tune = {
+  playerScale: 1,
+  enemyScale: 1,
+  buildingScale: 1,
+  buildingBase: 0,             // px offset added to BUILDING_BASE (down = +)
+  buildingParallax: 0.75,
+  busLaneY: 576,               // SIDEWALK_TOP + 12
+  busScale: 1,
+  fog: 0.42,
+  laneSep: true,               // push overlapping bodies apart
+  laneGapX: 58,                // min horizontal spacing between two bodies
+  laneGapY: 30,                // min depth (lane) spacing — kills z-sort flicker
+};
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const loadingEl = document.getElementById('loading');
@@ -655,7 +673,13 @@ const KEYMAP = {
   KeyJ: 'attack', KeyK: 'attack',
 };
 
+function typingInPanel(e) {
+  const t = e.target;
+  return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON');
+}
+
 window.addEventListener('keydown', (e) => {
+  if (typingInPanel(e)) return;
   const act = KEYMAP[e.code];
   if (!act) return;
   e.preventDefault();
@@ -669,6 +693,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('keyup', (e) => {
+  if (typingInPanel(e)) return;
   const act = KEYMAP[e.code];
   if (!act) return;
   if (act === 'jump') input.jumpHeld = false;
@@ -768,6 +793,47 @@ function resolveUppercutHits() {
         enemy.state = 'hit';
         enemy.vx = player.facing * (hb.knockback?.x ?? 220);
         enemy.vy = hb.knockback?.y ?? -440;
+      }
+    }
+  }
+}
+
+const clampLane = (y) => Math.max(LANE_TOP, Math.min(LANE_BOTTOM, y));
+
+// Push overlapping bodies apart so no two actors share a spot (which causes
+// sprite overlap and z-sort flicker). Resolves along the axis of least
+// penetration: stacked actors separate into distinct lanes, side-by-side
+// actors separate horizontally. aMove/bMove split the correction (an
+// immovable actor like the player passes 0). Skips airborne/downed actors.
+function pushApart(a, b, aMove, bMove) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const penX = tune.laneGapX - Math.abs(dx);
+  const penY = tune.laneGapY - Math.abs(dy);
+  if (penX <= 0 || penY <= 0) return;
+  if (penX < penY) {
+    const s = (dx < 0 ? -1 : 1) * (penX + 0.5);
+    a.x -= s * aMove;
+    b.x += s * bMove;
+  } else {
+    const s = (dy < 0 ? -1 : 1) * (penY + 0.5);
+    a.y = clampLane(a.y - s * aMove);
+    b.y = clampLane(b.y + s * bMove);
+  }
+}
+
+function separateActors() {
+  if (!tune.laneSep) return;
+  const grounded = (e) => e.state === 'walk' || e.state === 'guard';
+  for (let pass = 0; pass < 2; pass++) {
+    for (const e of enemies) {
+      if (grounded(e)) pushApart(e, player, 1, 0); // player is immovable
+    }
+    for (let i = 0; i < enemies.length; i++) {
+      for (let j = i + 1; j < enemies.length; j++) {
+        if (grounded(enemies[i]) && grounded(enemies[j])) {
+          pushApart(enemies[i], enemies[j], 0.5, 0.5);
+        }
       }
     }
   }
@@ -935,6 +1001,8 @@ function update(dt) {
       ? spec.frames[Math.min(st, spec.frames.length - 1)]
       : spec.frames[st % spec.frames.length];
   }
+
+  separateActors();
 }
 
 /* ----------------------------------------------------------------- draw */
@@ -993,11 +1061,14 @@ const BUILDING_BASE = GROUND_Y - 10;
 const BUS_LANE_Y = SIDEWALK_TOP + 12;   // far lane; wheels hide behind the walkway
 
 function drawBackdrop() {
-  const off = cameraX * BUILDING_PARALLAX;
+  const off = cameraX * tune.buildingParallax;
+  const base = BUILDING_BASE + tune.buildingBase;
   for (const st of props.structures) {
     const sx = st.x - off;
-    if (sx + st.w > -60 && sx < VIEW_W + 60) {
-      ctx.drawImage(buildingImgs[st.idx], sx, BUILDING_BASE - st.h, st.w, st.h);
+    const w = st.w * tune.buildingScale;
+    const h = st.h * tune.buildingScale;
+    if (sx + w > -60 && sx < VIEW_W + 60) {
+      ctx.drawImage(buildingImgs[st.idx], sx, base - h, w, h);
     }
   }
   // danfo traffic on the far lane — nearer than the buildings, still faint
@@ -1005,18 +1076,18 @@ function drawBackdrop() {
     const sx = bus.x - off;
     if (sx > -280 && sx < VIEW_W + 60) {
       ctx.save();
-      ctx.translate(sx, BUS_LANE_Y);
-      ctx.scale(bus.scale, bus.scale);
+      ctx.translate(sx, tune.busLaneY);
+      ctx.scale(bus.scale * tune.busScale, bus.scale * tune.busScale);
       ctx.globalAlpha = 0.85;
       drawDanfo(0, 0);
       ctx.restore();
     }
   }
-  const g = ctx.createLinearGradient(0, BUILDING_BASE - 460, 0, BUILDING_BASE);
+  const g = ctx.createLinearGradient(0, base - 460, 0, base);
   g.addColorStop(0, 'rgba(226,214,192,0)');
-  g.addColorStop(1, 'rgba(226,214,192,.42)');
+  g.addColorStop(1, `rgba(226,214,192,${tune.fog})`);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, VIEW_W, BUILDING_BASE);
+  ctx.fillRect(0, 0, VIEW_W, base);
 }
 
 function drawStreet() {
@@ -1036,15 +1107,16 @@ function drawPlayer() {
   const anchor = anchors[player.frame];
   const screenX = player.x - cameraX;
 
+  const ps = tune.playerScale;
   ctx.fillStyle = 'rgba(0,0,0,.3)';
   ctx.beginPath();
   const squash = player.grounded ? 1 : Math.max(0.5, 1 + player.jumpY / 500);
-  ctx.ellipse(screenX, player.y + 6, drawW * 0.36 * squash, 11 * squash, 0, 0, Math.PI * 2);
+  ctx.ellipse(screenX, player.y + 6, drawW * 0.36 * ps * squash, 11 * squash, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
   ctx.translate(screenX, player.y + player.jumpY);
-  if (player.facing !== SHEET.faces) ctx.scale(-1, 1);
+  ctx.scale(player.facing !== SHEET.faces ? -ps : ps, ps);
   ctx.drawImage(frame, -anchor, -drawH);
   ctx.restore();
 
@@ -1070,9 +1142,10 @@ function drawEnemy(enemy) {
   const anchor = es.anchors[enemy.frame];
   const flip = enemy.facing !== config.faces;
 
+  const es2 = tune.enemyScale;
   ctx.fillStyle = 'rgba(0,0,0,.28)';
   ctx.beginPath();
-  ctx.ellipse(screenX, enemy.y + 5, es.drawW * 0.3, 9, 0, 0, Math.PI * 2);
+  ctx.ellipse(screenX, enemy.y + 5, es.drawW * 0.3 * es2, 9, 0, 0, Math.PI * 2);
   ctx.fill();
 
   if (enemy.state === 'down') {
@@ -1080,6 +1153,7 @@ function drawEnemy(enemy) {
     const side = -enemy.facing;            // fell away from the attacker
     ctx.save();
     ctx.translate(screenX, enemy.y - 16);
+    ctx.scale(es2, es2);
     ctx.rotate(side * Math.PI / 2 * 0.94);
     if (flip) ctx.scale(-1, 1);
     ctx.drawImage(frame, -anchor, -es.drawH + 16);
@@ -1097,6 +1171,7 @@ function drawEnemy(enemy) {
   const y = enemy.y + enemy.jumpY;
   ctx.save();
   ctx.translate(screenX, y);
+  ctx.scale(es2, es2);
   if (enemy.state === 'hit') ctx.rotate(Math.sign(enemy.vx || 1) * 0.35);
   if (flip) ctx.scale(-1, 1);
   ctx.drawImage(frame, -anchor, -es.drawH);
@@ -1104,9 +1179,14 @@ function drawEnemy(enemy) {
 }
 
 function drawActors() {
-  const actors = enemies.map((enemy) => ({ depth: enemy.y, draw: () => drawEnemy(enemy) }));
-  actors.push({ depth: player.y, draw: drawPlayer });
-  actors.sort((a, b) => a.depth - b.depth);
+  // Quantize depth into buckets and break ties by a stable id, so two actors
+  // at nearly-equal lane depth keep a fixed draw order (no per-frame flicker).
+  const actors = enemies.map((enemy, i) => ({ depth: enemy.y, tie: i, draw: () => drawEnemy(enemy) }));
+  actors.push({ depth: player.y, tie: 100, draw: drawPlayer });
+  actors.sort((a, b) => {
+    const da = Math.round(a.depth / 8), db = Math.round(b.depth / 8);
+    return da !== db ? da - db : a.tie - b.tie;
+  });
   for (const actor of actors) actor.draw();
 }
 
@@ -1138,13 +1218,130 @@ function draw() {
 
 // dev hook (manual §3: development HUD/state must be inspectable)
 window.__ror = {
-  player, input,
+  player, input, tune,
   get sprites() { return { sprite, idleSprite, uppercutSprite }; },
   get enemies() { return enemies; },
   get cameraX() { return cameraX; },
   frames: 0,
   step(dt) { update(dt); draw(); }, // deterministic tick for tests
 };
+
+/* --------------------------------------------------- dev tuning panel */
+
+// Glassmorphism control panel: live sliders + number inputs for character
+// scales and prop placement. Starts collapsed (a gear button) so it never
+// obstructs play or screenshots. Cosmetic scales are draw-time previews.
+function initDevPanel() {
+  const DEFAULTS = { ...tune };
+  const CONTROLS = [
+    { key: 'playerScale', label: 'Player scale', min: 0.3, max: 2.5, step: 0.01 },
+    { key: 'enemyScale', label: 'Enemy scale', min: 0.3, max: 2.5, step: 0.01 },
+    { key: 'buildingScale', label: 'Building scale', min: 0.4, max: 2, step: 0.01 },
+    { key: 'buildingBase', label: 'Building base Y', min: -200, max: 200, step: 1 },
+    { key: 'buildingParallax', label: 'Building parallax', min: 0.3, max: 1, step: 0.01 },
+    { key: 'busLaneY', label: 'Bus lane Y', min: 420, max: 640, step: 1 },
+    { key: 'busScale', label: 'Bus scale', min: 0.3, max: 1.5, step: 0.01 },
+    { key: 'fog', label: 'Fog density', min: 0, max: 0.9, step: 0.01 },
+    { key: 'laneGapX', label: 'Body gap X', min: 20, max: 120, step: 1 },
+    { key: 'laneGapY', label: 'Lane gap Y', min: 10, max: 80, step: 1 },
+  ];
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #ror-tune { position: fixed; top: 14px; right: 14px; z-index: 50;
+      font: 12px/1.4 system-ui, sans-serif; color: #eaf0ff; }
+    #ror-tune .gear { width: 40px; height: 40px; border-radius: 12px; cursor: pointer;
+      font-size: 18px; color: #eaf0ff; background: rgba(20,28,44,.45);
+      border: 1px solid rgba(255,255,255,.25); backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px); box-shadow: 0 6px 20px rgba(0,0,0,.35);
+      transition: transform .12s; }
+    #ror-tune .gear:hover { transform: rotate(45deg); }
+    #ror-tune .panel { margin-top: 8px; width: 268px; padding: 14px 14px 10px;
+      border-radius: 16px; background: rgba(18,24,38,.42);
+      border: 1px solid rgba(255,255,255,.22); backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      box-shadow: 0 10px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.15); }
+    #ror-tune .panel h3 { margin: 0 0 10px; font-size: 12px; letter-spacing: .12em;
+      text-transform: uppercase; color: #ffe45e; font-weight: 700; }
+    #ror-tune .row { display: grid; grid-template-columns: 88px 1fr 52px; gap: 7px;
+      align-items: center; margin-bottom: 7px; }
+    #ror-tune .row span { opacity: .85; }
+    #ror-tune input[type=range] { width: 100%; accent-color: #ffe45e; }
+    #ror-tune input[type=number] { width: 100%; background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.2); border-radius: 6px; color: #fff;
+      padding: 3px 4px; font: inherit; }
+    #ror-tune .foot { display: flex; gap: 7px; margin-top: 8px; }
+    #ror-tune .foot button, #ror-tune .chk { flex: 1; padding: 6px; border-radius: 8px;
+      cursor: pointer; color: #eaf0ff; background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.22); font: inherit; }
+    #ror-tune .chk { display: flex; align-items: center; gap: 6px; justify-content: center; }
+  `;
+  document.head.appendChild(style);
+
+  const root = document.createElement('div');
+  root.id = 'ror-tune';
+  const gear = document.createElement('button');
+  gear.className = 'gear';
+  gear.textContent = '⚙';
+  gear.title = 'Tune scales & placement';
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  panel.hidden = true;
+  gear.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+
+  const title = document.createElement('h3');
+  title.textContent = 'Ratel Tuner';
+  panel.appendChild(title);
+
+  const rows = [];
+  for (const c of CONTROLS) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const name = document.createElement('span');
+    name.textContent = c.label;
+    const range = document.createElement('input');
+    range.type = 'range'; range.min = c.min; range.max = c.max; range.step = c.step;
+    const num = document.createElement('input');
+    num.type = 'number'; num.min = c.min; num.max = c.max; num.step = c.step;
+    const set = (v) => {
+      v = Math.min(c.max, Math.max(c.min, Number(v)));
+      if (!Number.isFinite(v)) return;
+      tune[c.key] = v;
+      range.value = v; num.value = v;
+    };
+    range.addEventListener('input', () => set(range.value));
+    num.addEventListener('input', () => set(num.value));
+    set(tune[c.key]);
+    row.append(name, range, num);
+    panel.appendChild(row);
+    rows.push(() => set(DEFAULTS[c.key]));
+  }
+
+  const foot = document.createElement('div');
+  foot.className = 'foot';
+  const sep = document.createElement('label');
+  sep.className = 'chk';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.checked = tune.laneSep;
+  cb.addEventListener('change', () => { tune.laneSep = cb.checked; });
+  sep.append(cb, document.createTextNode('Lane sep'));
+  const reset = document.createElement('button');
+  reset.textContent = 'Reset';
+  reset.addEventListener('click', () => { rows.forEach((r) => r()); cb.checked = tune.laneSep = DEFAULTS.laneSep; });
+  const copy = document.createElement('button');
+  copy.textContent = 'Copy';
+  copy.title = 'Copy current values as JSON';
+  copy.addEventListener('click', () => {
+    const json = JSON.stringify(tune, null, 2);
+    navigator.clipboard?.writeText(json);
+    console.log('[ratel tune]', json);
+  });
+  foot.append(sep, reset, copy);
+  panel.appendChild(foot);
+
+  root.append(gear, panel);
+  document.body.appendChild(root);
+}
 
 let last = 0;
 function loop(ts) {
@@ -1174,6 +1371,7 @@ function loop(ts) {
     buses = buildBuses();
     enemies = buildEnemies();
     loadingEl.classList.add('hidden');
+    if (!window.__rorNoPanel) initDevPanel();
     canvas.focus();
     requestAnimationFrame(loop);
   } catch (err) {

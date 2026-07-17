@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>drive test</title>
   <link rel="stylesheet" href="../styles.css" />
+  <script>window.__rorNoPanel = true;</script>
 </head>
 <body>
   <main class="game-shell">
@@ -21,6 +22,18 @@
         const s = window.__ror;
         if (!s) { log.textContent = 'no hook'; return; }
         const DT = 1 / 60;
+        if (p.has('overlap')) { // two enemies crowding one spot must separate
+          const a = s.enemies[0], b = s.enemies[1];
+          a.state = b.state = 'walk'; a.role = b.role = 'front';
+          s.player.x = 3000; s.player.y = 650;
+          a.x = 3200; a.y = 650; b.x = 3205; b.y = 652;   // nearly stacked
+          for (let i = 0; i < 90; i++) s.step(DT);
+          const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
+          const overlapping = dx < s.tune.laneGapX && dy < s.tune.laneGapY;
+          log.textContent = `overlap: dx=${dx.toFixed(0)} dy=${dy.toFixed(0)} `
+            + `gap=${s.tune.laneGapX}/${s.tune.laneGapY} overlapping=${overlapping}`;
+          return;
+        }
         if (p.has('enemywatch')) { // observe enemy anim/facing while patrolling and approached
           const e = s.enemies[0];
           const snapE = (tag) => log.textContent +=

@@ -183,3 +183,23 @@
   standoff 115–170, lurk distance, lane bias ±24 so nobody stacks, and a
   2.5–5.5 s role re-roll timer that keeps the mob reshuffling mid-fight.
   All randomness is seeded (mulberry32) so test runs stay deterministic.
+
+## 2026-07-17 — Glassmorphism dev tuner + lane separation
+
+- Added an on-screen glassmorphism control panel (top-right gear, starts
+  collapsed). Paired slider+number inputs drive a live `tune` object:
+  player/enemy scale, building scale/base-Y/parallax, bus lane-Y/scale, fog
+  density, and the two body-separation gaps; plus a Lane-sep toggle, Reset,
+  and Copy-to-JSON. Scales are draw-time cosmetic previews (foot-anchored) —
+  find a value, then bake it into the sheet's drawH. Exposed as
+  `window.__ror.tune`; suppressed in tests via `window.__rorNoPanel`.
+- Keyboard handlers now ignore events while typing in panel inputs, so WASD
+  no longer moves the character when tuning.
+- Lane separation: `separateActors()` pushes overlapping bodies apart along
+  the axis of least penetration (stacked → different lanes, side-by-side →
+  horizontal), 2 relaxation passes/frame; the player is immovable so enemies
+  can't shove him. Airborne/downed actors are exempt.
+- Draw order hardened: actor depth is bucketed (8 px) with a stable id tie-
+  break, ending the per-frame z-sort flicker when two actors shared a lane.
+- `tests/drive.html`: added `?overlap=1` (asserts two stacked enemies end up
+  separated) and a `__rorNoPanel` flag; verified alongside the combat sim.
