@@ -736,24 +736,29 @@ const combatRng = mulberry32(99);   // seeded so test runs stay deterministic
 
 function buildEnemies() {
   const rng = mulberry32(77);
+  attackTokens.clear();
   const base = {
     state: 'walk', vx: 0, vy: 0, jumpY: 0, downTimer: 0,
     anim: 'walk', frame: 0, animTime: 0, facing: -1,
   };
   const spawns = [
-    { x: 680, y: 636, direction: -1, speed: 92, kind: 'ginger', role: 'front', ...base },
-    { x: 980, y: 682, direction: -1, speed: 116, kind: 'ginger', role: 'flank', ...base },
-    { x: 1320, y: 620, direction: -1, speed: 104, kind: 'ginger', role: 'lurk', ...base },
-    { x: 1760, y: 696, direction: -1, speed: 128, kind: 'ginger', role: 'front', ...base },
+    { x: 680, y: 636, direction: -1, speed: 92, kind: 'ginger', ...base },
+    { x: 980, y: 682, direction: -1, speed: 116, kind: 'ginger', ...base },
+    { x: 1320, y: 620, direction: -1, speed: 104, kind: 'ginger', ...base },
+    { x: 1760, y: 696, direction: -1, speed: 128, kind: 'ginger', ...base },
   ];
   // per-enemy quirks so nobody moves in lockstep
   for (const [id, e] of spawns.entries()) {
     e.id = id;
-    e.standoff = 115 + Math.floor(rng() * 55);   // how close a presser stops
-    e.lurkDist = 300 + Math.floor(rng() * 90);   // gingering distance
-    e.laneBias = Math.floor(rng() * 48) - 24;    // preferred lane offset
-    e.roleTimer = 2 + rng() * 3;                 // seconds until a re-roll
-    e.passSide = id % 2 ? 1 : -1;
+    e.slot = id;                                 // ring position around the player
+    e.mode = 'patrol';                           // SoR AI state
+    e.stateTimer = 0;
+    e.atkCooldown = 1 + rng() * 2.5;             // asynchronous first strike
+    e.standoff = 118 + Math.floor(rng() * 60);   // orbit radius / attack standoff
+    e.laneBias = Math.floor(rng() * 48) - 24;
+    e.amble = 0.8 + rng() * 0.45;                // varied approach speed
+    e.orbitDir = id % 2 ? 1 : -1;                // which way it circles
+    e.passSide = id % 2 ? 1 : -1;                // steering tie-break
     e.passY = e.y;
   }
   return spawns;
@@ -796,6 +801,8 @@ function resolveUppercutHits() {
         enemy.state = 'hit';
         enemy.vx = player.facing * (hb.knockback?.x ?? 220);
         enemy.vy = hb.knockback?.y ?? -440;
+        attackTokens.delete(enemy);            // interrupted — free the token
+        enemy.mode = 'menace';
       }
     }
   }
@@ -854,6 +861,99 @@ function separateActors(dt) {
       }
     }
   }
+}
+
+/* --- Streets-of-Rage-style mob AI ------------------------------------- */
+// Blueprint (Bare Knuckle / SoR + Celia Wagar's beat-em-up AI writeup):
+//   * only ENEMY.maxTokens enemies may ATTACK at once — the rest "menace":
+//     orbit the player from spread-out slots (some behind him), never clumping;
+//   * a token holder approaches, TELEGRAPHS (red flash), lunges, recovers,
+//     then releases the token and rests on a per-enemy cooldown;
+//   * asynchronous timers/speeds so nobody moves in lockstep;
+//   * patrol until the player enters aggro range.
+const ENEMY = {
+  aggroX: 700, leashX: 980,
+  attackRangeX: 155, attackRangeY: 42,
+  maxTokens: 1,                    // simultaneous attackers — bump for harder waves
+  windup: 0.36, active: 0.20, recover: 0.45,
+  cooldownMin: 2.0, cooldownVar: 2.2,
+  orbitRadiusY: 30, orbitSpeed: 0.5, lungeMul: 2.1,
+};
+const attackTokens = new Set();    // enemies currently allowed to attack
+let mobClock = 0;                  // shared clock for the slow orbit (dt-accumulated)
+
+// Walk toward (tx,ty), steering around any body in the path (including the
+// player, so enemies round BEHIND Darki instead of piling into him).
+function moveToward(enemy, tx, ty, speed, dt) {
+  const ddx = tx - enemy.x;
+  const dodge = laneDodge(enemy, Math.sign(ddx) || enemy.facing);
+  const goalY = dodge ? clampLane(enemy.y + dodge * (tune.laneGapY + 24)) : ty;
+  if (Math.abs(ddx) > 10) enemy.x += Math.sign(ddx) * speed * dt;
+  const stepY = speed * 0.75 * dt;
+  const gddy = goalY - enemy.y;
+  if (Math.abs(gddy) > 5) enemy.y = clampLane(enemy.y + Math.max(-stepY, Math.min(stepY, gddy)));
+  enemy.facing = Math.sign(player.x - enemy.x) || enemy.facing;   // face the player
+  return Math.abs(ddx) < 20 && Math.abs(ty - enemy.y) < 16;
+}
+
+// One enemy's think step (mob AI). Assumes it is neither hit nor down.
+function stepEnemyAI(enemy, dt) {
+  const dx = player.x - enemy.x;
+  const dy = player.y - enemy.y;
+  const distX = Math.abs(dx);
+  enemy.atkCooldown = Math.max(0, enemy.atkCooldown - dt);
+  enemy.stateTimer -= dt;
+
+  switch (enemy.mode) {
+    case 'windup':                       // telegraph — hold, flash, face player
+      enemy.state = 'guard';
+      enemy.facing = Math.sign(dx) || enemy.facing;
+      if (enemy.stateTimer <= 0) { enemy.mode = 'attack'; enemy.stateTimer = ENEMY.active; }
+      break;
+    case 'attack': {                     // committed lunge toward the player
+      enemy.state = 'walk';
+      const ld = Math.sign(dx) || enemy.facing;
+      enemy.x += ld * enemy.speed * ENEMY.lungeMul * dt;
+      enemy.facing = ld;
+      if (enemy.stateTimer <= 0) { enemy.mode = 'recover'; enemy.stateTimer = ENEMY.recover; }
+      break;
+    }
+    case 'recover':                      // brief vulnerable pause, then hand off
+      enemy.state = 'guard';
+      enemy.facing = Math.sign(dx) || enemy.facing;
+      if (enemy.stateTimer <= 0) {
+        attackTokens.delete(enemy);
+        enemy.atkCooldown = ENEMY.cooldownMin + combatRng() * ENEMY.cooldownVar;
+        enemy.mode = 'menace';
+      }
+      break;
+    case 'patrol':                       // pace until the player gets close
+      if (distX < ENEMY.aggroX) { enemy.mode = 'menace'; break; }
+      enemy.state = 'walk';
+      enemy.x += enemy.direction * enemy.speed * enemy.amble * dt;
+      enemy.facing = enemy.direction;
+      if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
+      break;
+    default: {                           // 'menace' — orbit a slot, wait for a token
+      if (distX > ENEMY.leashX) { enemy.mode = 'patrol'; break; }
+      const n = enemies.length;
+      const ang = (enemy.slot / n) * Math.PI * 2 + mobClock * ENEMY.orbitSpeed * enemy.orbitDir;
+      const tx = player.x + Math.cos(ang) * enemy.standoff;
+      const ty = clampLane(player.y + Math.sin(ang) * ENEMY.orbitRadiusY);
+      const arrived = moveToward(enemy, tx, ty, enemy.speed * enemy.amble, dt);
+      enemy.state = arrived ? 'guard' : 'walk';
+      const inRange = distX < ENEMY.attackRangeX && Math.abs(dy) < ENEMY.attackRangeY;
+      if (inRange && enemy.atkCooldown <= 0 && !attackTokens.has(enemy)
+          && attackTokens.size < ENEMY.maxTokens) {
+        attackTokens.add(enemy);         // claim the right to attack
+        enemy.mode = 'windup';
+        enemy.stateTimer = ENEMY.windup;
+        enemy.state = 'guard';
+      }
+      break;
+    }
+  }
+  enemy.direction = enemy.facing;
 }
 
 function update(dt) {
@@ -947,6 +1047,8 @@ function update(dt) {
     if (bus.x > WORLD_W + 320) bus.x = -300;
   }
 
+  mobClock += dt;                          // shared orbit clock (deterministic)
+
   for (const enemy of enemies) {
     if (enemy.state === 'hit') {           // sailing back from the blow
       enemy.x += enemy.vx * dt;
@@ -960,81 +1062,26 @@ function update(dt) {
       }
     } else if (enemy.state === 'down') {   // KO'd on the tarmac, then back up
       enemy.downTimer -= dt;
-      if (enemy.downTimer <= 0) enemy.state = 'walk';
+      if (enemy.downTimer <= 0) { enemy.state = 'walk'; enemy.mode = 'menace'; }
     } else {
-      // role-based mob movement: pressers hold their side of the player,
-      // flankers cross to the far side, lurkers ginger at a distance.
-      const dx = player.x - enemy.x;
-      const dy = player.y - enemy.y;
-      const inSight = Math.abs(dx) < 640 && Math.abs(dy) < 120;
-      if (inSight) {
-        enemy.roleTimer -= dt;
-        if (enemy.roleTimer <= 0) {          // keep the mob reshuffling
-          enemy.roleTimer = 2.5 + combatRng() * 3;
-          const r = combatRng();
-          enemy.role = r < 0.45 ? 'front' : r < 0.75 ? 'flank' : 'lurk';
-        }
-        const side = Math.sign(enemy.x - player.x) || 1;
-        const tx = enemy.role === 'front' ? player.x + side * enemy.standoff
-          : enemy.role === 'flank' ? player.x - side * enemy.standoff
-          : player.x + side * enemy.lurkDist;
-        const ddx = tx - enemy.x;
-        const ty = clampLane(player.y + enemy.laneBias);
-        const moveDir = Math.sign(ddx) || Math.sign(player.x - enemy.x);
-        let dodge = laneDodge(enemy, moveDir);
-        const crowdingDarki = Math.abs(enemy.x - player.x) < tune.laneGapX + 30
-          && Math.abs(enemy.y - player.y) < tune.laneGapY + 18;
-        if (!dodge && crowdingDarki) {
-          dodge = Math.sign(enemy.y - player.y) || enemy.passSide;
-          if (dodge < 0 && enemy.y - 42 < LANE_TOP) dodge = 1;
-          if (dodge > 0 && enemy.y + 42 > LANE_BOTTOM) dodge = -1;
-        }
-        if (dodge) {
-          enemy.passY = clampLane(enemy.y + dodge * (tune.laneGapY + 24));
-        } else {
-          enemy.passY += (ty - enemy.passY) * Math.min(1, dt * 3);
-        }
-        const ddy = enemy.passY - enemy.y;
-        if (Math.abs(ddx) > 16 || Math.abs(ddy) > 8) {
-          enemy.state = 'walk';
-          if (Math.abs(ddx) > 16) {
-            enemy.x += Math.sign(ddx) * enemy.speed * dt;
-            enemy.facing = Math.sign(ddx);
-          } else {
-            enemy.facing = Math.sign(dx) || enemy.facing;
-          }
-          const step = enemy.speed * 0.6 * dt;
-          enemy.y += Math.max(-step, Math.min(step, ddy));
-        } else {
-          enemy.state = 'guard';               // hold position, square up
-          enemy.facing = Math.sign(dx) || enemy.facing;
-        }
-        enemy.direction = enemy.facing;
-      } else {
-        enemy.state = 'walk';
-        enemy.x += enemy.direction * enemy.speed * dt;
-        enemy.facing = enemy.direction;
-        const dodge = laneDodge(enemy, enemy.direction);
-        if (dodge) enemy.passY = clampLane(enemy.y + dodge * (tune.laneGapY + 24));
-        enemy.y += Math.max(-enemy.speed * 0.6 * dt, Math.min(enemy.speed * 0.6 * dt, enemy.passY - enemy.y));
-        if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
-      }
+      stepEnemyAI(enemy, dt);              // Streets-of-Rage mob AI
     }
 
-    // enemy animation: state → section (fallbacks for sheets without one)
+    // Animation: walk sheet for everyone. Cycle the stride while moving;
+    // freeze on a settled frame while squared up / reacting.
     enemy.y = clampLane(enemy.y);
-    const anim = 'walk';
     const es = enemySpriteFor();
-    if (anim !== enemy.anim) { enemy.anim = anim; enemy.animTime = 0; }
-    const spec = es.anims[enemy.anim];
-    enemy.animTime += dt * spec.fps;
-    const st = Math.floor(enemy.animTime);
-    enemy.frame = spec.loop === false
-      ? spec.frames[Math.min(st, spec.frames.length - 1)]
-      : spec.frames[st % spec.frames.length];
+    enemy.anim = 'walk';
+    const spec = es.anims.walk;
+    if (enemy.state === 'walk') {
+      enemy.animTime += dt * spec.fps;
+      enemy.frame = spec.frames[Math.floor(enemy.animTime) % spec.frames.length];
+    } else {
+      enemy.frame = spec.frames[0];        // guard / hit / down: hold a pose
+    }
   }
 
-  separateActors();
+  separateActors(dt);
 }
 
 /* ----------------------------------------------------------------- draw */
@@ -1209,6 +1256,19 @@ function drawEnemy(enemy) {
   if (flip) ctx.scale(-1, 1);
   ctx.drawImage(frame, -anchor, -es.drawH);
   ctx.restore();
+
+  // Telegraph: a red flashing chevron over the head while winding up an
+  // attack — the SoR "about to go off" cue that lets the player react.
+  if (enemy.mode === 'windup' && Math.floor(enemy.stateTimer * 12) % 2 === 0) {
+    const hy = enemy.y - es.drawH * es2 - 14;
+    ctx.fillStyle = '#ff2e2e';
+    ctx.beginPath();
+    ctx.moveTo(screenX, hy + 12);
+    ctx.lineTo(screenX - 9, hy);
+    ctx.lineTo(screenX + 9, hy);
+    ctx.closePath();
+    ctx.fill();
+  }
 }
 
 function drawActors() {
@@ -1252,6 +1312,7 @@ window.__ror = {
   get sprites() { return { sprite, idleSprite, uppercutSprite }; },
   get enemies() { return enemies; },
   get cameraX() { return cameraX; },
+  get tokens() { return attackTokens.size; },
   frames: 0,
   step(dt) { update(dt); draw(); }, // deterministic tick for tests
 };

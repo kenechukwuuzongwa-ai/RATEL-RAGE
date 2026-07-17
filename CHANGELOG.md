@@ -203,3 +203,30 @@
   break, ending the per-frame z-sort flicker when two actors shared a lane.
 - `tests/drive.html`: added `?overlap=1` (asserts two stacked enemies end up
   separated) and a `__rorNoPanel` flag; verified alongside the combat sim.
+
+## 2026-07-18 — Streets-of-Rage mob AI + steering collision avoidance
+
+- Researched Bare Knuckle / Streets of Rage enemy behaviour (SoR4 design
+  talks + Celia Wagar's beat-em-up AI writeup + the attack-token pattern) and
+  prototyped the blueprint. Replaced the role-based movement with a per-enemy
+  state machine (`stepEnemyAI`): patrol → menace (orbit an assigned slot
+  around the player, some behind) → windup (telegraph) → attack (lunge) →
+  recover → cooldown.
+- **Attack token**: a shared `attackTokens` set caps simultaneous attackers
+  at `ENEMY.maxTokens` (1). Non-holders menace — circle from spread slots,
+  never clump — and take turns; the token frees on recover or when the holder
+  is hit. Per-enemy cooldowns + amble speeds keep them asynchronous.
+- **Telegraph**: a red flashing chevron over the head during windup ("attack
+  about to go off") so the player can react.
+- **Collision avoidance is steering-first**: `moveToward` + `laneDodge` make
+  enemies walk AROUND bodies in their path (including rounding behind Darki);
+  `separateActors` is now only a gentle, speed-capped last-resort nudge (and
+  the call site's missing `dt` bug is fixed). Enemies pass each other and the
+  player instead of shoving/glitching.
+- `tests/drive.html`: added `?mobwatch=1` — verifies max 1 token at a time,
+  enemies on both sides (surround), and a minimum body gap (no overlap).
+  Verified: maxTokensSeen=1, bothSides=true, minBodyGap≈32; combat chain and
+  `?overlap=1` still pass.
+- Exposed `window.__ror.tokens`. Enemies render from the walk sheet in all
+  states (avoids the Ginger/walk frame-index mismatch); dedicated attack/hurt
+  sheets remain a TODO.

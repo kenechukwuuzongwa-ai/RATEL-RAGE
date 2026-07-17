@@ -39,10 +39,11 @@ via `tests/drive.html` + screenshots.
 - [x] Enemies exist on lanes, depth-sorted with the player
 - [x] Sprite-based enemy (Ginger: idle/hit on one sheet, stride walk on another)
 - [x] Enemies guard up and face the player when close
-- [ ] Enemies seek the player and attack (stop patrolling decoratively)
-- [x] Bodies separate (least-penetration push) so they never stack/glitch
-- [ ] Group logic: 2–4 engage, others circle; attack tokens prevent stun-lock
-- [ ] Flanker archetype (uses lanes to get behind)
+- [x] Enemies seek the player and attack (patrol → engage → attack loop)
+- [x] Steering collision avoidance: walk around each other + behind the player
+- [x] Attack-token mob AI (SoR blueprint): 1 attacks, rest circle/surround, take turns
+- [x] Enemies surround from slots (some behind), telegraph windup, lunge, recover
+- [ ] Distinct archetypes (rusher/flanker/thrower/brute) split out of the shared AI
 - [ ] Thrower archetype (ranged object, telegraphed)
 - [ ] Brute archetype (no flinch on lights, heavy knockdown only)
 - [ ] Mixed male/female army variants per faction rules

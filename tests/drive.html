@@ -22,6 +22,32 @@
         const s = window.__ror;
         if (!s) { log.textContent = 'no hook'; return; }
         const DT = 1 / 60;
+        if (p.has('mobwatch')) { // SoR mob AI: token-limited attacks, surround, no clump
+          s.player.x = 1200; s.player.y = 655;
+          let maxTokens = 0, minGapSeen = 999;
+          const rowOf = (t) => { let r = `${t}: tokens=${s.tokens} `;
+            for (const e of s.enemies) r += `[${e.mode[0]} x${(e.x - s.player.x).toFixed(0)} y${(e.y - s.player.y).toFixed(0)}] `;
+            return r; };
+          const log2 = [];
+          for (let k = 0; k < 8; k++) {
+            for (let i = 0; i < 45; i++) {
+              s.step(DT);
+              maxTokens = Math.max(maxTokens, s.tokens);
+              for (let a = 0; a < s.enemies.length; a++)
+                for (let b = a + 1; b < s.enemies.length; b++) {
+                  const A = s.enemies[a], B = s.enemies[b];
+                  if ((A.state==='walk'||A.state==='guard') && (B.state==='walk'||B.state==='guard'))
+                    minGapSeen = Math.min(minGapSeen, Math.max(Math.abs(A.x-B.x), Math.abs(A.y-B.y)*2.5));
+                }
+            }
+            log2.push(rowOf(`t${((k + 1) * 0.75).toFixed(1)}s`));
+          }
+          const sides = new Set(s.enemies.map((e) => Math.sign(e.x - s.player.x)));
+          log.textContent = log2.join('\n')
+            + `\nmaxTokensSeen=${maxTokens} (cap ${s.enemies.length >= 1 ? 1 : 0}) `
+            + `bothSides=${sides.has(1) && sides.has(-1)} minBodyGap=${minGapSeen.toFixed(0)}`;
+          return;
+        }
         if (p.has('overlap')) { // two enemies crowding one spot must separate
           const a = s.enemies[0], b = s.enemies[1];
           a.state = b.state = 'walk'; a.role = b.role = 'front';
