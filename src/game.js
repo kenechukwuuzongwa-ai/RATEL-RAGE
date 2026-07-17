@@ -51,13 +51,22 @@ const JUMP_SHEET = {
   bodyFrame: 0,                // crouched launch frame ≈ full body height
 };
 
-const GINGER_SHEET = {          // street enemy: idle/walk/hit sections in one sheet
+const GINGER_SHEET = {          // street enemy: idle + hit sections
   src: 'Ginger.png',
   metaSrc: 'Ginger.json',
   cols: 9,
   rows: 9,
   faces: 1,                    // art faces right
   drawH: 205,
+};
+
+const ENEMYWALK_SHEET = {       // street enemy: stride walk cycle
+  src: 'Enemywalk.png',
+  metaSrc: 'Enemywalk.json',
+  cols: 6,
+  rows: 6,
+  faces: 1,
+  drawH: GINGER_SHEET.drawH,
 };
 
 const PLAYER = {
@@ -689,6 +698,7 @@ let idleSprite = null;
 let uppercutSprite = null;
 let jumpSprite = null;
 let gingerSprite = null;
+let gingerWalkSprite = null;
 let tileAtlas = null;
 let buildingImgs = null;
 let buses = [];
@@ -710,8 +720,9 @@ function buildEnemies() {
   ];
 }
 
-function enemySprite() {
-  return gingerSprite;
+// walk lives on its own sheet; idle/hit sections are on Ginger.png
+function enemySpriteFor(anim) {
+  return anim === 'walk' ? gingerWalkSprite : gingerSprite;
 }
 
 function spriteFor(anim) {
@@ -883,11 +894,11 @@ function update(dt) {
     }
 
     // enemy animation: state → section (fallbacks for sheets without one)
-    const es = enemySprite(enemy);
     let anim = enemy.state === 'guard' ? 'idle'
       : (enemy.state === 'hit' || enemy.state === 'down') ? 'hit'
       : 'walk';
-    if (!es.anims[anim]) anim = 'walk';
+    let es = enemySpriteFor(anim);
+    if (!es.anims[anim]) { anim = 'walk'; es = enemySpriteFor(anim); }
     if (anim !== enemy.anim) { enemy.anim = anim; enemy.animTime = 0; }
     const spec = es.anims[enemy.anim];
     enemy.animTime += dt * spec.fps;
@@ -1025,8 +1036,8 @@ function drawPlayer() {
 function drawEnemy(enemy) {
   const screenX = enemy.x - cameraX;
   if (screenX < -140 || screenX > VIEW_W + 140) return;
-  const es = enemySprite(enemy);
-  const config = GINGER_SHEET;
+  const es = enemySpriteFor(enemy.anim);
+  const config = enemy.anim === 'walk' ? ENEMYWALK_SHEET : GINGER_SHEET;
   const frame = es.frames[enemy.frame];
   const anchor = es.anchors[enemy.frame];
   const flip = enemy.facing !== config.faces;
@@ -1119,13 +1130,14 @@ function loop(ts) {
 
 (async function boot() {
   try {
-    [sprite, idleSprite, uppercutSprite, jumpSprite, gingerSprite, buildingImgs] =
+    [sprite, idleSprite, uppercutSprite, jumpSprite, gingerSprite, gingerWalkSprite, buildingImgs] =
       await Promise.all([
         loadSpriteFrames(SHEET),
         loadSpriteFrames(IDLE_SHEET, 'idle'),
         loadSpriteFrames(UPPERCUT_SHEET, 'uppercut'),
         loadSpriteFrames(JUMP_SHEET, 'jump'),
         loadSpriteFrames(GINGER_SHEET),
+        loadSpriteFrames(ENEMYWALK_SHEET),
         loadBuildings(),
       ]);
     tileAtlas = buildTileAtlas();

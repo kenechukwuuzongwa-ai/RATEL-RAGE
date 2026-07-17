@@ -160,3 +160,12 @@
   kind branch are gone; all four spawns are Ginger now. Deleted the derived
   `EnemyWizard-Walk.png` / `.json` (the original `Wizard_Walk_sheet_*.png`
   uploads remain untouched in the folder). Sim re-verified.
+
+## 2026-07-17 — Enemy stride walk cycle (enemywalk sheet)
+
+- Ginger now walks with the new `Enemywalk.png` stride cycle (6×6 grid of
+  512×512, frames 0–34 @ 30 fps per the analyzer manifest, saved as
+  `Enemywalk.json`). Idle and hit reactions stay on `Ginger.png`;
+  enemySpriteFor(anim) picks the sheet per animation, and the guard-advance
+  shuffle section is no longer used for locomotion.
+- Wizard enemy removal confirmed (no references; files already deleted).
