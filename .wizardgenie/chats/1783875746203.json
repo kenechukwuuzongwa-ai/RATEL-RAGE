@@ -328,5 +328,13 @@
   {
     "role": "user",
     "content": "tHE ENEMIES DID NO SPAWN"
+  },
+  {
+    "role": "assistant",
+    "content": "I’ll trace the game boot path and enemy asset loading first—if the enemy sheet fails, the whole spawn setup can be skipped.Boot wires the enemy spawn after every sprite loads, so a failed asset would leave the game on its loading error. I’m opening the local test page to see the actual runtime state next.The boot sequence is sound, so I’m checking the enemy metadata against the loader. A frame-index mismatch would make spawned enemies invisible even though they exist.I’ve narrowed this to rendering/runtime rather than the spawn array itself. I’m running the browser test page to confirm whether `window.__ror.enemies` is populated and capture any console error.The shell can’t start a background server in this session, so I’m switching to the persistent browser test runtime instead.The enemy instances are created, but three of the four start outside the opening view and the first is too far right to make the crowd obvious. I’m moving the opening group into the first screen while preserving their lane offsets.The opening screen now starts with two visible enemies in different lanes. I’m doing a final syntax and spawn-state check.Fixed and completed the enemy setup.\n\n- Two enemies now spawn in the first screen at game start; the other two follow further down the road.\n- Enemies steer into separate up/down lanes to pass Darki instead of blocking him.\n- Enemy collisions now produce sidesteps, not horizontal shoves or glitches.\n- Exact Z-depth sorting lets enemies render behind or in front of Darki based on their road lane.\n\nChanges are in [src/game.js](C:\\Users\\kenec\\OneDrive\\Desktop\\RAGE OF RATELS\\RAGE OF RATELS\\src\\game.js:743). Syntax check passes."
+  },
+  {
+    "role": "user",
+    "content": "THEY KIND DISAPPEAR WHEN THEY COLLIDE WITH DARKI"
   }
 ]

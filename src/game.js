@@ -741,10 +741,10 @@ function buildEnemies() {
     anim: 'walk', frame: 0, animTime: 0, facing: -1,
   };
   const spawns = [
-    { x: 980, y: 638, direction: 1, speed: 92, kind: 'ginger', role: 'front', ...base },
-    { x: 1760, y: 684, direction: -1, speed: 116, kind: 'ginger', role: 'flank', ...base },
-    { x: 2860, y: 652, direction: 1, speed: 104, kind: 'ginger', role: 'lurk', ...base },
-    { x: 4180, y: 695, direction: -1, speed: 128, kind: 'ginger', role: 'front', ...base },
+    { x: 680, y: 636, direction: -1, speed: 92, kind: 'ginger', role: 'front', ...base },
+    { x: 980, y: 682, direction: -1, speed: 116, kind: 'ginger', role: 'flank', ...base },
+    { x: 1320, y: 620, direction: -1, speed: 104, kind: 'ginger', role: 'lurk', ...base },
+    { x: 1760, y: 696, direction: -1, speed: 128, kind: 'ginger', role: 'front', ...base },
   ];
   // per-enemy quirks so nobody moves in lockstep
   for (const [id, e] of spawns.entries()) {
