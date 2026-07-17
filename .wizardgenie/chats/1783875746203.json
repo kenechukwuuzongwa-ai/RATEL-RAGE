@@ -296,5 +296,13 @@
   {
     "role": "user",
     "content": "do a web search on the documentation of the full enemy behaviour in Bare knuckle street of rage lets prototype the blueprint into our enemy"
+  },
+  {
+    "role": "assistant",
+    "content": "You've hit your session limit · resets 12am (Africa/Lagos)"
+  },
+  {
+    "role": "user",
+    "content": "do a web search on the documentation of the full enemy behaviour in Bare knuckle street of rage lets prototype the blueprint into our enemy"
   }
 ]
