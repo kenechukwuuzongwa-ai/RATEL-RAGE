@@ -747,11 +747,14 @@ function buildEnemies() {
     { x: 4180, y: 695, direction: -1, speed: 128, kind: 'ginger', role: 'front', ...base },
   ];
   // per-enemy quirks so nobody moves in lockstep
-  for (const e of spawns) {
+  for (const [id, e] of spawns.entries()) {
+    e.id = id;
     e.standoff = 115 + Math.floor(rng() * 55);   // how close a presser stops
     e.lurkDist = 300 + Math.floor(rng() * 90);   // gingering distance
     e.laneBias = Math.floor(rng() * 48) - 24;    // preferred lane offset
     e.roleTimer = 2 + rng() * 3;                 // seconds until a re-roll
+    e.passSide = id % 2 ? 1 : -1;
+    e.passY = e.y;
   }
   return spawns;
 }
@@ -807,53 +810,47 @@ const isGrounded = (e) => e.state === 'walk' || e.state === 'guard';
 // down) or 0 (path clear).
 function laneDodge(enemy, moveDir) {
   if (!moveDir) return 0;
+  let blocker = null;
   for (const other of [player, ...enemies]) {
     if (other === enemy) continue;
     if (other !== player && !isGrounded(other)) continue;
     const ox = other.x - enemy.x;
     const oy = other.y - enemy.y;
     if (Math.sign(ox) !== moveDir) continue;             // not in my path
-    if (Math.abs(ox) > tune.laneGapX + 46) continue;     // still far ahead
-    if (Math.abs(oy) > tune.laneGapY + 10) continue;     // lane already clear
-    let dodge = enemy.y <= other.y ? -1 : 1;             // side with a head start
-    if (dodge < 0 && enemy.y - 24 < LANE_TOP) dodge = 1; // no room? flip
-    if (dodge > 0 && enemy.y + 24 > LANE_BOTTOM) dodge = -1;
-    return dodge;
+    if (Math.abs(ox) > tune.laneGapX + 72) continue;     // still far ahead
+    if (Math.abs(oy) > tune.laneGapY + 22) continue;     // lane already clear
+    if (!blocker || Math.abs(ox) < Math.abs(blocker.x - enemy.x)) blocker = other;
   }
-  return 0;
+  if (!blocker) return 0;
+  let dodge = Math.sign(enemy.y - blocker.y) || enemy.passSide;
+  if (dodge < 0 && enemy.y - 42 < LANE_TOP) dodge = 1;
+  if (dodge > 0 && enemy.y + 42 > LANE_BOTTOM) dodge = -1;
+  return dodge;
 }
 
 // Gentle last-resort separation for bodies that still end up overlapped
 // (e.g. after a knockdown landing). The correction is capped to walking
 // speed so it reads as a step aside, never a shove or a jitter, and it
 // never blocks passing: a dodging enemy is already a lane away.
-function pushApart(a, b, aMove, bMove, maxStep) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const penX = tune.laneGapX - Math.abs(dx);
-  const penY = tune.laneGapY - Math.abs(dy);
-  if (penX <= 0 || penY <= 0) return;
-  if (penX < penY) {
-    const s = (dx < 0 ? -1 : 1) * Math.min(penX, maxStep);
-    a.x -= s * aMove;
-    b.x += s * bMove;
-  } else {
-    const s = (dy < 0 ? -1 : 1) * Math.min(penY, maxStep);
-    a.y = clampLane(a.y - s * aMove);
-    b.y = clampLane(b.y + s * bMove);
-  }
+function sidestep(a, b, aMove, bMove, maxStep) {
+  if (Math.abs(b.x - a.x) > tune.laneGapX || Math.abs(b.y - a.y) >= tune.laneGapY) return;
+  let direction = Math.sign(a.y - b.y) || a.passSide || -1;
+  if (direction < 0 && a.y - maxStep < LANE_TOP) direction = 1;
+  if (direction > 0 && a.y + maxStep > LANE_BOTTOM) direction = -1;
+  a.y = clampLane(a.y + direction * maxStep * aMove);
+  if (b !== player) b.y = clampLane(b.y - direction * maxStep * bMove);
 }
 
 function separateActors(dt) {
   if (!tune.laneSep) return;
   const maxStep = 170 * dt;                    // ≈ walking pace, no snapping
   for (const e of enemies) {
-    if (isGrounded(e)) pushApart(e, player, 1, 0, maxStep); // player immovable
+    if (isGrounded(e)) sidestep(e, player, 1, 0, maxStep);
   }
   for (let i = 0; i < enemies.length; i++) {
     for (let j = i + 1; j < enemies.length; j++) {
       if (isGrounded(enemies[i]) && isGrounded(enemies[j])) {
-        pushApart(enemies[i], enemies[j], 0.5, 0.5, maxStep);
+        sidestep(enemies[i], enemies[j], 0.5, 0.5, maxStep);
       }
     }
   }
@@ -982,8 +979,14 @@ function update(dt) {
           : enemy.role === 'flank' ? player.x - side * enemy.standoff
           : player.x + side * enemy.lurkDist;
         const ddx = tx - enemy.x;
-        const ty = Math.max(LANE_TOP, Math.min(LANE_BOTTOM, player.y + enemy.laneBias));
-        const ddy = ty - enemy.y;
+        const ty = clampLane(player.y + enemy.laneBias);
+        const dodge = laneDodge(enemy, Math.sign(ddx));
+        if (dodge) {
+          enemy.passY = clampLane(enemy.y + dodge * (tune.laneGapY + 24));
+        } else {
+          enemy.passY += (ty - enemy.passY) * Math.min(1, dt * 3);
+        }
+        const ddy = enemy.passY - enemy.y;
         if (Math.abs(ddx) > 16 || Math.abs(ddy) > 8) {
           enemy.state = 'walk';
           if (Math.abs(ddx) > 16) {
@@ -1003,11 +1006,15 @@ function update(dt) {
         enemy.state = 'walk';
         enemy.x += enemy.direction * enemy.speed * dt;
         enemy.facing = enemy.direction;
+        const dodge = laneDodge(enemy, enemy.direction);
+        if (dodge) enemy.passY = clampLane(enemy.y + dodge * (tune.laneGapY + 24));
+        enemy.y += Math.max(-enemy.speed * 0.6 * dt, Math.min(enemy.speed * 0.6 * dt, enemy.passY - enemy.y));
         if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
       }
     }
 
     // enemy animation: state → section (fallbacks for sheets without one)
+    enemy.y = clampLane(enemy.y);
     let anim = enemy.state === 'guard' ? 'idle'
       : (enemy.state === 'hit' || enemy.state === 'down') ? 'hit'
       : 'walk';
@@ -1199,14 +1206,11 @@ function drawEnemy(enemy) {
 }
 
 function drawActors() {
-  // Quantize depth into buckets and break ties by a stable id, so two actors
-  // at nearly-equal lane depth keep a fixed draw order (no per-frame flicker).
+  // Feet define z-depth: smaller Y is farther up the road and draws first.
+  // Exact ties use a stable id; lane steering keeps active bodies apart.
   const actors = enemies.map((enemy, i) => ({ depth: enemy.y, tie: i, draw: () => drawEnemy(enemy) }));
   actors.push({ depth: player.y, tie: 100, draw: drawPlayer });
-  actors.sort((a, b) => {
-    const da = Math.round(a.depth / 8), db = Math.round(b.depth / 8);
-    return da !== db ? da - db : a.tie - b.tie;
-  });
+  actors.sort((a, b) => (a.depth - b.depth) || (a.tie - b.tie));
   for (const actor of actors) actor.draw();
 }
 
