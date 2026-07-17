@@ -260,5 +260,13 @@
   {
     "role": "user",
     "content": "good. now the enemies are all doing exactly same thing with offset timeline. I want you to randomizetheir behaviour. some should go behind while some in front hile some in didtance gingering"
+  },
+  {
+    "role": "assistant",
+    "content": "Good call — classic beat-em-up mob behavior. I'll give each enemy a **role** (front presser, flanker who circles behind you, and a distance \"gingerer\" who bounces in guard at range), with per-enemy standoff distances and lane offsets so they never stack, plus periodic seeded re-rolls so the mob keeps reshuffling:Done — the lockstep is broken. Refresh **http://localhost:4174/** and the mob now behaves like a street gang:\n\n- **Front pressers** walk up and hold at their own personal standoff distance (randomized 115–170 px per enemy), squaring up in guard.\n- **Flankers** cross past you to attack from the far side, so you get sandwiched.\n- **Lurkers** hang back at ~300–390 px, bouncing in their guard stance (\"gingering\") — and they back off if you push toward them.\n\nThree things keep it from ever syncing up again: each enemy has its own standoff/lurk distance and a **lane bias** (±24 px) so they spread across the road instead of stacking on one line; and every 2.5–5.5 seconds each enemy **re-rolls its role**, so a lurker may suddenly commit to a rush while a presser rotates out wide. All the randomness is seeded (`mulberry32`), so the deterministic test harness stays reproducible — and the full combat sim still passes, including a nice frame where one enemy is being launched by the uppercut while another closes in from a different lane.\n\nThis also effectively covers the \"flanker archetype\" item from the MVP checklist's AI section. The natural next step there is attack tokens — letting 2–3 of them actually throw punches at you in turns — whenever you're ready."
+  },
+  {
+    "role": "user",
+    "content": "Can  you create a very basic UI control with glassmorphism material with sliders and inputs so i can control character scales and props placement. Also i think characters overlap in same lane and causes glitch.  create some boundaries to prevent characters overlaping on same line/lane and glitching"
   }
 ]

@@ -174,3 +174,12 @@
 
 - Doubled enemy speeds (46–64 → 92–128 px/s) so ground movement matches the
   stride length of the new walk cycle instead of foot-sliding.
+
+## 2026-07-17 — Randomized mob behaviour (roles)
+
+- Enemies no longer mirror each other. Each gets a role — front (press to a
+  personal standoff distance), flank (cross to the player's far side), lurk
+  (hold ~300–390 px out, gingering in guard) — plus seeded per-enemy quirks:
+  standoff 115–170, lurk distance, lane bias ±24 so nobody stacks, and a
+  2.5–5.5 s role re-roll timer that keeps the mob reshuffling mid-fight.
+  All randomness is seeded (mulberry32) so test runs stay deterministic.

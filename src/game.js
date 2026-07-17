@@ -707,17 +707,28 @@ let props = null;
 let enemies = [];
 let cameraX = 0;
 
+const combatRng = mulberry32(99);   // seeded so test runs stay deterministic
+
 function buildEnemies() {
+  const rng = mulberry32(77);
   const base = {
     state: 'walk', vx: 0, vy: 0, jumpY: 0, downTimer: 0,
     anim: 'walk', frame: 0, animTime: 0, facing: -1,
   };
-  return [
-    { x: 980, y: 638, direction: 1, speed: 92, kind: 'ginger', ...base },
-    { x: 1760, y: 684, direction: -1, speed: 116, kind: 'ginger', ...base },
-    { x: 2860, y: 652, direction: 1, speed: 104, kind: 'ginger', ...base },
-    { x: 4180, y: 695, direction: -1, speed: 128, kind: 'ginger', ...base },
+  const spawns = [
+    { x: 980, y: 638, direction: 1, speed: 92, kind: 'ginger', role: 'front', ...base },
+    { x: 1760, y: 684, direction: -1, speed: 116, kind: 'ginger', role: 'flank', ...base },
+    { x: 2860, y: 652, direction: 1, speed: 104, kind: 'ginger', role: 'lurk', ...base },
+    { x: 4180, y: 695, direction: -1, speed: 128, kind: 'ginger', role: 'front', ...base },
   ];
+  // per-enemy quirks so nobody moves in lockstep
+  for (const e of spawns) {
+    e.standoff = 115 + Math.floor(rng() * 55);   // how close a presser stops
+    e.lurkDist = 300 + Math.floor(rng() * 90);   // gingering distance
+    e.laneBias = Math.floor(rng() * 48) - 24;    // preferred lane offset
+    e.roleTimer = 2 + rng() * 3;                 // seconds until a re-roll
+  }
+  return spawns;
 }
 
 // walk lives on its own sheet; idle/hit sections are on Ginger.png
@@ -868,23 +879,40 @@ function update(dt) {
       enemy.downTimer -= dt;
       if (enemy.downTimer <= 0) enemy.state = 'walk';
     } else {
-      // seek: advance on the player when in sight, guard at punching range,
-      // patrol only when the player is far away
+      // role-based mob movement: pressers hold their side of the player,
+      // flankers cross to the far side, lurkers ginger at a distance.
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
-      const inSight = Math.abs(dx) < 560 && Math.abs(dy) < 90;
+      const inSight = Math.abs(dx) < 640 && Math.abs(dy) < 120;
       if (inSight) {
-        enemy.facing = Math.sign(dx) || enemy.facing;
-        enemy.direction = enemy.facing;
-        if (Math.abs(dx) > 130 || Math.abs(dy) > 12) {
-          enemy.state = 'walk';
-          if (Math.abs(dx) > 130) enemy.x += Math.sign(dx) * enemy.speed * dt;
-          const step = enemy.speed * 0.6 * dt;
-          enemy.y = Math.max(LANE_TOP, Math.min(LANE_BOTTOM,
-            enemy.y + Math.max(-step, Math.min(step, dy))));
-        } else {
-          enemy.state = 'guard';
+        enemy.roleTimer -= dt;
+        if (enemy.roleTimer <= 0) {          // keep the mob reshuffling
+          enemy.roleTimer = 2.5 + combatRng() * 3;
+          const r = combatRng();
+          enemy.role = r < 0.45 ? 'front' : r < 0.75 ? 'flank' : 'lurk';
         }
+        const side = Math.sign(enemy.x - player.x) || 1;
+        const tx = enemy.role === 'front' ? player.x + side * enemy.standoff
+          : enemy.role === 'flank' ? player.x - side * enemy.standoff
+          : player.x + side * enemy.lurkDist;
+        const ddx = tx - enemy.x;
+        const ty = Math.max(LANE_TOP, Math.min(LANE_BOTTOM, player.y + enemy.laneBias));
+        const ddy = ty - enemy.y;
+        if (Math.abs(ddx) > 16 || Math.abs(ddy) > 8) {
+          enemy.state = 'walk';
+          if (Math.abs(ddx) > 16) {
+            enemy.x += Math.sign(ddx) * enemy.speed * dt;
+            enemy.facing = Math.sign(ddx);
+          } else {
+            enemy.facing = Math.sign(dx) || enemy.facing;
+          }
+          const step = enemy.speed * 0.6 * dt;
+          enemy.y += Math.max(-step, Math.min(step, ddy));
+        } else {
+          enemy.state = 'guard';               // hold position, square up
+          enemy.facing = Math.sign(dx) || enemy.facing;
+        }
+        enemy.direction = enemy.facing;
       } else {
         enemy.state = 'walk';
         enemy.x += enemy.direction * enemy.speed * dt;
