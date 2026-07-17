@@ -252,5 +252,13 @@
   {
     "role": "user",
     "content": "increase there movement 2X faster to match with the strides"
+  },
+  {
+    "role": "assistant",
+    "content": "Done — enemy movement is doubled (92–128 px/s, up from 46–64), so their ground speed now matches the stride length of the walk cycle instead of foot-gliding. Verified in the sim: enemy covers ~93 px/s while the walk frames cycle at the same 30 fps, and the full combat chain (hit → down → get up → re-approach, now noticeably quicker at ~29 px closed in 1.6 s) still passes. Refresh **http://localhost:4174/** to feel the difference — they close distance with real intent now."
+  },
+  {
+    "role": "user",
+    "content": "good. now the enemies are all doing exactly same thing with offset timeline. I want you to randomizetheir behaviour. some should go behind while some in front hile some in didtance gingering"
   }
 ]

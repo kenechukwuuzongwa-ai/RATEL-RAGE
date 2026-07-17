@@ -713,10 +713,10 @@ function buildEnemies() {
     anim: 'walk', frame: 0, animTime: 0, facing: -1,
   };
   return [
-    { x: 980, y: 638, direction: 1, speed: 46, kind: 'ginger', ...base },
-    { x: 1760, y: 684, direction: -1, speed: 58, kind: 'ginger', ...base },
-    { x: 2860, y: 652, direction: 1, speed: 52, kind: 'ginger', ...base },
-    { x: 4180, y: 695, direction: -1, speed: 64, kind: 'ginger', ...base },
+    { x: 980, y: 638, direction: 1, speed: 92, kind: 'ginger', ...base },
+    { x: 1760, y: 684, direction: -1, speed: 116, kind: 'ginger', ...base },
+    { x: 2860, y: 652, direction: 1, speed: 104, kind: 'ginger', ...base },
+    { x: 4180, y: 695, direction: -1, speed: 128, kind: 'ginger', ...base },
   ];
 }
 

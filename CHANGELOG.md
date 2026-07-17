@@ -169,3 +169,8 @@
   enemySpriteFor(anim) picks the sheet per animation, and the guard-advance
   shuffle section is no longer used for locomotion.
 - Wizard enemy removal confirmed (no references; files already deleted).
+
+## 2026-07-17 — Enemy movement speed doubled
+
+- Doubled enemy speeds (46–64 → 92–128 px/s) so ground movement matches the
+  stride length of the new walk cycle instead of foot-sliding.
