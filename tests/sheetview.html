@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<!-- Sprite sheet inspector: ?src=../Ginger.png&cols=9&rows=9&from=0&to=80&s=0.28&pr=9 -->
+<html><body style="margin:0;background:#333">
+<canvas id="c"></canvas>
+<script type="module">
+  const p = new URLSearchParams(location.search);
+  const src = p.get('src');
+  const cols = +p.get('cols'), rows = +p.get('rows');
+  const from = +(p.get('from') ?? 0);
+  const to = +(p.get('to') ?? cols * rows - 1);
+  const scale = +(p.get('s') ?? 0.25);
+  const perRow = +(p.get('pr') ?? 9);
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = src; });
+  const fw = img.width / cols, fh = img.height / rows;
+  const n = to - from + 1;
+  const gw = Math.min(perRow, n), gh = Math.ceil(n / gw);
+  const c = document.getElementById('c');
+  c.width = gw * (fw * scale + 4);
+  c.height = gh * (fh * scale + 18);
+  const x = c.getContext('2d');
+  x.fillStyle = '#242424';
+  x.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < n; i++) {
+    const f = from + i;
+    const sx = (f % cols) * fw, sy = Math.floor(f / cols) * fh;
+    const dx = (i % gw) * (fw * scale + 4), dy = Math.floor(i / gw) * (fh * scale + 18);
+    x.drawImage(img, sx, sy, fw, fh, dx, dy + 14, fw * scale, fh * scale);
+    x.fillStyle = '#6f6';
+    x.font = '12px monospace';
+    x.fillText(f, dx + 2, dy + 10);
+  }
+</script>
+</body></html>

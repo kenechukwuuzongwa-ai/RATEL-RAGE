@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer export (Jump.zip), image renamed jump.png -> Jump.png; loop set to false because a jump is a one-shot arc clamped on the final frame until landing.",
+  "sprite": "Jump",
+  "image": "Jump.png",
+  "frameWidth": 2048,
+  "frameHeight": 1676,
+  "sheet": {
+    "cols": 6,
+    "rows": 6,
+    "frames": 32,
+    "imageWidth": 12288,
+    "imageHeight": 10056
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 31,
+    "fps": 30,
+    "loop": false
+  },
+  "note": "Dark Ratel jump. 6x6 grid, frames 32-35 empty. Art faces right."
+}

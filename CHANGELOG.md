@@ -116,3 +116,26 @@
   mvp_checklist.md (prioritized, with current implementation state checked).
 - Runtime stays at the repo root for now; migration into the tree is a
   checklist item so the playable slice never breaks mid-reorg.
+
+## 2026-07-17 — Sprite enemies (Ginger + wizard) and player jump animation
+
+- New street enemy "Ginger" from `Ginger.png` (9×9 grid of 512×512). The
+  81-frame export had no sections, so `Ginger.json` hand-segments it after
+  frame inspection: guard idle 0–26 (loop 35 fps), hit recoil 27–44 (once),
+  guard advance 45–62 (walk, loop 30 fps), block flinch 63–80 (spare).
+  resolveAnims now also maps hit/hurt/recoil sections and "advance" walks.
+- Second enemy type: pixel wizard from `EnemyWizard-Walk.png` (6×6, frames
+  0–30 drawn; hand-authored manifest). Walk-only — hit/down reactions fall
+  back to a frozen frame with the tilt/knockdown physics.
+- Enemies are now fully sprite-rendered (rectangles gone): foot-anchored,
+  facing-flipped, guard-up + face the player within 170 px, tilt while
+  airborne from a hit, and lie flat (sprite rotated) with KO stars while
+  down. Fixed the hit test to accept the new guard state.
+- Player jump animation from `Jump.png` (Jump.zip export, 6×6 of 2048×1676,
+  frames 0–31 @ 30 fps, loop off): plays once per jump and holds the final
+  falling pose on long arcs; landing hands back to walk/idle.
+- `tests/drive.html`: new `?jumpshot=N` mid-air capture mode; sim re-verified
+  (uppercut chain vs both enemy kinds, jump frame progression).
+- Note: `Jump_2048x1676_sheet.png` (raw 8×8 export) and
+  `Wizard_Walk_sheet_xi56.png` (duplicate) are unused; the game reads
+  `Jump.png` + `Jump.json` and `EnemyWizard-Walk.png` + `.json`.

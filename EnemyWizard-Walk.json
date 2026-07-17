@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Hand-authored in Sprite Analyzer manifest format (sheet arrived without one: Wizard_Walk_sheet_hpry.png).",
+  "sprite": "EnemyWizard-Walk",
+  "image": "EnemyWizard-Walk.png",
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "sheet": {
+    "cols": 6,
+    "rows": 6,
+    "frames": 36,
+    "imageWidth": 3072,
+    "imageHeight": 3072
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 30,
+    "fps": 24,
+    "loop": true
+  },
+  "note": "Second enemy type, pixel wizard. 6x6 grid but only frames 0-30 are drawn; cells 31-35 are empty and excluded. Walk only — no idle/hit sheets exist yet, the engine falls back to frozen-frame reactions. Art faces left."
+}

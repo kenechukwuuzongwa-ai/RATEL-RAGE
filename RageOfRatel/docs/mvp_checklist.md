@@ -37,6 +37,8 @@ via `tests/drive.html` + screenshots.
 ## 2. Enemy AI
 
 - [x] Enemies exist on lanes, depth-sorted with the player
+- [x] Sprite-based enemies (Ginger: idle/walk/hit sections; wizard: walk-only)
+- [x] Enemies guard up and face the player when close
 - [ ] Enemies seek the player and attack (stop patrolling decoratively)
 - [ ] Group logic: 2–4 engage, others circle; attack tokens prevent stun-lock
 - [ ] Flanker archetype (uses lanes to get behind)
@@ -73,7 +75,8 @@ via `tests/drive.html` + screenshots.
 
 - [ ] Dark Ratel: jab/straight sheets + hits.json
 - [ ] Dark Ratel: hurt, KO/get-up sheets
-- [ ] Rusher m/f: walk, attack, hurt, KO sheets (replace placeholder rectangles)
+- [x] Rusher walk/idle/hurt sheets (Ginger) — attack + dedicated KO still needed
+- [ ] Wizard enemy: idle, attack, hurt sheets (walk-only today, frozen-frame reactions)
 - [ ] Thrower + projectile, Brute sheets
 - [ ] Sound Kleft boss sheets (3 phases)
 - [ ] Impact FX sheet (sparks, dust, stars)

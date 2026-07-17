@@ -21,6 +21,15 @@
         const s = window.__ror;
         if (!s) { log.textContent = 'no hook'; return; }
         const DT = 1 / 60;
+        if (p.has('jumpshot')) { // walk, jump, freeze mid-air
+          dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' }));
+          for (let i = 0; i < 60; i++) s.step(DT);
+          dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }));
+          const n = Number(p.get('jumpshot')) || 20;
+          for (let i = 0; i < n; i++) s.step(DT);
+          log.textContent = `jumpshot: anim=${s.player.anim} frame=${s.player.frame} grounded=${s.player.grounded}`;
+          return;
+        }
         if (p.has('walkshot')) { // stop mid-stride for a visual check
           dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' }));
           const n = Number(p.get('walkshot')) || 100;
