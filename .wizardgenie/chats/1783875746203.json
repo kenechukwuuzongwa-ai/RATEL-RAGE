@@ -360,5 +360,9 @@
   {
     "role": "user",
     "content": "hi"
+  },
+  {
+    "role": "user",
+    "content": "go online and search for the documentation of enemy behavior of enemies in streets of rage, use the behavior to prototype the enemies in this level"
   }
 ]
