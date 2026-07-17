@@ -799,41 +799,61 @@ function resolveUppercutHits() {
 }
 
 const clampLane = (y) => Math.max(LANE_TOP, Math.min(LANE_BOTTOM, y));
+const isGrounded = (e) => e.state === 'walk' || e.state === 'guard';
 
-// Push overlapping bodies apart so no two actors share a spot (which causes
-// sprite overlap and z-sort flicker). Resolves along the axis of least
-// penetration: stacked actors separate into distinct lanes, side-by-side
-// actors separate horizontally. aMove/bMove split the correction (an
-// immovable actor like the player passes 0). Skips airborne/downed actors.
-function pushApart(a, b, aMove, bMove) {
+// Collision avoidance is steering-first: when a body blocks the path ahead,
+// the enemy swings into a free lane and walks AROUND it (including around
+// the player — flankers pass behind Darki). Returns -1 (dodge up), 1 (dodge
+// down) or 0 (path clear).
+function laneDodge(enemy, moveDir) {
+  if (!moveDir) return 0;
+  for (const other of [player, ...enemies]) {
+    if (other === enemy) continue;
+    if (other !== player && !isGrounded(other)) continue;
+    const ox = other.x - enemy.x;
+    const oy = other.y - enemy.y;
+    if (Math.sign(ox) !== moveDir) continue;             // not in my path
+    if (Math.abs(ox) > tune.laneGapX + 46) continue;     // still far ahead
+    if (Math.abs(oy) > tune.laneGapY + 10) continue;     // lane already clear
+    let dodge = enemy.y <= other.y ? -1 : 1;             // side with a head start
+    if (dodge < 0 && enemy.y - 24 < LANE_TOP) dodge = 1; // no room? flip
+    if (dodge > 0 && enemy.y + 24 > LANE_BOTTOM) dodge = -1;
+    return dodge;
+  }
+  return 0;
+}
+
+// Gentle last-resort separation for bodies that still end up overlapped
+// (e.g. after a knockdown landing). The correction is capped to walking
+// speed so it reads as a step aside, never a shove or a jitter, and it
+// never blocks passing: a dodging enemy is already a lane away.
+function pushApart(a, b, aMove, bMove, maxStep) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const penX = tune.laneGapX - Math.abs(dx);
   const penY = tune.laneGapY - Math.abs(dy);
   if (penX <= 0 || penY <= 0) return;
   if (penX < penY) {
-    const s = (dx < 0 ? -1 : 1) * (penX + 0.5);
+    const s = (dx < 0 ? -1 : 1) * Math.min(penX, maxStep);
     a.x -= s * aMove;
     b.x += s * bMove;
   } else {
-    const s = (dy < 0 ? -1 : 1) * (penY + 0.5);
+    const s = (dy < 0 ? -1 : 1) * Math.min(penY, maxStep);
     a.y = clampLane(a.y - s * aMove);
     b.y = clampLane(b.y + s * bMove);
   }
 }
 
-function separateActors() {
+function separateActors(dt) {
   if (!tune.laneSep) return;
-  const grounded = (e) => e.state === 'walk' || e.state === 'guard';
-  for (let pass = 0; pass < 2; pass++) {
-    for (const e of enemies) {
-      if (grounded(e)) pushApart(e, player, 1, 0); // player is immovable
-    }
-    for (let i = 0; i < enemies.length; i++) {
-      for (let j = i + 1; j < enemies.length; j++) {
-        if (grounded(enemies[i]) && grounded(enemies[j])) {
-          pushApart(enemies[i], enemies[j], 0.5, 0.5);
-        }
+  const maxStep = 170 * dt;                    // ≈ walking pace, no snapping
+  for (const e of enemies) {
+    if (isGrounded(e)) pushApart(e, player, 1, 0, maxStep); // player immovable
+  }
+  for (let i = 0; i < enemies.length; i++) {
+    for (let j = i + 1; j < enemies.length; j++) {
+      if (isGrounded(enemies[i]) && isGrounded(enemies[j])) {
+        pushApart(enemies[i], enemies[j], 0.5, 0.5, maxStep);
       }
     }
   }

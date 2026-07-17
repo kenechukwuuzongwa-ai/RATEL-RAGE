@@ -288,5 +288,13 @@
   {
     "role": "user",
     "content": "I had expected you would also make the enemies overlap with offset to avoid collission. Now they are unable to to go behind the main character \"Darki\" enemies also collide with each others and glitch, they should avoid collision and walk around each other"
+  },
+  {
+    "role": "assistant",
+    "content": "Good catch — the hard push was the wrong tool: it walls enemies off from crossing behind Darki, and two enemies shoving each other every frame is exactly the jitter you're seeing. The right fix is **steering**: enemies dodge into a free lane and walk *around* bodies in their path, with only a gentle, speed-capped separation as a last resort. Let me rework it:You've hit your session limit · resets 12am (Africa/Lagos)"
+  },
+  {
+    "role": "user",
+    "content": "do a web search on the documentation of the full enemy behaviour in Bare knuckle street of rage lets prototype the blueprint into our enemy"
   }
 ]
