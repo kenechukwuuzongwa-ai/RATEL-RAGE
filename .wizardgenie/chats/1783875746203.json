@@ -316,5 +316,9 @@
   {
     "role": "user",
     "content": "I had expected you would also make the enemies overlap with offset to avoid collission. Now they are unable to to go behind the main character \"Darki\" enemies also collide with each others and glitch, they should avoid collision and walk around each other... continue work on this and finish first"
+  },
+  {
+    "role": "user",
+    "content": "I had expected you would also make the enemies overlap with offset to avoid collission. Now they are unable to to go behind the main character \"Darki\" enemies also collide with each others and glitch, they should avoid collision and walk around each other... continue work on this and finish first"
   }
 ]
