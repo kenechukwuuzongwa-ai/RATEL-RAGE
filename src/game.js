@@ -95,8 +95,8 @@ const tune = {
   busScale: 1,
   fog: 0.42,
   laneSep: true,               // push overlapping bodies apart
-  laneGapX: 58,                // min horizontal spacing between two bodies
-  laneGapY: 30,                // min depth (lane) spacing — kills z-sort flicker
+  laneGapX: 96,                // min horizontal spacing between two bodies
+  laneGapY: 34,                // min depth (lane) spacing — kills z-sort flicker
 };
 
 const canvas = document.getElementById('game');
@@ -817,7 +817,7 @@ function laneDodge(enemy, moveDir) {
     const ox = other.x - enemy.x;
     const oy = other.y - enemy.y;
     if (Math.sign(ox) !== moveDir) continue;             // not in my path
-    if (Math.abs(ox) > tune.laneGapX + 72) continue;     // still far ahead
+    if (Math.abs(ox) > tune.laneGapX + 84) continue;     // still far ahead
     if (Math.abs(oy) > tune.laneGapY + 22) continue;     // lane already clear
     if (!blocker || Math.abs(ox) < Math.abs(blocker.x - enemy.x)) blocker = other;
   }
@@ -980,7 +980,15 @@ function update(dt) {
           : player.x + side * enemy.lurkDist;
         const ddx = tx - enemy.x;
         const ty = clampLane(player.y + enemy.laneBias);
-        const dodge = laneDodge(enemy, Math.sign(ddx));
+        const moveDir = Math.sign(ddx) || Math.sign(player.x - enemy.x);
+        let dodge = laneDodge(enemy, moveDir);
+        const crowdingDarki = Math.abs(enemy.x - player.x) < tune.laneGapX + 30
+          && Math.abs(enemy.y - player.y) < tune.laneGapY + 18;
+        if (!dodge && crowdingDarki) {
+          dodge = Math.sign(enemy.y - player.y) || enemy.passSide;
+          if (dodge < 0 && enemy.y - 42 < LANE_TOP) dodge = 1;
+          if (dodge > 0 && enemy.y + 42 > LANE_BOTTOM) dodge = -1;
+        }
         if (dodge) {
           enemy.passY = clampLane(enemy.y + dodge * (tune.laneGapY + 24));
         } else {
