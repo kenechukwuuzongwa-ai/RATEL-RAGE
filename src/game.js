@@ -12,10 +12,10 @@ const LANE_BOTTOM = 700;
 const TILE = 64;
 
 const SHEET = {
-  src: 'Newwalksprite.png',
-  metaSrc: 'Newwalksprite.json', // animation frames/fps come from here
-  cols: 5,                     // fallbacks if the JSON is missing
-  rows: 4,
+  src: 'Darki-VDM-Walk.png',
+  metaSrc: 'Darki-VDM-Walk.json', // animation frames/fps come from here
+  cols: 8,                     // fallbacks if the JSON is missing
+  rows: 8,
   faces: 1,                    // art faces right; flip when moving left
   drawH: 200,                  // character height on screen (opaque pixels)
 };
@@ -760,8 +760,8 @@ function buildEnemies() {
 }
 
 // walk lives on its own sheet; idle/hit sections are on Ginger.png
-function enemySpriteFor(anim) {
-  return anim === 'walk' ? gingerWalkSprite : gingerSprite;
+function enemySpriteFor() {
+  return gingerWalkSprite;
 }
 
 function spriteFor(anim) {
@@ -1023,11 +1023,8 @@ function update(dt) {
 
     // enemy animation: state → section (fallbacks for sheets without one)
     enemy.y = clampLane(enemy.y);
-    let anim = enemy.state === 'guard' ? 'idle'
-      : (enemy.state === 'hit' || enemy.state === 'down') ? 'hit'
-      : 'walk';
-    let es = enemySpriteFor(anim);
-    if (!es.anims[anim]) { anim = 'walk'; es = enemySpriteFor(anim); }
+    const anim = 'walk';
+    const es = enemySpriteFor();
     if (anim !== enemy.anim) { enemy.anim = anim; enemy.animTime = 0; }
     const spec = es.anims[enemy.anim];
     enemy.animTime += dt * spec.fps;
@@ -1171,10 +1168,11 @@ function drawPlayer() {
 function drawEnemy(enemy) {
   const screenX = enemy.x - cameraX;
   if (screenX < -140 || screenX > VIEW_W + 140) return;
-  const es = enemySpriteFor(enemy.anim);
-  const config = enemy.anim === 'walk' ? ENEMYWALK_SHEET : GINGER_SHEET;
-  const frame = es.frames[enemy.frame];
-  const anchor = es.anchors[enemy.frame];
+  const es = enemySpriteFor();
+  const config = ENEMYWALK_SHEET;
+  const frameIndex = es.frames[enemy.frame] ? enemy.frame : es.anims.walk.frames[0];
+  const frame = es.frames[frameIndex];
+  const anchor = es.anchors[frameIndex];
   const flip = enemy.facing !== config.faces;
 
   const es2 = tune.enemyScale;

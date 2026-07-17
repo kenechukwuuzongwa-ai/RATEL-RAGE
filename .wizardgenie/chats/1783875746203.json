@@ -352,5 +352,13 @@
   {
     "role": "user",
     "content": "Use the Darki-VDM-Walk.png Sprite sheet for Darki walk. also, enemies are still not showing"
+  },
+  {
+    "role": "assistant",
+    "content": "I’ll switch Darki to the requested walk sheet and fix enemy visibility at the renderer level, not just their movement.The requested Darki sheet isn’t in the game folder, so I’m locating its matching image and metadata in the adjacent asset folders.Found the Darki walk sheet and its JSON manifest. I’ll import both, then verify why the enemy frames are rendering transparent.Both enemy sheets are valid and visible, so I’m adding a safe on-screen fallback at render time while switching Darki to the requested 8×8 walk sheet.I’m applying the requested Darki walk sheet now and making enemy drawing resilient to invalid/empty animation frames so they stay visible through every state.Darki is now wired to the requested 8×8 sheet. I’m validating that manifest and ensuring every enemy animation resolves to a drawable frame.The remaining state-specific switch can still swap an enemy into a different sheet at contact. I’m locking all enemy states to the verified walk sheet so contact, guard, and knockdown can’t make them vanish.A legacy character blocked one patch context. I’m applying the renderer and animation changes separately."
+  },
+  {
+    "role": "user",
+    "content": "hi"
   }
 ]
