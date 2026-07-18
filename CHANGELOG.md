@@ -238,3 +238,20 @@
   player and enemy shadows (the enemy shadow's opacity is now unified with
   the player's under `shadowAlpha`). Defaults reproduce the current look
   (scale 1/1, offset 0/0, alpha 0.30) so opening the panel shows live values.
+
+## 2026-07-18 — Enemies keep a safe distance; no more frozen walk
+
+- Fixed enemies running into Darki and freezing their walk. The orbit ring
+  collapsed onto his column in the shallow lane space (so "sides" of the ring
+  landed on top of him), and squared-up enemies hard-froze on frame 0.
+- Rewrote the menace behaviour: each enemy holds a SAFE standoff (150–220 px)
+  on its assigned side, fanned across depth by laneBias, doing an in/out
+  footwork bob so it keeps distance and its feet keep moving. Only the token
+  holder leaves the standoff — 'approach' closes to strike range, the lunge
+  now stops at `ENEMY.minGap` (66 px, never buries in), and 'recover' steps
+  back out before the token frees. Enemies occasionally flank to the other
+  side (walking around Darki via the existing steering).
+- Walk animation now cycles in every active state (only hit/down hold a
+  pose), so squared-up enemies bounce on their feet instead of freezing.
+- Verified: maxTokens=1, both sides occupied, min body gap ~31, non-attackers
+  stay 150+ px out; combat knockdown chain still passes.

@@ -756,14 +756,14 @@ function buildEnemies() {
   // per-enemy quirks so nobody moves in lockstep
   for (const [id, e] of spawns.entries()) {
     e.id = id;
-    e.slot = id;                                 // ring position around the player
     e.mode = 'patrol';                           // SoR AI state
     e.stateTimer = 0;
     e.atkCooldown = 1 + rng() * 2.5;             // asynchronous first strike
-    e.standoff = 118 + Math.floor(rng() * 60);   // orbit radius / attack standoff
-    e.laneBias = Math.floor(rng() * 48) - 24;
-    e.amble = 0.8 + rng() * 0.45;                // varied approach speed
-    e.orbitDir = id % 2 ? 1 : -1;                // which way it circles
+    e.side = id % 2 ? 1 : -1;                    // which side of the player it holds
+    e.standoff = 150 + Math.floor(rng() * 70);   // SAFE fighting distance
+    e.laneBias = Math.floor(rng() * 56) - 28;    // depth fan-out
+    e.amble = 0.8 + rng() * 0.45;                // varied footwork speed
+    e.repositionAt = 3 + rng() * 4;              // seconds until a flank swap
     e.passSide = id % 2 ? 1 : -1;                // steering tie-break
     e.passY = e.y;
   }
@@ -879,11 +879,12 @@ function separateActors(dt) {
 //   * patrol until the player enters aggro range.
 const ENEMY = {
   aggroX: 700, leashX: 980,
-  attackRangeX: 155, attackRangeY: 42,
+  attackRangeX: 150, attackRangeY: 44,
   maxTokens: 1,                    // simultaneous attackers — bump for harder waves
-  windup: 0.36, active: 0.20, recover: 0.45,
+  windup: 0.36, active: 0.20, recover: 0.5,
   cooldownMin: 2.0, cooldownVar: 2.2,
-  orbitRadiusY: 30, orbitSpeed: 0.5, lungeMul: 2.1,
+  minGap: 66,                      // lunge stops this far out — never buries into Darki
+  lungeMul: 2.1,
 };
 const attackTokens = new Set();    // enemies currently allowed to attack
 let mobClock = 0;                  // shared clock for the slow orbit (dt-accumulated)
@@ -903,6 +904,8 @@ function moveToward(enemy, tx, ty, speed, dt) {
 }
 
 // One enemy's think step (mob AI). Assumes it is neither hit nor down.
+// Only token holders ever close in; everyone else holds a SAFE STANDOFF on
+// their side of the player and does footwork, so they never run into Darki.
 function stepEnemyAI(enemy, dt) {
   const dx = player.x - enemy.x;
   const dy = player.y - enemy.y;
@@ -911,21 +914,32 @@ function stepEnemyAI(enemy, dt) {
   enemy.stateTimer -= dt;
 
   switch (enemy.mode) {
-    case 'windup':                       // telegraph — hold, flash, face player
+    case 'approach': {                    // token holder closing to strike range
+      const tx = player.x + enemy.side * (ENEMY.attackRangeX - 40);
+      moveToward(enemy, tx, clampLane(player.y + enemy.laneBias), enemy.speed, dt);
+      enemy.state = 'walk';
+      if (distX < ENEMY.attackRangeX && Math.abs(dy) < ENEMY.attackRangeY) {
+        enemy.mode = 'windup';
+        enemy.stateTimer = ENEMY.windup;
+      }
+      break;
+    }
+    case 'windup':                        // telegraph — face player, flash chevron
       enemy.state = 'guard';
       enemy.facing = Math.sign(dx) || enemy.facing;
       if (enemy.stateTimer <= 0) { enemy.mode = 'attack'; enemy.stateTimer = ENEMY.active; }
       break;
-    case 'attack': {                     // committed lunge toward the player
+    case 'attack': {                      // lunge, but stop short of burying in
       enemy.state = 'walk';
       const ld = Math.sign(dx) || enemy.facing;
-      enemy.x += ld * enemy.speed * ENEMY.lungeMul * dt;
+      if (distX > ENEMY.minGap) enemy.x += ld * enemy.speed * ENEMY.lungeMul * dt;
       enemy.facing = ld;
       if (enemy.stateTimer <= 0) { enemy.mode = 'recover'; enemy.stateTimer = ENEMY.recover; }
       break;
     }
-    case 'recover':                      // brief vulnerable pause, then hand off
-      enemy.state = 'guard';
+    case 'recover':                       // step back out, then release the token
+      enemy.state = 'walk';
+      enemy.x -= (Math.sign(dx) || enemy.facing) * enemy.speed * 0.7 * dt;
       enemy.facing = Math.sign(dx) || enemy.facing;
       if (enemy.stateTimer <= 0) {
         attackTokens.delete(enemy);
@@ -933,28 +947,31 @@ function stepEnemyAI(enemy, dt) {
         enemy.mode = 'menace';
       }
       break;
-    case 'patrol':                       // pace until the player gets close
+    case 'patrol':                        // pace until the player gets close
       if (distX < ENEMY.aggroX) { enemy.mode = 'menace'; break; }
       enemy.state = 'walk';
       enemy.x += enemy.direction * enemy.speed * enemy.amble * dt;
       enemy.facing = enemy.direction;
       if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
       break;
-    default: {                           // 'menace' — orbit a slot, wait for a token
+    default: {                            // 'menace' — hold a safe standoff, do footwork
       if (distX > ENEMY.leashX) { enemy.mode = 'patrol'; break; }
-      const n = enemies.length;
-      const ang = (enemy.slot / n) * Math.PI * 2 + mobClock * ENEMY.orbitSpeed * enemy.orbitDir;
-      const tx = player.x + Math.cos(ang) * enemy.standoff;
-      const ty = clampLane(player.y + Math.sin(ang) * ENEMY.orbitRadiusY);
-      const arrived = moveToward(enemy, tx, ty, enemy.speed * enemy.amble, dt);
-      enemy.state = arrived ? 'guard' : 'walk';
-      const inRange = distX < ENEMY.attackRangeX && Math.abs(dy) < ENEMY.attackRangeY;
-      if (inRange && enemy.atkCooldown <= 0 && !attackTokens.has(enemy)
+      enemy.repositionAt -= dt;
+      if (enemy.repositionAt <= 0) {      // occasionally flank to the other side
+        enemy.side *= -1;
+        enemy.repositionAt = 3 + combatRng() * 4;
+      }
+      // bob in/out around the standoff: keeps a gap AND keeps feet moving so
+      // the walk never looks frozen while squared up
+      const bob = Math.sin(mobClock * 1.7 + enemy.id) * 14;
+      const tx = player.x + enemy.side * (enemy.standoff + bob);
+      const ty = clampLane(player.y + enemy.laneBias + Math.sin(mobClock * 1.2 + enemy.id) * 8);
+      moveToward(enemy, tx, ty, enemy.speed * enemy.amble, dt);
+      enemy.state = 'walk';
+      if (enemy.atkCooldown <= 0 && !attackTokens.has(enemy)
           && attackTokens.size < ENEMY.maxTokens) {
-        attackTokens.add(enemy);         // claim the right to attack
-        enemy.mode = 'windup';
-        enemy.stateTimer = ENEMY.windup;
-        enemy.state = 'guard';
+        attackTokens.add(enemy);          // claim the token and commit to a run
+        enemy.mode = 'approach';
       }
       break;
     }
@@ -1073,17 +1090,18 @@ function update(dt) {
       stepEnemyAI(enemy, dt);              // Streets-of-Rage mob AI
     }
 
-    // Animation: walk sheet for everyone. Cycle the stride while moving;
-    // freeze on a settled frame while squared up / reacting.
+    // Animation: walk sheet for everyone. Cycle the stride whenever active
+    // (footwork keeps the menace loop moving, so it never looks frozen);
+    // only hit/down hold a fixed pose (they have their own draw transforms).
     enemy.y = clampLane(enemy.y);
     const es = enemySpriteFor();
     enemy.anim = 'walk';
     const spec = es.anims.walk;
-    if (enemy.state === 'walk') {
+    if (enemy.state === 'hit' || enemy.state === 'down') {
+      enemy.frame = spec.frames[0];
+    } else {
       enemy.animTime += dt * spec.fps;
       enemy.frame = spec.frames[Math.floor(enemy.animTime) % spec.frames.length];
-    } else {
-      enemy.frame = spec.frames[0];        // guard / hit / down: hold a pose
     }
   }
 
