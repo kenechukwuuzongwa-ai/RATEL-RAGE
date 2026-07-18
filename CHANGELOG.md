@@ -230,3 +230,11 @@
 - Exposed `window.__ror.tokens`. Enemies render from the walk sheet in all
   states (avoids the Ginger/walk frame-index mismatch); dedicated attack/hurt
   sheets remain a TODO.
+
+## 2026-07-18 — Shadow tuning controls
+
+- Added ground-shadow transform + scale to the `tune` object and the dev
+  panel: Shadow scale X/Y, offset X/Y, and opacity. Applied to both the
+  player and enemy shadows (the enemy shadow's opacity is now unified with
+  the player's under `shadowAlpha`). Defaults reproduce the current look
+  (scale 1/1, offset 0/0, alpha 0.30) so opening the panel shows live values.

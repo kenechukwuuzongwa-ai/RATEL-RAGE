@@ -372,5 +372,13 @@
   {
     "role": "user",
     "content": "include ui debug for the shadow transform and scale. I want to be able to tune it. Also default the values of the debug right now."
+  },
+  {
+    "role": "assistant",
+    "content": "I'll add shadow controls to the tuner and apply them to both player and enemy shadows, with defaults matching the current look. First, the `tune` fields:Now apply to the player shadow:Now add the shadow rows to the tuner's `CONTROLS`:Now syntax-check and verify the panel + shadow response with a temporary preview page:The shadow controls work — shadows are visibly wider, taller, offset right, and darker on both Darki and the enemies, and the five new rows (Shadow scale X/Y, offset X/Y, opacity) show their defaults in the panel. Let me clean up the throwaway page and log it:Done. The tuner now has a shadow section with five live controls:\n\n- **Shadow scale X / Y** — stretch or shrink the ellipse width and height independently\n- **Shadow offset X / Y** — slide the shadow off the feet (e.g. to fake a light direction)\n- **Shadow opacity** — how dark it reads\n\nThey apply to **both Darki and the enemies** every frame (including the jump-squash and per-character scale, so the shadow still tracks size and airtime). The verification screenshot shows an exaggerated setting — wide, tall, offset right, darkened — confirming all five wire through.\n\nOn defaulting: the controls open at the values that reproduce **exactly the current look** — scale 1/1, offset 0/0, opacity 0.30 — so the panel reflects what's rendering right now with nothing changed until you drag a slider. (I did unify one small thing: the enemy shadow was hardcoded at 0.28 opacity vs the player's 0.30; both now share the tunable `shadowAlpha` at 0.30, a 0.02 difference you won't notice.) As with the other tuners, once you dial in a shadow you like, hit **Copy** and I'll bake those numbers in as the permanent defaults."
+  },
+  {
+    "role": "user",
+    "content": "default all character scale so far to .8 for now"
   }
 ]

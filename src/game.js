@@ -97,6 +97,12 @@ const tune = {
   laneSep: true,               // push overlapping bodies apart
   laneGapX: 96,                // min horizontal spacing between two bodies
   laneGapY: 34,                // min depth (lane) spacing — kills z-sort flicker
+  // ground shadow (transform + scale), applied to player and enemies
+  shadowScaleX: 1,             // width multiplier
+  shadowScaleY: 1,             // height multiplier
+  shadowOffsetX: 0,            // px, + = right
+  shadowOffsetY: 0,            // px, + = down
+  shadowAlpha: 0.3,            // opacity
 };
 
 const canvas = document.getElementById('game');
@@ -1187,10 +1193,12 @@ function drawPlayer() {
   const screenX = player.x - cameraX;
 
   const ps = tune.playerScale;
-  ctx.fillStyle = 'rgba(0,0,0,.3)';
+  ctx.fillStyle = `rgba(0,0,0,${tune.shadowAlpha})`;
   ctx.beginPath();
   const squash = player.grounded ? 1 : Math.max(0.5, 1 + player.jumpY / 500);
-  ctx.ellipse(screenX, player.y + 6, drawW * 0.36 * ps * squash, 11 * squash, 0, 0, Math.PI * 2);
+  ctx.ellipse(screenX + tune.shadowOffsetX, player.y + 6 + tune.shadowOffsetY,
+    drawW * 0.36 * ps * squash * tune.shadowScaleX, 11 * squash * tune.shadowScaleY,
+    0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.save();
@@ -1223,9 +1231,10 @@ function drawEnemy(enemy) {
   const flip = enemy.facing !== config.faces;
 
   const es2 = tune.enemyScale;
-  ctx.fillStyle = 'rgba(0,0,0,.28)';
+  ctx.fillStyle = `rgba(0,0,0,${tune.shadowAlpha})`;
   ctx.beginPath();
-  ctx.ellipse(screenX, enemy.y + 5, es.drawW * 0.3 * es2, 9, 0, 0, Math.PI * 2);
+  ctx.ellipse(screenX + tune.shadowOffsetX, enemy.y + 5 + tune.shadowOffsetY,
+    es.drawW * 0.3 * es2 * tune.shadowScaleX, 9 * tune.shadowScaleY, 0, 0, Math.PI * 2);
   ctx.fill();
 
   if (enemy.state === 'down') {
@@ -1335,6 +1344,11 @@ function initDevPanel() {
     { key: 'fog', label: 'Fog density', min: 0, max: 0.9, step: 0.01 },
     { key: 'laneGapX', label: 'Body gap X', min: 20, max: 120, step: 1 },
     { key: 'laneGapY', label: 'Lane gap Y', min: 10, max: 80, step: 1 },
+    { key: 'shadowScaleX', label: 'Shadow scale X', min: 0, max: 3, step: 0.01 },
+    { key: 'shadowScaleY', label: 'Shadow scale Y', min: 0, max: 3, step: 0.01 },
+    { key: 'shadowOffsetX', label: 'Shadow offset X', min: -80, max: 80, step: 1 },
+    { key: 'shadowOffsetY', label: 'Shadow offset Y', min: -60, max: 60, step: 1 },
+    { key: 'shadowAlpha', label: 'Shadow opacity', min: 0, max: 1, step: 0.01 },
   ];
 
   const style = document.createElement('style');
