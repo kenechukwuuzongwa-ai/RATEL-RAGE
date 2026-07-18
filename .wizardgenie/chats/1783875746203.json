@@ -412,5 +412,13 @@
   {
     "role": "user",
     "content": "default the debug settings as it is now"
+  },
+  {
+    "role": "assistant",
+    "content": "\"As it is now\" — I'll make the panel **persist** its values to local storage so whatever you've set sticks across reloads and becomes the working default, instead of snapping back to the baked-in numbers each time. Let me read the panel code and wire it in.Now I'll add persistence: capture pristine defaults, load any saved values on init, auto-save on every change, and make Reset clear the store.Now let me syntax-check and verify persistence actually loads on init (I'll pre-seed localStorage before the module boots), plus confirm tests still pass:Persistence confirmed — pre-seeded values (playerScale 1.5, shakeMag 15) loaded on boot, and the hit-fx trio still fires. Let me clean up the temp page and log it:Done. The debug panel now **persists**: every slider/checkbox change saves to local storage and reloads on boot, so your settings stay \"as they are now\" across refreshes instead of snapping back to the baked-in numbers.\n\nHow it behaves:\n- **Auto-save** — touch any control and it's written to `localStorage` (`ror.tune.v1`) immediately. Next reload opens the panel with those exact values.\n- **Reset** — restores the built-in code defaults *and* clears the saved copy, so it's your clean escape hatch.\n- **Tests unaffected** — the panel is suppressed in the headless harness, so the deterministic sim still runs on code defaults. I verified pre-seeded values load correctly on boot, and the hit-fx/combat checks still pass.\n\nOne honest caveat: I can't read the values you currently have set in your open browser tab — those live in that tab's memory and get cleared when it reloads the new build. So on your next refresh the panel will open at the current *code* defaults (player/enemy scale 0.8, shadows, hit-stop 0.09, shake 8, etc.), and from that point on anything you adjust will stick. If you had specific values dialed in that you want as the permanent baked-in defaults, hit **Copy** in the panel and paste me the JSON — I'll write them straight into the code so they're the defaults even after a Reset or on a fresh machine."
+  },
+  {
+    "role": "user",
+    "content": "why then is my shadow not maintaing the new transform"
   }
 ]

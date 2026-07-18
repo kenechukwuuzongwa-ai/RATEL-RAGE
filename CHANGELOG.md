@@ -275,3 +275,11 @@
   fire on a pinned hit) and `?hitfx=shot` (freezes on the impact frame).
   Verified: peakHitStop 0.09, spark spawned, shake 0.16; combat hit→down→walk
   chain, mobwatch (1 token, both sides, gap 33) and overlap all still pass.
+
+## 2026-07-18 — Dev panel settings persist
+
+- The tuner now saves to localStorage (`ror.tune.v1`) on every change and
+  reloads it on boot, so the debug settings stay "as they are now" across
+  refreshes instead of resetting to the baked-in defaults. Reset restores the
+  built-in defaults and clears the saved copy. Verified: pre-seeded values
+  load on init; tests (panel suppressed via __rorNoPanel) stay deterministic.

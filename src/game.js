@@ -1416,8 +1416,18 @@ window.__ror = {
 // Glassmorphism control panel: live sliders + number inputs for character
 // scales and prop placement. Starts collapsed (a gear button) so it never
 // obstructs play or screenshots. Cosmetic scales are draw-time previews.
+const TUNE_KEY = 'ror.tune.v1';    // persisted dev-panel settings
+function saveTune() {
+  try { localStorage.setItem(TUNE_KEY, JSON.stringify(tune)); } catch {}
+}
+
 function initDevPanel() {
-  const DEFAULTS = { ...tune };
+  const DEFAULTS = { ...tune };    // pristine code defaults (Reset target)
+  // Load persisted settings so the panel opens "as it was left" last time.
+  try {
+    const saved = JSON.parse(localStorage.getItem(TUNE_KEY) || 'null');
+    if (saved) for (const k of Object.keys(DEFAULTS)) if (k in saved) tune[k] = saved[k];
+  } catch {}
   const CONTROLS = [
     { key: 'playerScale', label: 'Player scale', min: 0.3, max: 2.5, step: 0.01 },
     { key: 'enemyScale', label: 'Enemy scale', min: 0.3, max: 2.5, step: 0.01 },
@@ -1495,18 +1505,19 @@ function initDevPanel() {
     range.type = 'range'; range.min = c.min; range.max = c.max; range.step = c.step;
     const num = document.createElement('input');
     num.type = 'number'; num.min = c.min; num.max = c.max; num.step = c.step;
-    const set = (v) => {
+    const set = (v, persist = true) => {
       v = Math.min(c.max, Math.max(c.min, Number(v)));
       if (!Number.isFinite(v)) return;
       tune[c.key] = v;
       range.value = v; num.value = v;
+      if (persist) saveTune();
     };
     range.addEventListener('input', () => set(range.value));
     num.addEventListener('input', () => set(num.value));
-    set(tune[c.key]);
+    set(tune[c.key], false);        // reflect loaded value without re-saving
     row.append(name, range, num);
     panel.appendChild(row);
-    rows.push(() => set(DEFAULTS[c.key]));
+    rows.push(() => set(DEFAULTS[c.key], false));
   }
 
   const foot = document.createElement('div');
@@ -1515,11 +1526,16 @@ function initDevPanel() {
   sep.className = 'chk';
   const cb = document.createElement('input');
   cb.type = 'checkbox'; cb.checked = tune.laneSep;
-  cb.addEventListener('change', () => { tune.laneSep = cb.checked; });
+  cb.addEventListener('change', () => { tune.laneSep = cb.checked; saveTune(); });
   sep.append(cb, document.createTextNode('Lane sep'));
   const reset = document.createElement('button');
   reset.textContent = 'Reset';
-  reset.addEventListener('click', () => { rows.forEach((r) => r()); cb.checked = tune.laneSep = DEFAULTS.laneSep; });
+  reset.title = 'Restore built-in defaults and clear saved settings';
+  reset.addEventListener('click', () => {
+    rows.forEach((r) => r());
+    cb.checked = tune.laneSep = DEFAULTS.laneSep;
+    try { localStorage.removeItem(TUNE_KEY); } catch {}
+  });
   const copy = document.createElement('button');
   copy.textContent = 'Copy';
   copy.title = 'Copy current values as JSON';
