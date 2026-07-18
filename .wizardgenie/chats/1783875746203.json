@@ -380,5 +380,13 @@
   {
     "role": "user",
     "content": "default all character scale so far to .8 for now"
+  },
+  {
+    "role": "assistant",
+    "content": "Done. Both `playerScale` and `enemyScale` now default to **0.8** — Darki and all the ratels render at 80% size, still foot-planted with their shadows tracking. The screenshot confirms the smaller characters against the street (they read as a bit further into the scene now, with more headroom). The sliders still open at 0.8 and you can nudge from there; hit Copy when you want more baked in."
+  },
+  {
+    "role": "user",
+    "content": "these enemies seems to hang or freeze walk animation when they run into Darki or collide with him. i think they should be intelligent enough to keep a safe distance from an enemy they are fighting instead of blindly running into them."
   }
 ]

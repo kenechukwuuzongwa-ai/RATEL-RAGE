@@ -86,8 +86,8 @@ const PLAYER = {
 // feels right, bake it into the sheet's drawH. Defaults reproduce the
 // shipped look exactly.
 const tune = {
-  playerScale: 1,
-  enemyScale: 1,
+  playerScale: 0.8,
+  enemyScale: 0.8,
   buildingScale: 1,
   buildingBase: 0,             // px offset added to BUILDING_BASE (down = +)
   buildingParallax: 0.75,
