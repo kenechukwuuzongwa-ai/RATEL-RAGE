@@ -4,7 +4,7 @@
     "name": "Hi",
     "createdAt": "2026-07-12T17:02:26.203Z",
     "model": "claude-code-fable",
-    "executorModel": null,
+    "executorModel": "claude-code-opus",
     "thinking": false,
     "enhanced": false,
     "tokenSaver": false,
