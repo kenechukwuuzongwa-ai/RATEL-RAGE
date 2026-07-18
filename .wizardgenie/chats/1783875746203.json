@@ -396,5 +396,13 @@
   {
     "role": "user",
     "content": "so whats that next thing we are building from our chebox after making the first enemy"
+  },
+  {
+    "role": "assistant",
+    "content": "Let me pull up the current checklist to answer accurately.We just finished the first enemy (Ginger, with the full Streets-of-Rage mob AI). Looking at the checklist, the next thing is back up in **section 1, Combat Feel** — which the doc marks \"never sacrifice\" and ranks above everything else.\n\nSpecifically, the next build is the **impact-feedback trio: hit stop → hit sparks → screen shake.**\n\nHere's why that's the right next move rather than more enemy types or the boss:\n\n- **It's the top priority by the doc's own rule.** \"Every punch must have visible impact\" is a core goal, and right now the uppercut connects and knocks enemies down, but there's no *juice* — no freeze-frame on contact, no spark, no shake. That trio is exactly what makes a hit *feel* like a hit, and it's the lever for \"fun within 30 seconds.\"\n- **It needs zero new art.** Hit stop is a timer that briefly freezes both fighters; sparks are a few code-drawn flashes at the contact point; screen shake is a camera offset. All three build on the uppercut hit-detection we already have. Compare that to the boss or new archetypes, which are blocked on sprite sheets you haven't generated yet.\n- **It sets up the payoff for the AI we just built.** The enemies already telegraph, lunge, and take turns — but their attacks are currently cosmetic because Darki has no health or hurt state. So the very next step after the juice is **closing the combat loop**: enemy attacks actually connect → player hurt/knockdown → health bars both ways. That turns the mob's lunges into real threats and makes the whole fight meaningful.\n\nSo my recommendation, in order:\n1. **Hit stop + hit sparks + screen shake** on the uppercut (fast, no assets, biggest feel gain).\n2. **Enemy attacks connect + player hurt state + health** (closes the loop, makes the AI matter).\n3. *Then* branch out to archetypes (brute/thrower) or start the Sound Kleft boss.\n\nWant me to start on the impact trio? It's a contained change to the existing hit path and I can verify it in the sim with a before/after."
+  },
+  {
+    "role": "user",
+    "content": "yes go on"
   }
 ]
