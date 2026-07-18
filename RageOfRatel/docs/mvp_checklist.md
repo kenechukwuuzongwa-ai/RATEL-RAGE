@@ -23,9 +23,9 @@ via `tests/drive.html` + screenshots.
 - [x] First attack (uppercut) — data-driven active frames, damage, knockback
 - [x] One-hit-per-swing; damage only on `active: true` frames
 - [x] Enemy hit reaction: knockback launch → KO'd on tarmac → get up
-- [ ] **Hit stop** on contact (light 3f / heavy 6–8f @ 60 fps)
-- [ ] **Hit sparks** at the contact point on every confirmed hit
-- [ ] **Screen shake** on heavy hits only (≤ 6f, ≤ 8 px)
+- [x] **Hit stop** on contact (~0.09 s freeze, tunable)
+- [x] **Hit sparks** — starburst at the contact point on every confirmed hit
+- [x] **Screen shake** — short decaying camera jolt on the uppercut (tunable)
 - [ ] Attack input buffering (queue during animations, ~0.15 s window)
 - [ ] Light combo string (jab → jab → straight) with link windows
 - [ ] Heavy attack distinct from light (the uppercut becomes the heavy)

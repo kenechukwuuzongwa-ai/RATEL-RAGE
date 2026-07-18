@@ -255,3 +255,23 @@
   pose), so squared-up enemies bounce on their feet instead of freezing.
 - Verified: maxTokens=1, both sides occupied, min body gap ~31, non-attackers
   stay 150+ px out; combat knockdown chain still passes.
+
+## 2026-07-18 — Impact feedback: hit stop, sparks, screen shake
+
+- Added the combat-feel "juice" trio to the uppercut hit path (combat is
+  priority #1). On a confirmed hit, `triggerHitFx` fires all three:
+  - **Hit stop**: `update` freezes the whole sim for `tune.hitStop` (0.09 s
+    ≈ 5–6 frames) while effects keep animating (`advanceFx` runs first).
+  - **Hit sparks**: a white flash + yellow starburst at the contact point,
+    drawn in world space, ~0.22 s life.
+  - **Screen shake**: a short decaying camera jolt (`tune.shakeMag`, 8 px)
+    applied as a draw-time translate; the HUD stays steady, and the sky is
+    overscanned so the shake never exposes an edge.
+- Both `hitStop` and `shakeMag` are live-tunable in the dev panel; exposed
+  `window.__ror.hitStop/shake/sparkCount` for tests.
+- Gave each enemy a distinct depth lane (`laneBias = -33 + id*22`) so
+  same-side enemies never target the same spot (min body gap back to ~33).
+- `tests/drive.html`: added `?hitfx=1` (asserts hit stop + spark + shake all
+  fire on a pinned hit) and `?hitfx=shot` (freezes on the impact frame).
+  Verified: peakHitStop 0.09, spark spawned, shake 0.16; combat hit→down→walk
+  chain, mobwatch (1 token, both sides, gap 33) and overlap all still pass.

@@ -103,6 +103,8 @@ const tune = {
   shadowOffsetX: 0,            // px, + = right
   shadowOffsetY: 0,            // px, + = down
   shadowAlpha: 0.3,            // opacity
+  hitStop: 0.09,               // freeze on contact (seconds ≈ 5–6 frames)
+  shakeMag: 8,                 // screen-shake amplitude (px) on heavy hits
 };
 
 const canvas = document.getElementById('game');
@@ -738,6 +740,59 @@ let props = null;
 let enemies = [];
 let cameraX = 0;
 
+/* ------------------------------------------------------ impact feedback */
+// The "juice" that makes a hit read as a hit (combat-feel priority #1):
+//   * hit stop — freeze both fighters a few frames on contact;
+//   * hit sparks — a starburst at the contact point;
+//   * screen shake — a short decaying camera jolt on heavy hits.
+let hitStopTimer = 0;
+let shakeTimer = 0, shakeDur = 0.16;
+const sparks = [];
+
+function triggerHitFx(x, y) {
+  hitStopTimer = Math.max(hitStopTimer, tune.hitStop);
+  shakeDur = 0.16;
+  shakeTimer = shakeDur;
+  sparks.push({ x, y, age: 0, dur: 0.22 });
+}
+
+// Advances even during hit-stop so sparks/shake keep playing while frozen.
+function advanceFx(dt) {
+  if (shakeTimer > 0) shakeTimer -= dt;
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    if ((sparks[i].age += dt) >= sparks[i].dur) sparks.splice(i, 1);
+  }
+}
+
+function shakeOffset() {
+  if (shakeTimer <= 0) return { sx: 0, sy: 0 };
+  const a = tune.shakeMag * (shakeTimer / shakeDur);   // decays to 0
+  return { sx: Math.sin(shakeTimer * 130) * a, sy: Math.cos(shakeTimer * 97) * a * 0.6 };
+}
+
+function drawSparks() {
+  for (const s of sparks) {
+    const p = s.age / s.dur;                 // 0 → 1 over its life
+    const sx = s.x - cameraX, sy = s.y;
+    const r = 8 + p * 26;
+    ctx.globalAlpha = 1 - p;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(sx, sy, (1 - p) * 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffe45e';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 6; i++) {
+      const ang = i * (Math.PI / 3) + s.age * 6;
+      ctx.beginPath();
+      ctx.moveTo(sx + Math.cos(ang) * r * 0.4, sy + Math.sin(ang) * r * 0.4);
+      ctx.lineTo(sx + Math.cos(ang) * r, sy + Math.sin(ang) * r);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 const combatRng = mulberry32(99);   // seeded so test runs stay deterministic
 
 function buildEnemies() {
@@ -761,7 +816,7 @@ function buildEnemies() {
     e.atkCooldown = 1 + rng() * 2.5;             // asynchronous first strike
     e.side = id % 2 ? 1 : -1;                    // which side of the player it holds
     e.standoff = 150 + Math.floor(rng() * 70);   // SAFE fighting distance
-    e.laneBias = Math.floor(rng() * 56) - 28;    // depth fan-out
+    e.laneBias = -33 + id * 22;                  // distinct depth lane per enemy
     e.amble = 0.8 + rng() * 0.45;                // varied footwork speed
     e.repositionAt = 3 + rng() * 4;              // seconds until a flank swap
     e.passSide = id % 2 ? 1 : -1;                // steering tie-break
@@ -809,6 +864,7 @@ function resolveUppercutHits() {
         enemy.vy = hb.knockback?.y ?? -440;
         attackTokens.delete(enemy);            // interrupted — free the token
         enemy.mode = 'menace';
+        triggerHitFx((player.x + enemy.x) / 2, enemy.y - 110); // hit stop + spark + shake
       }
     }
   }
@@ -980,6 +1036,9 @@ function stepEnemyAI(enemy, dt) {
 }
 
 function update(dt) {
+  advanceFx(dt);                            // sparks/shake run even while frozen
+  if (hitStopTimer > 0) { hitStopTimer -= dt; return; } // hit stop: freeze the sim
+
   let attacking = player.anim === 'uppercut';
   if (input.attackPressed && player.grounded && !attacking) {
     player.anim = 'uppercut';
@@ -1116,7 +1175,7 @@ function drawSky() {
   g.addColorStop(0.55, '#cfd9c9');
   g.addColorStop(1, '#e8caa0'); // harmattan haze near the horizon
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, VIEW_W, GROUND_Y);
+  ctx.fillRect(-12, -12, VIEW_W + 24, GROUND_Y + 12); // overscan for screen shake
 
   ctx.fillStyle = 'rgba(255,236,180,.9)';
   ctx.beginPath();
@@ -1321,6 +1380,9 @@ function drawHud() {
 }
 
 function draw() {
+  const { sx, sy } = shakeOffset();
+  ctx.save();
+  ctx.translate(sx, sy);
   drawSky();
   drawSkyline();
   drawBackdrop();
@@ -1328,7 +1390,9 @@ function draw() {
   drawSidewalkBand();
   drawRoad();
   drawActors();
-  drawHud();
+  drawSparks();
+  ctx.restore();
+  drawHud();                               // HUD stays steady (not shaken)
 }
 
 /* ----------------------------------------------------------------- boot */
@@ -1340,6 +1404,9 @@ window.__ror = {
   get enemies() { return enemies; },
   get cameraX() { return cameraX; },
   get tokens() { return attackTokens.size; },
+  get hitStop() { return hitStopTimer; },
+  get shake() { return shakeTimer; },
+  get sparkCount() { return sparks.length; },
   frames: 0,
   step(dt) { update(dt); draw(); }, // deterministic tick for tests
 };
@@ -1367,6 +1434,8 @@ function initDevPanel() {
     { key: 'shadowOffsetX', label: 'Shadow offset X', min: -80, max: 80, step: 1 },
     { key: 'shadowOffsetY', label: 'Shadow offset Y', min: -60, max: 60, step: 1 },
     { key: 'shadowAlpha', label: 'Shadow opacity', min: 0, max: 1, step: 0.01 },
+    { key: 'hitStop', label: 'Hit stop (s)', min: 0, max: 0.25, step: 0.01 },
+    { key: 'shakeMag', label: 'Screen shake', min: 0, max: 20, step: 0.5 },
   ];
 
   const style = document.createElement('style');

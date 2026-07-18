@@ -22,6 +22,26 @@
         const s = window.__ror;
         if (!s) { log.textContent = 'no hook'; return; }
         const DT = 1 / 60;
+        if (p.has('hitfx')) { // impact trio: hit stop + spark + shake on a confirmed hit
+          const e = s.enemies[0];
+          s.player.x = 900; s.player.y = 650; s.player.vx = 0; s.player.facing = 1;
+          e.x = s.player.x + 95; e.y = s.player.y;   // pin in reach, holding
+          e.mode = 'windup'; e.stateTimer = 5; e.atkCooldown = 5;
+          const peak = { hitStop: 0, sparks: 0, shake: 0 };
+          dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }));
+          for (let i = 0; i < 20; i++) {
+            if (e.state !== 'hit') { e.x = s.player.x + 95; e.y = s.player.y; } // keep pinned pre-hit
+            s.step(DT);
+            peak.hitStop = Math.max(peak.hitStop, s.hitStop);
+            peak.sparks = Math.max(peak.sparks, s.sparkCount);
+            peak.shake = Math.max(peak.shake, s.shake);
+            if (p.get('hitfx') === 'shot' && s.sparkCount > 0) break; // freeze on impact
+          }
+          dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ' }));
+          log.textContent = `hitfx: peakHitStop=${peak.hitStop.toFixed(3)} `
+            + `peakSparks=${peak.sparks} peakShake=${peak.shake.toFixed(3)} enemy0=${e.state}`;
+          return;
+        }
         if (p.has('mobwatch')) { // SoR mob AI: token-limited attacks, surround, no clump
           s.player.x = 1200; s.player.y = 655;
           let maxTokens = 0, minGapSeen = 999;
