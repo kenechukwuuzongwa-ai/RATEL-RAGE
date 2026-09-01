@@ -4,7 +4,9 @@
   <meta charset="UTF-8" />
   <title>drive test</title>
   <link rel="stylesheet" href="../styles.css" />
-  <script>window.__rorNoPanel = true;</script>
+  <!-- Deterministic harness: suppress the dev panel AND the game's own rAF loop
+       so the scenarios advance ONLY via manual s.step(DT) (no dual simulation). -->
+  <script>window.__rorNoPanel = true; window.requestAnimationFrame = () => 0;</script>
 </head>
 <body>
   <main class="game-shell">
@@ -18,7 +20,22 @@
     const log = document.getElementById('log');
     // Deterministic sim: hold right for 2s, jump, run 1s more, release, 1s idle.
     addEventListener('load', () => {
-      setTimeout(() => {
+      /* Wait on the game's OWN ready signal, not a stopwatch. This was a flat
+       * 800 ms, which was correct while boot loaded every sheet before the first
+       * frame. Since the boot split it is not: the front end is up in ~250 ms
+       * and the level streams in behind it for tens of seconds, so 800 ms landed
+       * on an empty world — `enemies[0]` undefined, sprites still null — and
+       * every scenario in here threw before its first assertion. A ready-signal
+       * gate cannot be outrun by adding assets. */
+      const ready = () => window.__ror && window.__ror.worldReady;
+      const waitForWorld = (t = 0) => {
+        if (ready()) { runScenario(); return; }
+        if (t > 180000) { log.textContent = 'world never became ready'; return; }
+        setTimeout(() => waitForWorld(t + 50), 50);
+      };
+      waitForWorld();
+
+      function runScenario() {
         const s = window.__ror;
         if (!s) { log.textContent = 'no hook'; return; }
         const DT = 1 / 60;
@@ -28,8 +45,8 @@
           e.x = s.player.x + 95; e.y = s.player.y;   // pin in reach, holding
           e.mode = 'windup'; e.stateTimer = 5; e.atkCooldown = 5;
           const peak = { hitStop: 0, sparks: 0, shake: 0 };
-          dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }));
-          for (let i = 0; i < 20; i++) {
+          dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK' })); // K = uppercut
+          for (let i = 0; i < 30; i++) {
             if (e.state !== 'hit') { e.x = s.player.x + 95; e.y = s.player.y; } // keep pinned pre-hit
             s.step(DT);
             peak.hitStop = Math.max(peak.hitStop, s.hitStop);
@@ -37,7 +54,7 @@
             peak.shake = Math.max(peak.shake, s.shake);
             if (p.get('hitfx') === 'shot' && s.sparkCount > 0) break; // freeze on impact
           }
-          dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ' }));
+          dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyK' }));
           log.textContent = `hitfx: peakHitStop=${peak.hitStop.toFixed(3)} `
             + `peakSparks=${peak.sparks} peakShake=${peak.shake.toFixed(3)} enemy0=${e.state}`;
           return;
@@ -69,6 +86,7 @@
           return;
         }
         if (p.has('overlap')) { // two enemies crowding one spot must separate
+          s.freeRoam();                                  // drop wave walls (free player positioning)
           const a = s.enemies[0], b = s.enemies[1];
           a.state = b.state = 'walk'; a.role = b.role = 'front';
           s.player.x = 3000; s.player.y = 650;
@@ -131,25 +149,26 @@
         const e = s.enemies[0];
         const esnap = (tag) =>
           log.textContent += `${tag}: enemy0 state=${e.state} x=${e.x.toFixed(0)} jumpY=${e.jumpY.toFixed(0)}\n`;
-        s.player.x = e.x - 110; s.player.y = e.y; s.player.vx = 0; s.player.facing = 1;
-        dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ' }));
-        for (let i = 0; i < 22; i++) s.step(DT);   // ~frame 11, strike active
+        s.player.x = e.x - 80; s.player.y = e.y; s.player.vx = 0; s.player.facing = 1;
+        e.mode = 'menace'; e.atkCooldown = 99;     // don't let it counter-hit during the demo
+        dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK' })); // K = uppercut
+        for (let i = 0; i < 26; i++) { if (e.state !== 'hit') { e.x = s.player.x + 80; e.y = s.player.y; } s.step(DT); }   // pin in reach through the swing
         snap('atk.37s'); esnap('atk.37s');
-        for (let i = 0; i < 38; i++) s.step(DT);   // 1s total: attack over, enemy landed
+        for (let i = 0; i < 40; i++) s.step(DT);   // attack over, enemy landed
         snap('atk1s'); esnap('atk1s');
-        for (let i = 0; i < 100; i++) s.step(DT);  // down timer expires
+        for (let i = 0; i < 120; i++) s.step(DT);  // down timer expires
         esnap('atk2.6s');
-        dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyJ' }));
+        dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyK' }));
         // Leave the sim mid-strike on enemy 1 so the screenshot shows the
         // uppercut pose, debug hitbox, and the enemy reacting.
         const e1 = s.enemies[1];
         s.player.x = e1.x - 100; s.player.y = e1.y; s.player.vx = 0; s.player.facing = 1;
-        // this swing comes from the left mouse button
+        // this swing comes from the right mouse button (uppercut)
         document.getElementById('game')
-          .dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+          .dispatchEvent(new MouseEvent('mousedown', { button: 2 }));
         for (let i = 0; i < 26; i++) s.step(DT);
         snap('atk2.43s'); log.textContent += `enemy1: state=${e1.state} jumpY=${e1.jumpY.toFixed(0)}\n`;
-      }, 800);
+      }
     });
   </script>
 </body>

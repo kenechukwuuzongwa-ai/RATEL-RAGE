@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer (sprite_sheets.json, sprite 'enemywalk')",
+  "sprite": "enemywalk",
+  "image": "Enemywalk.png",
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "sheet": {
+    "cols": 6,
+    "rows": 6,
+    "frames": 35,
+    "imageWidth": 3072,
+    "imageHeight": 3072
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 34,
+    "fps": 30,
+    "loop": true
+  },
+  "note": "Ginger's stride walk cycle; 6x6 grid, cell 35 empty. Art faces right. Idle/hit stay on Ginger.png."
+}

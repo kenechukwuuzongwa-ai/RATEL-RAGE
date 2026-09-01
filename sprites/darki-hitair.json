@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "Darki_Hit_One-air_Reaction",
+  "image": "darki-hitair.png",
+  "note": "Launch, part 2 of 3: the tumble at the top of the arc. Frame 0 continues darki-hitlift frame 4 exactly; frame 6 (shoulders coming down) hands off to darki-fall frame 0. 2:1 downsample of ASSETS/NEW SPRITES/Darki_Hit_One-air_Reaction.png; cells 7-8 are empty. The source manifest loops this ping-pong — that is a preview setting, not the gameplay one: it is played ONCE, forward, as the middle of the fall.",
+  "frameWidth": 512,
+  "frameHeight": 265,
+  "sheet": {
+    "cols": 3,
+    "rows": 3,
+    "frames": 7,
+    "imageWidth": 1536,
+    "imageHeight": 795
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 6,
+    "fps": 30,
+    "loop": false
+  }
+}

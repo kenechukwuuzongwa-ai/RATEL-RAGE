@@ -1,0 +1,60 @@
+{
+  "note": "Level 1 Lagos Market District asset kit. Crop rects in source pixels of assetkit.png (1536x1024). The loader keys out the dark charcoal background (flood fill from the rect border) and trims to the opaque bounding box, so rects only need to bound each item and avoid neighbours + the yellow category labels.",
+  "image": "level1/assetkit.png",
+  "keyTol": 34,
+  "modules": [
+    { "id": "sky",        "x": 10,   "y": 22,  "w": 240, "h": 88 },
+    { "id": "skyline",    "x": 8,    "y": 136, "w": 378, "h": 78 },
+
+    { "id": "bldg_a",     "x": 452,  "y": 28,  "w": 152, "h": 274 },
+    { "id": "bldg_b",     "x": 624,  "y": 28,  "w": 140, "h": 274 },
+    { "id": "bldg_c",     "x": 838,  "y": 28,  "w": 152, "h": 274 },
+    { "id": "bldg_d",     "x": 1012, "y": 28,  "w": 104, "h": 248 },
+
+    { "id": "pole_b",     "x": 1250, "y": 40,  "w": 72,  "h": 340 },
+    { "id": "streetlamp", "x": 1330, "y": 118, "w": 44,  "h": 262 },
+    { "id": "watertank",  "x": 1408, "y": 128, "w": 78,  "h": 166 },
+    { "id": "ac_unit",    "x": 1088, "y": 262, "w": 62,  "h": 48 },
+    { "id": "satellite",  "x": 1144, "y": 338, "w": 72,  "h": 56 },
+
+    { "id": "sidewalk",   "x": 10,   "y": 408, "w": 496, "h": 74 },
+    { "id": "road",       "x": 12,   "y": 556, "w": 486, "h": 64 },
+
+    { "id": "danfo",      "x": 526,  "y": 446, "w": 136, "h": 62 },
+    { "id": "keke",       "x": 672,  "y": 448, "w": 100, "h": 58 },
+    { "id": "bike",       "x": 556,  "y": 518, "w": 132, "h": 96 },
+    { "id": "cart",       "x": 850,  "y": 528, "w": 112, "h": 92 },
+
+    { "id": "generator",  "x": 1022, "y": 446, "w": 80,  "h": 56 },
+    { "id": "tyres_a",    "x": 1104, "y": 446, "w": 60,  "h": 52 },
+    { "id": "chair",      "x": 1168, "y": 418, "w": 44,  "h": 74 },
+    { "id": "crate_a",    "x": 1220, "y": 436, "w": 58,  "h": 56 },
+    { "id": "barrels",    "x": 1282, "y": 414, "w": 60,  "h": 80 },
+    { "id": "jerry_a",    "x": 1348, "y": 438, "w": 50,  "h": 54 },
+    { "id": "fruit_stall","x": 1018, "y": 506, "w": 98,  "h": 134 },
+    { "id": "kiosk",      "x": 1120, "y": 504, "w": 114, "h": 136 },
+    { "id": "pos_booth",  "x": 1268, "y": 506, "w": 76,  "h": 134 },
+    { "id": "umbrella",   "x": 1350, "y": 510, "w": 122, "h": 98 },
+
+    { "id": "wall_a",     "x": 8,    "y": 672, "w": 112, "h": 70 },
+    { "id": "wall_b",     "x": 128,  "y": 672, "w": 110, "h": 70 },
+    { "id": "wall_c",     "x": 248,  "y": 656, "w": 120, "h": 86 },
+    { "id": "wall_d",     "x": 376,  "y": 656, "w": 120, "h": 86 },
+
+    { "id": "sign_1",     "x": 20,   "y": 764, "w": 132, "h": 76 },
+    { "id": "sign_2",     "x": 192,  "y": 764, "w": 174, "h": 76 },
+    { "id": "sign_3",     "x": 398,  "y": 764, "w": 120, "h": 76 },
+
+    { "id": "crate_wood", "x": 600,  "y": 678, "w": 70,  "h": 68 },
+    { "id": "tyres_b",    "x": 758,  "y": 686, "w": 72,  "h": 64 },
+    { "id": "crate_big",  "x": 842,  "y": 674, "w": 74,  "h": 76 },
+    { "id": "jerry_b",    "x": 1024, "y": 688, "w": 72,  "h": 62 },
+    { "id": "bottles",    "x": 1150, "y": 684, "w": 48,  "h": 66 },
+    { "id": "table",      "x": 1220, "y": 674, "w": 92,  "h": 82 },
+    { "id": "barrier",    "x": 1022, "y": 770, "w": 82,  "h": 46 },
+
+    { "id": "awning_a",   "x": 766,  "y": 884, "w": 122, "h": 46 },
+    { "id": "awning_b",   "x": 896,  "y": 884, "w": 122, "h": 46 },
+    { "id": "awning_c",   "x": 1024, "y": 884, "w": 122, "h": 46 }
+  ]
+}

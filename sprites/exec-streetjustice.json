@@ -1,0 +1,21 @@
+{
+  "generatedBy": "_chromakey/streetjustice_prep.js (downsampled 2:1)",
+  "sprite": "exec-streetjustice",
+  "image": "exec-streetjustice.png",
+  "frameWidth": 512,
+  "frameHeight": 218,
+  "sheet": {
+    "cols": 9,
+    "rows": 8,
+    "frames": 72,
+    "imageWidth": 4608,
+    "imageHeight": 1744
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 71,
+    "fps": 20,
+    "loop": false
+  },
+  "note": "COMPOSITE finisher: Darki (left) and MC_Olodo (right) are both baked into every cell, unlike the exec-darki/exec-olodo pair. Darki leaves frame in the tail cells (see f69+), so the timeline completes on f68 and hands the airborne boss to boss-olodo-fall. Measured: drawH 330, anchorFrac 0.2476, groundFrac 0.7775."
+}

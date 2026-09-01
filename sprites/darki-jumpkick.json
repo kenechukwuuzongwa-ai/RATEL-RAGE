@@ -1,0 +1,58 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer export (ASSETS/NEW SPRITES/jumpkick.png), published to sprites/ and re-sectioned by hand.",
+  "sprite": "JumpKick",
+  "image": "darki-jumpkick.png",
+  "frameWidth": 1024,
+  "frameHeight": 530,
+  "sheet": {
+    "cols": 6,
+    "rows": 6,
+    "frames": 34,
+    "imageWidth": 6144,
+    "imageHeight": 3180
+  },
+  "defaultAnimation": { "start": 0, "end": 33, "fps": 30, "loop": false },
+
+  "note": "Darki's JUMP — rise, the KICK, fall and landing. 6x6 grid; cells 34-35 are empty. Art faces right. The supplied export was a single 34-frame section called 'Jumpkick', useful as a reference render and useless as gameplay, because a jump is not one clip: the rise has to hold at the apex for however long the arc lasts, and the landing has to play whether or not the player attacked. Frame numbers were read off the sheet's own pixels (see _chromakey/jumpkick_sheet.js, which prints each cell's ink box and foot line): frames 0-3 still have his toes on the deck at y~483, 4-6 climb to y=365 at the tuck, 7-18 are the kick, 19-21 come back down, 22 is the touchdown. THE KICK CAME BACK (2026-09-01). It had moved to darki-jumpstrike.json, and the player asked for THIS one instead — so the strike is cut here again, from this sheet's own flat side kick, and only the strike's DESCENT is still played off darki-jumpstrike.json. Frames 23-33 remain unused: they are a second landing this sheet does not need, because the Land clip below is built from the launch run backwards.",
+
+  "animation": {
+    "sections": [
+      {
+        "id": "jump_rise",
+        "role": "custom",
+        "name": "Jump Rise",
+        "frames": [2, 3, 4, 5, 6],
+        "fps": 18,
+        "loop": false,
+        "description": "Push-off through the tuck. 2-3 are the launch extension with his toes still down — they play on the first frames off the ground, which is exactly when he is leaving it. Ends on 6, the compact tuck, because the engine HOLDS a jump clip's last frame for as long as he is still climbing: apex is 0.39s at jumpVel 780 / gravity 2000, and 5 frames at 18fps is 0.28s, so the tuck reads for a beat at the top instead of the clip running out early and hanging on a half-pose."
+      },
+      {
+        "id": "air_strike",
+        "role": "custom",
+        "name": "Air Kick",
+        "frames": [7, 8, 9, 10, 12, 14, 16, 18],
+        "fps": 38,
+        "loop": false,
+        "description": "THE STRIKE, back on this sheet by preference (2026-09-01) — the flat flying side kick this take was named for, chosen over darki-jumpstrike.json's raised diagonal. Continuous with the rise above: 6 is the tuck the rise ends on and 7 is that same tuck opening into the chamber, so the press has no sheet swap to hide any more — rise and kick are now one sheet, and the only seam left in the move is the hand-off to the strike's descent. Measured, not eyeballed (_chromakey/jumpkick_sheet.js): the leg is fully out from 8 to 16, where the ink reaches x=865 and the foot line sits flat at ~385, and it starts coming back at 17 (x=753) and 18 (x=711). 9-16 are eight near-identical held frames, so 11, 13, 15, 17 are dropped — playing them straight reads as the kick stalling in mid-air. 8, 9 and 10 are the frames the hit window is pinned to (AIR_KICK_HIT in game.js reads SHEET numbers, not list positions, so this can be re-cut without sliding the hit onto the chamber) — keep them if you re-time it. 38fps, NOT the 26 this cut originally shipped at: the frame list is what the player asked for, the timing is what the dive can afford. Under 2.6x ramped gravity the whole descent is under 0.4s, and 8 frames at 26 is 0.31s of kick, which left the recovery two frames on screen. At 38 it is 0.21s and the fall gets the rest."
+      },
+      {
+        "id": "jump_fall",
+        "role": "custom",
+        "name": "Jump Fall",
+        "frames": [6, 5, 4],
+        "fps": 9,
+        "loop": false,
+        "description": "THE RISE, RUN BACKWARDS. A jump is one arc and gravity is symmetrical, so what comes down is what went up in reverse: he untucks through exactly the poses he folded up through, 6 -> 5 -> 4, and holds 4 — the pose he was in on the way past the same height — until his feet arrive. This replaced a forward cut of 19-21 borrowed off the kick's recovery. Those frames were a fine descent, but they were a DIFFERENT descent: the leap stopped being one motion and became two clips that happened to meet at the apex. Only the airborne half of the rise is inverted here (4, 5, 6); 3 and 2 still have his toes on the deck and belong to the landing below, which is where the inverse continues."
+      },
+      {
+        "id": "land",
+        "role": "custom",
+        "name": "Land",
+        "frames": [3, 2, 1, 0, 1, 2],
+        "fps": 26,
+        "loop": false,
+        "description": "…and the inverse keeps running through the deck. 3 and 2 are the launch extension with his toes still touching, so backwards they are the first contact — body still long, weight arriving. 1 and 0 are the crouch he JUMPED FROM, which reversed is the crouch he lands into: the same knees, the same depth, absorbing instead of loading. Then 1, 2 forward again to stand him back up. Take-off and landing are one pose read in two directions, which is why they cannot disagree with each other. 0.23s at 26fps — this plays on EVERY landing, kick or no kick, and a landing long enough to notice is a landing long enough to resent. Cosmetic: it never takes his controls away."
+      }
+    ]
+  }
+}

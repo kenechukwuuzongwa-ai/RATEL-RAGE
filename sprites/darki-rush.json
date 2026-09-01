@@ -1,0 +1,71 @@
+{
+  "generatedBy": "_chromakey/rush_prep.js",
+  "sprite": "darki-rush",
+  "image": "darki-rush.png",
+  "frameWidth": 344,
+  "frameHeight": 345,
+  "sheet": {
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "imageWidth": 1376,
+    "imageHeight": 1380
+  },
+  "animation": {
+    "sections": [
+      {
+        "role": "custom",
+        "name": "rush",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "fps": 24,
+        "loop": true,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "loop forward",
+        "description": "the double-forward charge — one stride cycle, loops for as long as the approach lasts"
+      }
+    ]
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 15,
+    "fps": 24,
+    "loop": true
+  },
+  "note": "Built by _chromakey/rush_prep.js from ASSETS/NEW SPRITES/rush.png frames 0-19, resample duplicates dropped.",
+  "sourceFrames": [
+    0,
+    2,
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    13,
+    14,
+    15,
+    17,
+    18,
+    19
+  ]
+}

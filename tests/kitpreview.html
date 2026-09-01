@@ -1,0 +1,63 @@
+<!doctype html>
+<html><body style="margin:0;background:#2b2b2b">
+<canvas id="c"></canvas>
+<script>
+  // Slice every kit.json module (key dark bg + trim) and lay them out labelled.
+  function keyBorder(cv, tol) {
+    const w = cv.width, h = cv.height, x = cv.getContext('2d');
+    const d = x.getImageData(0, 0, w, h), px = d.data;
+    const c0 = [px[0], px[1], px[2]];
+    const T = tol * tol, seen = new Uint8Array(w * h), st = [];
+    for (let i = 0; i < w; i++) { st.push(i, 0, i, h - 1); }
+    for (let j = 0; j < h; j++) { st.push(0, j, w - 1, j); }
+    const bg = (i) => { const dr = px[i] - c0[0], dg = px[i + 1] - c0[1], db = px[i + 2] - c0[2];
+      return dr * dr + dg * dg + db * db < T; };
+    while (st.length) {
+      const y = st.pop(), xx = st.pop();
+      if (xx < 0 || y < 0 || xx >= w || y >= h) continue;
+      const id = y * w + xx; if (seen[id]) continue; seen[id] = 1;
+      const i = id * 4; if (px[i + 3] === 0 || !bg(i)) continue;
+      px[i + 3] = 0; st.push(xx + 1, y, xx - 1, y, xx, y + 1, xx, y - 1);
+    }
+    x.putImageData(d, 0, 0);
+  }
+  function bbox(cv) {
+    const w = cv.width, h = cv.height, px = cv.getContext('2d').getImageData(0, 0, w, h).data;
+    let a = w, b = h, c = -1, e = -1;
+    for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) if (px[(y * w + xx) * 4 + 3] > 16) {
+      if (xx < a) a = xx; if (xx > c) c = xx; if (y < b) b = y; if (y > e) e = y; }
+    return c < 0 ? null : { a, b, c, e };
+  }
+  (async () => {
+    const kit = await (await fetch('../level1/kit.json')).json();
+    const img = new Image();
+    await new Promise((r, j) => { img.onload = r; img.onerror = j; img.src = '../level1/assetkit.png'; });
+    const mods = [];
+    for (const m of kit.modules) {
+      const cut = document.createElement('canvas'); cut.width = m.w; cut.height = m.h;
+      const cc = cut.getContext('2d');
+      cc.drawImage(img, m.x, m.y, m.w, m.h, 0, 0, m.w, m.h);
+      keyBorder(cut, kit.keyTol);
+      const bb = bbox(cut);
+      let out = cut;
+      if (bb) { out = document.createElement('canvas'); out.width = bb.c - bb.a + 1; out.height = bb.e - bb.b + 1;
+        out.getContext('2d').drawImage(cut, -bb.a, -bb.b); }
+      mods.push({ id: m.id, cv: out });
+    }
+    const cols = 6, cellW = 250, cellH = 250;
+    const c = document.getElementById('c');
+    c.width = cols * cellW; c.height = Math.ceil(mods.length / cols) * cellH;
+    const x = c.getContext('2d');
+    x.fillStyle = '#2b2b2b'; x.fillRect(0, 0, c.width, c.height);
+    mods.forEach((m, i) => {
+      const cx = (i % cols) * cellW, cy = Math.floor(i / cols) * cellH;
+      x.strokeStyle = '#444'; x.strokeRect(cx, cy, cellW, cellH);
+      const s = Math.min((cellW - 20) / m.cv.width, (cellH - 34) / m.cv.height, 1);
+      x.drawImage(m.cv, cx + (cellW - m.cv.width * s) / 2, cy + 20, m.cv.width * s, m.cv.height * s);
+      x.fillStyle = '#6f6'; x.font = '13px monospace';
+      x.fillText(`${m.id} ${m.cv.width}x${m.cv.height}`, cx + 4, cy + 14);
+    });
+    document.title = 'kit sliced: ' + mods.length;
+  })();
+</script>
+</body></html>

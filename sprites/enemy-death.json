@@ -1,0 +1,49 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer (Agbero Fall_Death), frame map hand-segmented from the contact sheet — the export defined one section covering all 58 frames",
+  "sprite": "Agbero Fall_Death",
+  "image": "enemy-death.png",
+  "note": "The Agbero KILLED — played only when his health reaches 0, never for a knockdown he survives. Frames read off _chromakey/agbero_death_contact.png: 0-5 he reels on his feet (unused), 6-10 the blow lands and he arches over backwards, 11-18 the tumble through the air, 19-31 the crash — legs kicked up, then rolling face-down — and 32-57 he does not move again. Frames 38-57 are pixel-identical (bbox 219x781 every one of them), which is why the death spec stops at 40 and HOLDS: playing 20 copies of one drawing is not animation, and the hold reads the same on screen.",
+  "orientation": "MIRRORED against the rest of the Ginger family — the loader config carries faces -1, not 1. Do not 'fix' it for consistency. The ground truth is where his HEAD ends up: the sim turns a falling body to face its attacker, and a man knocked off his feet lands with his head AWAY from whoever hit him and his boots pointing back at them. Unmirrored, the art puts the head on the +x side, so it must be drawn as-is when he travels right — which is when the sim's facing is -1.",
+  "anchoring": "anchorFrame 6. Per-frame foot anchoring centres each frame on its lowest 12% of pixels, which is his boots while standing and an arm, a shoulder or a hip once he is down — so it hops between body parts and drags the whole man sideways. Frozen to the frame he enters the sheet on, the only horizontal motion left is the sim's knockback plus the slide the artist drew.",
+  "frameWidth": 512,
+  "frameHeight": 337,
+  "sheet": {
+    "cols": 8,
+    "rows": 8,
+    "frames": 58,
+    "imageWidth": 4096,
+    "imageHeight": 2696
+  },
+  "animation": {
+    "sections": [
+      {
+        "role": "custom",
+        "name": "death air",
+        "description": "the lethal blow lands and he goes over — play while he is off the ground",
+        "frames": [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+        "fps": 30,
+        "loop": false,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "plays once"
+      },
+      {
+        "role": "custom",
+        "name": "death down",
+        "description": "the crash, the roll face-down, and still — play from the moment he lands, then hold the last frame forever",
+        "frames": [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
+        "fps": 26,
+        "loop": false,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "plays once"
+      }
+    ]
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 57,
+    "fps": 30,
+    "loop": false
+  }
+}

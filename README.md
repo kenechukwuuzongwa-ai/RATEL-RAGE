@@ -24,13 +24,21 @@ npx http-server -p 4173
 
 ## Controls
 
-- Move: WASD / arrows / left stick
-- Light attack or pick up: J / gamepad X
-- Heavy attack: K / gamepad Y
-- Jump: Space / gamepad A
-- Dodge: L / gamepad B
-- Rage special: U / right bumper
-- Pause: Enter / Start
-- Advance cutscenes: J, Space, Enter, X or A
+- Move: WASD / arrows
+- Jump: Space
+- Quick Jabs (fast two-hit flurry): left mouse button / J
+- Uppercut (heavy launcher): right mouse button / K
+- Combo: jab then right-click in quick succession cancels the jabs into the uppercut
+- Rage: fills as you deal/take damage and auto-bursts into a temporary power state when full
 
-The prototype saves unlocked case files and best scores in versioned local storage.
+## Project layout
+
+- `src/game.js` — the single-file engine (movement, combat, AI, render, dev panel)
+- `sprites/` — all character sprite sheets + their Sorceress-analyzer JSONs
+  (`darki-*` = the player Darki, `enemy-*` = the street enemy "Ginger")
+- `layers/` — Level 1 parallax background art (sky / far / mid / gameplay)
+- `tests/` — headless/visual harnesses (`drive.html`, `sheetview.html`, …)
+- `docs/` — design walkthroughs · `_unused/` — retired/duplicate source art
+
+A dev tuning panel (gear, top-right) exposes live parallax/fog/fighter/shadow
+sliders; **Save** persists them to local storage.

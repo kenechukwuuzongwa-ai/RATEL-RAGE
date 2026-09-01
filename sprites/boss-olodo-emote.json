@@ -1,0 +1,21 @@
+{
+  "generatedBy": "_chromakey/emote_build.js (from ASSETS/MC_Olodo EMOTE.mp4)",
+  "sprite": "boss-olodo-emote",
+  "image": "boss-olodo-emote.png",
+  "frameWidth": 263,
+  "frameHeight": 380,
+  "sheet": {
+    "cols": 9,
+    "rows": 9,
+    "frames": 81,
+    "imageWidth": 2367,
+    "imageHeight": 3420
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 80,
+    "fps": 30,
+    "loop": true
+  },
+  "note": "Seamless combat-stance loop: source clip frames 59-139 at 30fps."
+}

@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "Darki_Block",
+  "image": "darki-block.png",
+  "note": "Darki's guard. 0 = neutral stance (the same height as his idle/jab guard, which is why it is the bodyFrame), 1 = arms coming up, 2-3 = the full cover, forearms over the head. Played as RAISE 0->3 on the press, HOLD on 3 for as long as the button is down, DROP 2->1->0 on release — so it is a held state, not a one-shot: the source manifest's 'play once forward' is the preview setting. Frames 2-3 measure taller than 0 (524 vs 493 source px) because the arms go up over his head; bodyFrame 0 is what stops that inflating his on-screen size. 2:1 downsample of ASSETS/NEW SPRITES/Darki_Block.png (see _chromakey/newmoves_prep.js).",
+  "frameWidth": 664,
+  "frameHeight": 344,
+  "sheet": {
+    "cols": 2,
+    "rows": 2,
+    "frames": 4,
+    "imageWidth": 1328,
+    "imageHeight": 688
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 3,
+    "fps": 30,
+    "loop": false
+  }
+}
