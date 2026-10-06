@@ -1,5 +1,710 @@
 # Changelog
 
+## 2026-09-27 — the world plates draw their VISIBLE SLICE, and what the lag hunt actually found
+
+Reported as "significant unacceptable lag on PC". **It is not reproducible in the
+harness, and that is stated here rather than smoothed over:** the section-2 wave
+(nine bodies) runs at a median 16.8 ms — 59.5 fps — with `update` + `draw`
+costing 1.0-1.2 ms of a 16.7 ms budget, a flat heap over six windows, no leak,
+and zero long tasks in twenty seconds. So the one change below is a real
+inefficiency that was found while looking, not a fix anyone should expect to
+cure the symptom.
+
+- **`drawWorldPlate()`** — `drawSky`, `drawBackdrop` and `drawFrontage` each
+  submitted the ENTIRE 9259x1124 world plate every frame with the five-argument
+  `drawImage`, handing the rasteriser a 9259-wide destination when ~1280 of
+  those columns are on screen. Three a frame, under the scene zoom.
+  `drawBackdrop` was the largest single item inside `draw()`. The vehicle layer
+  at the same scale already used the nine-argument source-rect form, so the
+  pattern was established in the file; the three plates now use it too.
+  - **This is not a resize, a crop or a rescale of the artwork.** The source
+    offset is chosen in WHOLE SOURCE PIXELS and the destination is computed as
+    `dx + sx0 * scale` — the same affine mapping the five-argument call already
+    implied. Every source pixel lands exactly where it landed before: same
+    scale, same origin, same parallax multipliers, same shared 9259x1124 space,
+    and the broken-wall transparency still shows the residential plane through
+    it. The 96 px margin is deliberate slack for the shake, the zoom and the
+    vertical camera, which all move the band after the slice is chosen.
+
+### What the profiling actually says
+- **The main thread is not the bottleneck.** 92% of profile samples are
+  `(idle)`. Named costs inside `draw()` are `drawBackdrop`, then `fitText`
+  (1.6%) and `measureText` (0.9%) — all real, all far too small to be felt.
+- **The structural finding is MEMORY, and it is unfixed.** `_vram.js` measures
+  **1160 prepped sprite-frame canvases at 275.7 MB of RGBA**, plus four
+  9259x1124 layer plates at ~41.6 MB each — **~440 MB resident**. A
+  software-raster harness with spare system RAM never feels that; a real GPU
+  thrashes texture uploads on it, which is exactly what stutter looks like. It
+  will hit a phone harder than a PC. Fixing it means re-exporting or tiling art,
+  which is a content decision and not a code tweak.
+- World load measured 48-69 s in-page, warm and cold.
+
+### Verification
+- New `_chromakey/plateverify.js`, **7/7**: the sliced draw is pixel-identical
+  to the old full-plate draw at world start, mid level and world end — **0 of
+  921600 px differ at 720p and 0 of 3686400 at 1440p** — with a separate check
+  that the background is actually painted, so identity is not vacuous. The
+  comparison puts the OLD five-argument call back through
+  `__ror.drawPlateOverride` and re-draws the same frozen frame, so it is an
+  identity test against the running build rather than against a screenshot from
+  a build that no longer exists.
+  - **The first version diffed 814k pixels and looked like a catastrophe.** It
+    was measuring the world MOVING between the two screenshots, because the
+    game's own rAF loop was still running. rAF cannot be stubbed at boot here
+    (the menu needs it to reach gameplay), so it is stubbed on arrival in
+    gameplay and the freeze is asserted before anything is compared.
+  - **The cost arm cannot be resolved in this environment and now says so.**
+    Timing around `step()` measures command SUBMISSION — 2D calls are queued —
+    and duly reported the 1440p frame as *cheaper* than the 720p one, which is
+    impossible; forcing a flush with `getImageData` makes the readback itself
+    79-325 ms, far wider than the signal. An earlier version asserted
+    `sliced < full` and "passed" at 0.2%, which was a coin toss dressed as
+    evidence. It now asserts only that the slice is **not materially slower**
+    (-1.29 ms against a 5.94 ms run-to-run spread) and prints INSIDE THE NOISE.
+    Measure the real win on the target machine.
+- New `perfprofile.js`, `_framecost.js`, `_sustain.js`, `_spikes.js`, `_vram.js`.
+  **Every other harness in the folder stubs rAF, which is what makes them
+  deterministic and also why not one of them could ever have seen a frame-rate
+  problem.** Three traps corrected while building them: sampling the CPU
+  profiler at 100 us halved the frame rate (25 fps against 59.5 with it off) and
+  nearly sent me hunting a slowdown the profiler had caused; the first run
+  profiled the TITLE SCREEN, because `loop()` skips `draw()` entirely while a
+  menu owns the frame; and a headless page that is not foregrounded is throttled
+  to ~5 fps without `bringToFront` and the three backgrounding flags.
+- `bgloadverify` PASS, `shavedverify` 20/20, `regress` clean — the draw change
+  broke nothing.
+
+## 2026-09-27 — the SHAVED AGBERO walks on (wave 3), on one sheet
+
+The third street class: no hair, a bum bag, and a machete carried forward in
+both hands. He fields from the THIRD wave of Level 1 and nowhere else. This is a
+WALK-IN — one sheet exists (his stride) and everything else on him is the
+Agbero's art on loan, which is visible and deliberate.
+
+- **`sprites/shaved-agbero-walk.png` + `.json`** — copied from
+  `ASSETS/NEW SPRITES/Shaved-agbero-weapon-walk.png`, already transparent, no
+  chroma key needed. 4x4 grid, 15 frames, cell 15 empty. The manifest is
+  hand-written: the supplied sibling JSON is an unedited analyzer template that
+  still names "Wizard Walk" and ships the section `loop: false`. Its GRID was
+  right and is kept; its names and toggles are not and are replaced.
+- **`SHAVEDWALK_SHEET`** — two fields on it are the whole risk, and both are
+  measured rather than copied from the neighbouring Agbero sheets:
+  - `faces: -1`. **His art faces LEFT**, alone among the Agbero and Senior
+    Agbero sheets, all of which are `faces: 1`. The draw flips on
+    `enemy.facing !== config.faces`, so shipping 1 here for consistency makes
+    him moonwalk with the blade trailing.
+  - `drawH: 200`, not GINGER_SHEET's 205. He has no standing guard to hang a
+    `bodyFrame` on, so his UNION box maps to `drawH` — and the union top is the
+    BLADE, not his head, on the frames where the machete rides high (516 source
+    px against a median head-to-feet of 474). 205 against that union would have
+    drawn the MAN at 188 and stood him a head short of the Agbero beside him.
+    200 puts his median walking head-height on screen at 183.9 px, which is the
+    Agbero walk's own median at 205. PROVISIONAL: a walk-to-walk match says the
+    two stride at the same height, not that they are the same height — re-anchor
+    on a shared body frame when his fight stance ships.
+- **`enemyKit`** — the shaved row is the Agbero row with `walk` swapped, written
+  as a spread so a slot added to the street class reaches him too. He therefore
+  walks in as himself and becomes an Agbero the moment he squares up: `advance`,
+  `ready`, `guard`, both attacks, the recoil, the knockdown and the death all
+  come off the Ginger sheets. Temporary — the takes exist as footage
+  (`ASSETS/New Animation`: Shaved-unarmed-fight-stance, Armed-shaved-hit-reaction,
+  ShavedAgbero-fall-die-stand) and are not sheeted yet.
+- **`SHAVED_FOOTFALLS`** — ONE plant, at index 13, and the row exists because
+  inheriting `FOOTFALLS` put the Agbero's indices 5 and 23 onto a 15-frame cycle,
+  where 23 wraps to 8: two boots landing back to back inside one stride and then
+  silence. His lap is one STEP, not two (foot spread rises to a single maximum at
+  frame 6 and falls away; a full stride shows two), so one plant a lap at 30 fps
+  is 120 steps a minute. Looked up in FRONT of the Agbero's table rather than
+  instead of it, so his borrowed `advance` still fires the Agbero's plants.
+- **`SECTIONS[2].shaved: 2`** and two bodies on the tail of the spawn pool, with
+  an Agbero's statline — tuning a class the player cannot yet read as a class
+  would be tuning nothing. `spawnWave`'s selection is now one rationed-class
+  helper applied to both `senior` and `shaved`, and the junior remainder tests
+  "not one of the rationed classes" instead of "not a senior" — the old test put
+  every armed man in the junior list as well as his own and benched him on the
+  second staging.
+- **`streetIsReady`** widened from `kind === 'ginger'` to `kind !== 'senior'`: a
+  Shaved Agbero closing in is exactly the man the lieutenant should be making
+  room for, and testing by name had the senior barge past him.
+
+### Verification
+- New `_chromakey/shavedverify.js`, **20/20**: the sheet loads as itself and the
+  destructure did not shift (senior 24f, Olodo stance 81f still theirs); waves
+  1/2/3 field 0/0/2 shaved; wave 3 is 3 seniors + 2 shaved + 4 Agberos out of a
+  quota of 9, a split and not an addition; his stride resolves to his own sheet
+  while the Agbero next to him resolves to the Agbero's, and every other slot is
+  provably still on loan; the renderer resolves 200 against 205. Facing is
+  measured off PIXELS — he is staged on each side of Darki and the sim turns him,
+  then his silhouette is differenced against the same frame with him alpha'd out,
+  and turning him has to send his centre of mass the other way (+0.046 facing
+  left, -0.102 facing right). Shots: `shaved_wave3.png`, `shaved_standoff.png`.
+- `senioragberoverify` back to ALL PASS after one stale expectation was fixed:
+  it counted juniors by SHEET (`k === 'ginger'`), which was the same set as "not
+  a lieutenant" while the street had two kinds on it. The Shaved Agbero is
+  rank-and-file carrying a machete, so he is a junior for the half-as-many-
+  seniors ratio; counting by rank keeps every existing claim true and it now also
+  checks that the armed class is rationed rather than filling whatever is spare.
+- New `_chromakey/shavedstepsverify.js`, **11/11** — `SHAVED_FOOTFALLS` was the
+  one part of him with no harness on it, and it can fail two OPPOSITE ways, so
+  both are pinned. Inheriting the Agbero's indices is not caught by counting
+  steps (5 and 23 on a 15-frame lap still fire twice a lap), so the test is the
+  SPACING: his eleven measured gaps are 0.5 s each, ratio 1.00 — one plant a lap
+  at 120 a minute, exactly what the table claims, where the aliased Agbero would
+  read short-long-short-long. The second is the partial override written as a
+  plain ternary, which silences every clip he borrows: he is held in `approach`
+  for 180 frames on the Agbero's art and has to still make a sound (10 footfalls
+  on `advance`). The Agbero beside him is re-measured in the same run, 1.83
+  steps/s, so the new table cannot have knocked his over.
+- `waveverify` 14/14 and `regress` (combat chain, mob token cap 1, no body
+  overlap, hit FX) unchanged. `enemyanim` resolves all six Ginger states to the
+  expected sheet/section with facing never flipping; it was the last harness
+  still 404ing the favicon, which is indistinguishable in the console from a
+  sheet that failed to load, so it answers 204 and logs real 404s server-side
+  now. Its one reported error was the favicon and nothing else.
+- `entranceverify` **11 passed, 5 failed** (16 checks — an earlier note here said
+  "11/14", which is not a reading of anything this harness prints). The five are
+  the walk-in overshoot, the three `noticeX` arrival checks and the off-camera
+  hold. Confirmed PRE-EXISTING rather than assumed: re-run with
+  `SECTIONS[2].shaved` at 0 and the two pool bodies back to `ginger`, it returns
+  the same five failures with the same numbers to the pixel (-519, null, -677).
+  Those scenarios also run in section 1, which fields no armed man at all.
+- Sheet measurements: `_chromakey/_shavedprobe.js` (grid, empty cell,
+  transparency), `_shavedmeasure.js` (per-frame head-to-feet against the Agbero
+  walk), `_shavedplants.js` (per-boot ground contact), `_cycleclose.js` (one step
+  per lap), `_shavedcontact.js` / `_sizecmp.js` (the art, and the two men drawn
+  side by side at their shipped heights).
+
+### Known, and on purpose
+- He leads with the same leg every lap: the supplied take is one step, and frame
+  14 closes back onto frame 0's phase rather than onto its mirror. Seamless, but
+  a two-step export would replace it — re-measure the plants if one arrives.
+- The identity swap at the stand-off, described above. It goes away with the
+  sheets, not with a code change.
+
+## 2026-09-10 — AREA 2 clears: the stranded wave, the vetoed escape, and the user's placement
+
+- **THE USER-TUNED PLACEMENT IS IN** (`VEHICLE_ART`): keke-a 2416/692, danfo
+  3789/694, keke-b 4948/620, keke-c 5361/610, bus 6172/610 — driven with the F3
+  asset mover, exported with Copy, and baked as the shipped defaults. The van
+  pulled west opens the forecourt; every body now carries its own playtested
+  spot. (Side effect worth knowing: the keke-a now parks right on the AREA
+  1→2 gate line — its solid band is a chicane the player dips around, which is
+  a solid object behaving like one.)
+- **THE STRANDED WAVE (the progression stop in AREA 2).** Two causes, both
+  fixed:
+  - The corner men waited for the fence corner to come into view — camera
+    4173 — but while the wave is live the camera is clamped at 3976, so they
+    stood queued at y ~548, forever outside any strike's depth reach, and a
+    quota-7 wave could never reach 7 kills. Their stand is now baked to the
+    kerb-in-view camera (`entryCurbX - 85% of the view`, ~3840-3920), reachable
+    mid-fight, and the special corner gate is gone.
+  - The reinforcement count included those queued men: kill the walkable men
+    while camping west and `quota - kills` equaled exactly the queued count, so
+    the slot benched instead of refilling and the wave sat short of its quota
+    with nobody left to hit. The queued now count as NOT YET ARRIVED — a dead
+    slot walks in again from the west (always reachable) while the corner men
+    still join through their own gate the camera comes east.
+- **THE VETOED ESCAPE.** The vehicle resolve's shallower escape could fight
+  `clampPlayerLane` (645): a player nudged shallower than his own back edge was
+  clamped straight back inside the vehicle's depth band, and the two systems
+  ping-ponged forever with him parked inside the van — the depth walk died with
+  him. The resolve now re-tests after the lane clamp: if the clamped position
+  is still inside the rectangle, the depth escape was illegal for that body and
+  it takes the x escape instead.
+
+### Verification
+- New `_chromakey/areawalk.js`: the AREA 2 roster all leave the queue (the
+  corner men reach the road plane, entrance handed off) and the wave reaches
+  'cleared' with the gate opening. `waveverify` 14/14 (its gate checks now dip
+  the player deep past the keke's chicane, and count the carried man as
+  allowed), zoomverify 20/20 (the solid tests moved to the danfo's tuned spot),
+  assetmover 18/18, playareabound/playareacamera ALL PASS, boss intro shots
+  green.
+
+## 2026-09-10 — The asset mover gets a real control panel (ASSETS, F3)
+
+- The keyboard-first overlay was the wrong front door: it asked the user to
+  remember F3/Tab/arrows/E and hunt for invisible hitboxes. The mover now has a
+  VISIBLE control surface in the tuner's glassmorphism idiom:
+  - an **ASSETS** button fixed top-right (below the tuner's gear) — click or F3
+    opens the panel;
+  - an asset list (keke-a / danfo / keke-b / keke-c / bus) — clicking selects
+    and highlights that body in the world;
+  - X ("along street") and Y ("wheel row") rows with **-100/-10/-1/+1/+10/+100
+    steppers and exact number fields**;
+  - **Bring Darki here** (teleports him just left of the selected body so the
+    collision can be walked into and felt), **Reset** (authored spots), and
+    **Copy** (the placement export to clipboard + console).
+- The canvas keeps the collision-geometry overlay (the solid rectangles, the
+  wheel rows, the play band, Darki's anchor) while the panel is open; the
+  on-canvas crib text is gone — the panel owns the instructions. Keyboard and
+  drag-on-canvas paths stay for power use, and the panel's fields now refresh
+  whenever Tab or the arrows move the selection.
+- One real UI lesson: a clicked panel button that returned early (nothing
+  selected) skipped its blur(), so the focused button then gated the fight's
+  keys behind `typingInPanel` — F3 looked broken. Every handler now blurs
+  FIRST.
+
+### Verification
+- `assetmover.js` extended to 18 checks: the panel exists and F3 opens it, the
+  asset list selects a body, the +10 stepper moves it exactly 10, the number
+  field sets an exact spot, "Bring Darki here" teleports him beside the keke
+  (verified 2240 = 2500−260, y 900), and F3 hides the panel — alongside every
+  prior keyboard/drag/block/export check. 18/18; waveverify 14/14, zoomverify
+  20/20, syntax clean.
+
+## 2026-09-10 — The wall walk-ins walk at the mob's stride (no more sliding)
+
+- MEASURED, not assumed: burst frames of the wall-entry choreography showed the
+  residential walks covering their screen distance in a FIXED duration no matter
+  where the camera was — 350-770 px/s of feet sliding on the ground (the corner
+  man worst: his art-glued stand sat ~2000 screen px west of the far kerb his
+  beat mixed him to, so ~8-10x the mob's stride). The user's read was exact.
+- EVERY wall walker now:
+  - activates when his kerb is in view AND his art-glued stand is a short beat
+    east of it (`WALK_IN_SCREEN` 250px, computed from the parallax ride), so the
+    walk is an on-screen arrival rather than a long drift that can leave the
+    frame;
+  - times his walk from the SCREEN distance his stand has to his kerb, at the
+    road walk-in's own rule (`e.speed * 0.86`, scaled to his draw size) — the
+    no-slide speed the walk cycle is authored for;
+  - walks that beat LINEAR, so the constant holds mid-walk (an ease's speed bump
+    was a slide of its own).
+- THE EAST FENCE CORNER stays, now believable: the corner man waits for the
+  corner to come into view (`apertureRight - 85% of the zoomed view`), stands
+  just behind the fence's east edge (art-glued, ~160px still hidden), and walks
+  ~280px to a kerb point near that corner (`apertureRight - 260` + a stagger) —
+  the emergence reads from the east corner without the traverse.
+- The west men keep their kerb (curbX + lane offsets); the activation gate and
+  the stride-matched beat are shared. Nothing slides at any camera depth now:
+  measured 70-100 px/s across the whole wall roster (the mob's road walk-in
+  measures 80-110).
+
+### Verification
+- New `_chromakey/stridecheck.js` — screen-speed samples per walker during the
+  residential phase: the corner man measures 84-108 px/s over a 5.09s beat (was
+  ~770); the west men 84-128 px/s steady-state. `wallwalk.js` burst frames show
+  the corner emergence mid-beat at the opening's east edge. Regression:
+  waveverify 14/14, zoomverify 20/20 (its residents-lane check now releases the
+  subject's entrance flags — the walkers sit queued under the new gate), asset
+  mover 13/13, playareabound/playareacamera ALL PASS.
+
+## 2026-09-10 — F3 asset mover: drive the parked bodies while the fight runs
+
+- NEW: the **asset mover (F3)**, the region editor's sibling for the level's
+  placed ASSETS — the parked vehicles first. It drives `VEHICLE_ART`'s x (world
+  anchor) and y (wheel row) LIVE while the fight runs: the draw, the depth sort,
+  the solid rectangle and the enemy dodge all read the same array, so a dragged
+  van changes the fight on the very next frame. Click a body to select, drag to
+  move, ARROWS nudge (Shift = x10), TAB cycles, **E exports the placement** to
+  clipboard + console (paste those x/y back into `VEHICLE_ART`), R resets to the
+  authored spots. Persisted to localStorage so a placement survives a refresh.
+- IT DRAWS THE COLLISION GEOMETRY: every body's SOLID rectangle (its x-span
+  plus the 22px shoulders, its depth band ±66), the wheel-row line itself, the
+  play band's edges (the red guide) and Darki's own anchor — the placement
+  references are measured against exactly these lines.
+- The overlays own their keys ahead of the fight: F2/F3 toggle, and while one is
+  open its bindings never reach the sim — arrows nudge instead of walking the
+  depth, E exports instead of executing, Shift nudges instead of guarding. The
+  HUD's bindings crib stands down while a tool's crib is up.
+- REWIRING THE REGION EDITOR: F2's handlers existed but were never wired —
+  `reKey`/`reMouseDown`/`reMouseMove`/`reMouseUp` were unreachable and
+  `regionsLoad` was never called — dead since an old refactor. Both tools now
+  route from the gameplay keydown and the canvas pointer paths, load their saves
+  at boot, and draw INSIDE the scene transform with view-anchored chrome
+  converted through the inverse map (`s/zoom`, `cameraY + s/zoom` — the old
+  screen-space anchors were stale under the zoom). `reToWorld`'s divide-by-`DPR`
+  also pointed at a nonexistent symbol; it now uses the frame's own
+  `baseScale()`.
+
+### Verification
+- New `_chromakey/assetmover.js`, 13 checks: the authored start, F3 toggle, TAB
+  select, arrow nudge (Shift = x10), Darki still walks while the tool is open
+  (held over real time — the live rAF's `pollGamepad` is what maps `kbDir` onto
+  the sim's input), the moved body still blocks, E exports, a REAL mousedown
+  picks the body, a drag moves it in world space (measured 67/33 against the
+  expected 66.7/33.3), R restores, F3 closes and the keys return to the fight,
+  F2 toggles the sibling editor. 13/13; zoomverify 20/20, waveverify 14/14,
+  playareabound and playareacamera ALL PASS. Screenshot: `assetmover.png` — the
+  selected keke in its amber collision box on the red play-band line.
+
+## 2026-09-10 — The vehicles go back to their painted spots (the VehiclePosition reference)
+
+- The single tuned row is retired: each vehicle in `VEHICLE_ART` now carries its
+  own `y` — the wheel row the artist painted it on (657 / 631 / 620 / 610 /
+  610) — and the draw, the depth sort, the collision band and the enemy dodge
+  all read that row. The strip matches `ASSETS/VehiclePosition ref.png`
+  exactly: every body sits close up against the road's edge under the kerb,
+  where the reference shows it.
+- The collision stays solid per vehicle at its own rectangle: nobody walks
+  through a parked body, only around one; airborne bodies fly over.
+- The brief single-line experiment (640 / 780) is gone with the constant — the
+  "fight room behind the line" was tied to the vehicles sitting down the road,
+  which this reference supersedes.
+
+### Verification
+- `zoomverify` 20/20: the five bodies assert at their authored rows, a body put
+  inside the danfo is pushed out, one in the band above its wheels too, and the
+  clear-depth pass still walks the span. `playareabound` ALL PASS (the parked
+  test now parks at the keke's own row). Area shots — `veh-keke-a/danfo/kekes/
+  bus.png` — show every wheel row on the asphalt right under the kerb.
+
+## 2026-09-10 — Darki walks the road, not the pavement (the intro row and the bound)
+
+### What the intro screenshot showed
+- His feet were on the pavement/kerb while the marked line ran along the road
+  edge. Measured the intro frame against markers at known world rows (captured
+  through the real entry): the pavement tiles end at ~599, the painted kerb
+  face runs ~599–632, the asphalt starts ~632. The entry's walk row
+  (`GROUND_Y` 620) placed him ON the kerb stones; the gameplay back edge
+  (`PLAYER_LANE_TOP` 590) permitted the pavement tiles as well.
+
+### The fixes
+- `PLAYER_LANE_TOP` 590 → **645** — the road side of the kerb, the row the
+  marker capture shows at the sandals' road edge. Enemies keep their deeper
+  reach (470), and the residents' walkers (548–556) stay 97 px beyond his.
+- `LEVEL_ENTRY.walkY = 650` — the intro walk lands on the asphalt a step
+  inside the kerb, matching the bound the moment control returns (the handover
+  keeps the row, so there is no snap on the first gameplay frame). The entry's
+  camera rides the new row through `bandFramingY(walkY) + lift`; the lift's
+  centring is unaffected (bandFraming(Y) + lift centres any row identically),
+  cameraY settling at 245 instead of 215.
+- The PLAYAREA block's note updated: the playarea's own back edge (groundY
+  582) still never binds — Darki's own rule stops him first, 63 px nearer.
+
+### Verification
+- The intro recapture with markers: his sandals sit on the asphalt at the 650
+  line, the whole pavement and kerb above him.
+- `playareabound` ALL PASS (expectation now 645); `playareacamera` ALL PASS —
+  its two stale constants updated: the tight-framing residue check compares
+  against the live blend term, and the feet-row check derives from the live
+  parked row instead of the old 576. `zoomverify` 19/19, `waveverify` 14/14.
+- `entrystepsverify`'s two ledger-walk checks remain the documented
+  pre-existing failures (phase=null; see the 2026-08-29 entry).
+
+## 2026-09-10 — The play area landed: measured bounds in modules, and task 10 finished
+
+### What the measurement session shipped (tasks 1–9, verified)
+- Two new pure modules. `src/worldConfig.js` owns world space and the
+  measured `PLAYAREA`: the plate `Playarearef.png` (9259x1080, 1:1 against the
+  world's top 1080 rows) was scanned by `_chromakey/playareameasure.js`, and
+  the guide lines it found are the constants — indigo band back **504**, red
+  pavement **582**, pure-red near stop line **1061**, roofline **117**, walls
+  at 40 / 9218, world extents 0 / 9258. `src/playarea.js` owns the geometry:
+  `clampToPlayarea` / `canOccupy` (body-aware walls + head-clearance form),
+  `isWithinBand`, `playareaRect`, `nudgeIntoPlayarea`. No canvas, no DOM, no
+  state.
+- The live bound: a per-frame PLAYAREA block in `update()` holds Darki inside
+  the plate's walls verbatim (with `hitX` killing the `vx` that banks against
+  them) and its depth band read on the feet axis — back edge the red guide at
+  `groundY` 582, near edge the measured stop line `walkBottom` **1061**
+  (tightening the older 1096). Jumping is untouched: `jumpY` is the arc's own
+  field.
+- The camera's play bounds are the plate's too: `camYRange` 110..524
+  (roofline+sky strip down to the near line plus all the road the layers own),
+  `camXRange`/`clampCamX` on the authored columns, all wired — follow, boss
+  lock and outro.
+- Verified by the session's own `_chromakey/playareabound.js` and
+  `playareacamera.js`: ALL PASS (near line reached and held at 1061 with no
+  oscillation, both walls stop and zero the velocity, the jump arc is never
+  cut, the parked-body resolve still works; camera never passes the gate, the
+  ends, or the boss-lock framing).
+
+### Finishing up (task 10 — the fold, and the records)
+- The depth-band reconciliation the module's notes pointed at is now IN the
+  module: `clampDepthBand(y)` in `playarea.js` is the feet-axis form (the two
+  red boundaries, sign convention intact), and game.js's PLAYAREA block
+  consumes it — same numbers, same behavior, one authority.
+- The stale markers are reconciled rather than left lying: `playarea.js`'s
+  NOTE(measure) records where the tall-body rule resolves and why it cannot
+  live on the head axis; `worldConfig.js` records the shipped decisions — the
+  plate's near line wins (1096→1061), Darki's back edge stays the engine's 590
+  (8 px inside the red guide) because the background walkers' ground line is
+  548–556 and he must not read as standing in the residents' street, and the
+  504 indigo stretch stays the mob's residents' lane. `playareaRect` is
+  documented as the head-clearance form by design.
+- Cache tag bumped (`game.js` imports `playarea.js?v=ratelrage-playarea-v2`;
+  index.html carries the session's `ratelrage-camarea-v1`).
+
+### Verification
+- `playareabound` ALL PASS, `playareacamera` ALL PASS (both re-run after the
+  fold), `zoomverify` 19/19, `waveverify` 14/14, boss intro/fight on-camera.
+- Live boundary captures: forced deep he stops at 1061 with the road still
+  under him; forced back he stops at 590, under the red guide.
+
+## 2026-09-10 — Darki stays out of the residents' street, and the parked line is solid
+
+### Darki's boundary sits below the residents' walk
+- Being clamped AT the red line (528) was not enough: the background walkers'
+  ground line sits at 548-556, so a fighter standing at 528 read as standing
+  IN the residents' street — exactly what the red line exists to prevent.
+  Darki's band top is now **590** everywhere (`clampPlayerLane`), just below
+  the walkers' ground line, applied in the depth movement, the arena clamp
+  and the sidestep (whose player branch had also been routing through the
+  enemy clamp). Only enemies reach past it — the depth-movement clamp had
+  also dropped its `x`, which in the east region let him stand 54px above the
+  red line; it is region-aware now.
+- The sidestep's player branch clamps with `clampPlayerLane`; enemies keep
+  `clampLaneBody` and the residents' lane down to 470.
+
+### The parked line blocks; nobody walks through it
+- The five parked bodies are COLLISION now: a vehicle occupies its world
+  x-span plus a depth band around the wheel row (VEHICLE_HALF_DEPTH 44), and
+  `resolveVehicleCollision` pushes a grounded body out of the rectangle —
+  along x to the nearer end, or out of the depth band when that escape is
+  shorter — so nobody walks through a parked body, only around one. The
+  player resolves inside `clampPlayerToArena` (the one clamp every player
+  path funnels through); the enemies resolve in their loop and the wave
+  steering (`laneDodge`) now treats a vehicle ahead as a blocker, so the AI
+  walks around it before the hard stop ever bites. Airborne and held bodies
+  pass over the line; KO'd ones are not steered.
+- **The bug that hid this for a session: the airborne sign.** In this engine
+  a body's arc height runs jumpY < 0, and the touchdown reset pins a grounded
+  body back to 0 AFTER the gravity integration — so between those two a
+  grounded body carries a sliver of POSITIVE jumpY every frame. The guard
+  tested `jumpY > 0`, read that sliver as "airborne", and silently skipped
+  every grounded body. It tests `jumpY < 0` now; the instrumentation that
+  found it (a call counter against a zero push count) is removed.
+
+### Verification
+- `zoomverify` 19 checks: Darki parks at 590, an Agbero walks the residents'
+  lane, a body pushed into the danfo's middle ends up OUT of its rectangle
+  (the shallower escape — depth — wins there), stepping around the span
+  works, plus every prior check. `waveverify` 14/14; the boss intro and
+  fight on-camera through the real gate path.
+
+## 2026-09-10 — The depth-driven camera, the residents' lane, and the boundary vehicle line
+
+### The camera now reads the street's depth
+- The vertical framing is a BLEND of two shots driven by how deep Darki stands
+  in the play band. Close to the pedestrian walk (the band's top, the red
+  guideline line) the camera lifts into a tight side-scroller shot whose top
+  is at world row 110 — the residential houses' roofs, their hanging laundry
+  and the shops' verandas all in frame above the fight. Walking deeper
+  smoothsteps the blend back to the dynamic road framing, damped at 2.2
+  (slower than the horizontal follow) so the transition reads as one
+  cinematic move. `zoomverify` walks a body from row 560 to 1080: the camera
+  glides 110 → 523 without a cut.
+- **The jump breathes.** A fraction of Darki's air height (`camJumpFrac`
+  0.22) feeds the framing's focus row, so the camera gives a subtle vertical
+  give under him and settles on landing — never a chase.
+- Three new dev-panel dials: `camTopY`, `camJumpFrac`, `camVertRate`.
+
+### Darki stays inside the red line; the residents' lane is theirs
+- Found the leak: the depth-movement clamp dropped its `x`, so in the east
+  region the player clamped against the WEST band's top and could sit 54px
+  above the red line. It is region-aware now, and every player path
+  (movement, arena clamp, landing) uses the red line.
+- The strip ABOVE the line — down to the blue guideline at 470 — is the
+  RESIDENTS' LANE and belongs to the street's own characters: enemy depth
+  clamps go through `clampLaneBody`, which opens the top to 470 for them and
+  only them. Verified: Darki clamps at 528, an Agbero stands at 482.
+
+### The parked line along the boundary
+- The five vehicles draw from their measured crops at their authored world
+  spots, but every wheel now sits on ONE row (640, just inside the play
+  boundary — the boundary itself crops in the deep framing), so the five
+  bodies read as a single line of parked traffic along the edge of the play
+  region. They also sort INSIDE the actor depth now: a fighter standing
+  deeper than the line reads behind a parked body, one nearer in front —
+  the separate scenery pass (and its depth lie) is gone.
+
+### Verification
+- `zoomverify` 17 checks, including the two framing modes, the jump give,
+  the single boundary row for all five vehicles, the red-line restriction
+  and the residents' lane access. `waveverify` 14/14 and the boss intro/fight
+  on-camera at the new framing.
+
+## 2026-09-09 — Corrections pass: parked vehicles, the visible boss room, the scene zoom and the guideline play band
+
+### Vehicles are furniture, not traffic
+- The moving-traffic build is undone. The vehicle layer now draws AS AUTHORED —
+  the whole plate, world-locked 1:1 between the main street and the fighters —
+  so the five bodies sit at their supplied positions forever: they never
+  travel, never respawn, never occlude. `VEHICLE_ART`, `buildTraffic`,
+  `updateTraffic`, the crop draw and the contact shadows are all gone; what
+  replaced them is one `drawImage` of the parked layer (drawn before the
+  actors, so a fighter always reads in front of a parked keke) and the
+  "for (const bus of buses)" dead loop that had been throwing every frame is
+  buried with it.
+
+### The boss room the player could not see
+- `CUT.playerMark`/`bossMark` (4720 / 5230) were mural-era literals that
+  survived the world widening: the intro parked its stand-off 2500px west of
+  the live arena while the boss clamped to it, and the locked shot
+  (`BOSS_CAM_X` = the world's far end) framed empty shops while the fight —
+  audibly — happened beyond the frame's left edge. The marks are now DERIVED
+  off `BOSS_ARENA` (+120 for Darki, +630 for Olodo — the old spacing), the
+  'push' walk is re-timed for the real distance from the gate (2.60 s), and
+  the stale "arena runs 4640–5480" comments are corrected everywhere they
+  pointed at the old world.
+- The band itself moved east: `BOSS_ARENA` 8100→9060, fitted so the whole
+  arena, its gate bar included, sits inside the locked shot at any zoom. The
+  camera is derived (`bossCamX()`/`BOSS_CAM_Y()`), the cutscene, the outro and
+  the boss-room follow all use it, and `clampPlayerToArena` cannot walk a
+  fighter off-camera any more — verified by forcing the player against the
+  clamp: 8100 holds, always in shot.
+
+### The scene zoom, the play band, and the guideline
+- The whole world render now magnifies by `tune.zoom` (default **1.2**),
+  applied as a canvas transform around the camera — layers, fighters, parked
+  vehicles and sparks together, the HUD at screen scale. At 1.0 the fight
+  hugged the frame's bottom under a wall of sky; at 1.2 the guideline's play
+  band fills the view and the fighters read at street scale. The per-layer
+  scales stay at identity, so the four plates' alignment still holds, and
+  `TUNE_KEY` is bumped to v5 for it.
+- The playable band is the guideline's: **582** west of gate 1 (the shops'
+  pavement line), **528** on the broken-wall stretch's deeper forecourt (via
+  the region table — the system existed and finally had a reason), bottom
+  **1096** just above the art's gutter. The old 610-700 band sat in the
+  middle of this and left the road decorative.
+- The vertical camera was wrong for any of this: it treated cameraY as an
+  offset from the band's mid, which parked the view at the art's top and
+  cropped the road the band stood on. `bandFramingY` is now the one vertical
+  rule — a world row framed at ~55% of the view height — used by the follow
+  camera, the boss lock, the cutscene, the outro and the level entry
+  (whose `lift` re-derived to −75: the camera settles DOWN as the gate opens
+  instead of rising to zero).
+- **The pixelation was the backing store.** Gameplay is handed a 1280x720
+  canvas that CSS stretches to the window (1.5x on a 1080p display); the
+  front end's own screens already resize the backing store to the display and
+  gameplay didn't. `syncBacking` applies the front end's rule to the game —
+  backing = CSS size x DPR capped at 2x, re-checked per frame because the
+  handover legitimately changes it under us — and every frame maps the
+  virtual space onto it with a base scale. The pointer mapping runs through
+  the zoom so the F2 editor aims at world coordinates again.
+
+### The residential street: planted, capped, and entering from both corners
+- The background walker's choreography started at y 500 — ~50px ABOVE the
+  visible forecourt ground under the opening — so he floated the whole walk
+  (the screenshots show it plainly). `backgroundY` is 548, planting his feet
+  on the ground from the first frame, and the walk to the kerb is nearly
+  level, which is how a man walks.
+- The BLUE line is enforced: `backgroundFloorY` 470 is the highest row a
+  background walker's feet may take — above it he stands on the houses' base
+  line and floats on the artwork. Queued and residential both clamp.
+- Every third man now takes the EAST fence corner: he stands behind the
+  wall's right edge (still fully occluded) and walks the opening westward on
+  a longer beat, so arrivals read from both corners of the fences instead of
+  one conveyor from the left.
+
+### Verification
+- New `_chromakey/zoomverify.js`, 11 checks: the backing follows the display,
+  the zoom is 1.2, both bands read off the guideline, the follow camera
+  frames the band, Darki can stand at depth 1080, the residential walker
+  plants at 548, the arena is fitted and the boss-room lock keeps both
+  fighters on camera through the intro and the clamp, and no page errors.
+- `waveverify` 14/14 at the new band; `bossintroshots` walks the real gate →
+  cutscene → fight path: both fighters on the locked shot every beat, the
+  clamp checks hold at 8100; the east-corner walker walks the opening west.
+- Screenshots (`zoomshot2.png`, `crossprobe.png`) show the transformed
+  framing: the street filling the frame at 1.2, the fighters at street scale.
+- **Tooling note:** headless Chrome's default canvas path degraded mid-day
+  (0.17 Mpx readback 518ms, rAF dead) and stalled every world load past 90s;
+  `--use-gl=swiftshader` restores 1ms readbacks and 60fps rAF. Seven harnesses
+  patched. The user's own browser (GPU-composited) was never affected — the
+  boss bug was real and is fixed above.
+
+## 2026-09-09 — The four authored street layers, the green spill, and the wall entry made visible
+
+### The layers replace the mural
+- `layers/level1_map.png` (4344×724 mural) and `layers/sky.png` (1672×941) are
+  gone from the load. In their place: `level-sky.png`, `level-background.png`,
+  `level-main.png`, `level-vehicles.png` — four plates, each EXACTLY
+  9259×1124, supplied as one shared world coordinate space. They are imported
+  at 100% scale, origin (0,0), main street locked 1:1 to the camera; the sky
+  and the residential backdrop offset only by their parallax rates
+  (`skyParallax` 0.08, `backgroundParallax` 0.45). No rescale, no crop, no
+  tiling — the world width already IS the art width, and the kerbs, the road
+  line, the broken-wall opening and the vehicles' wheel rows only align while
+  every transform stays identity. `tune` now carries that identity as the
+  defaults (`skyScale/skyY/skyX`, `backgroundScale/backgroundY/backgroundX`,
+  `streetScale/streetY/streetX/streetParallax`), the dev panel's dead far/mid
+  rows became live background rows, and `TUNE_KEY` is bumped to
+  `ror.tune.v4` — a saved `streetScale: 2.132` from the mural era would
+  rescale the whole street if it were still trusted.
+- The old `MAP_ANCHOR_Y` anchoring (image row pinned to `tune.streetY`) is
+  retired with the mural: the main layer draws at `tune.streetY` directly,
+  which is 0 — the art's own rows are the screen's rows.
+- The transparent vehicle layer is authored ONCE at its real positions and
+  `VEHICLE_ART` already matched it to within 3px (measured, not retuned), so
+  the traffic bodies spawn exactly where the artist placed them.
+
+### Green chroma de-spill
+- All three alpha-carrying layers arrived cut against green and fringed:
+  every wire silhouette, roofline, palm tip and vehicle edge carried 1-3px of
+  bright green past the cut. Measured before treating: the fringe is
+  green-dominant (G beyond max(R,B) by 26+), sits within ~2px of
+  transparency, and the art's legitimate green (BET9JA and NAIJA WIN signs,
+  the palm canopies, the Nigerian flag) is interior fill far from any alpha
+  edge — the two signatures do not overlap.
+- `deSpillLayer` (in `game.js`, run per layer through `inPrepLane` at load):
+  dilate the transparent mask by 2px (separable, linear), then on flagged
+  pixels only, pull green dominance down toward max(R,B) keeping a capped
+  residue so leaf edges stay leaf-coloured. Alpha, luma and every unflagged
+  pixel are untouched — no hard borders, anti-aliasing preserved. The sky
+  ships fully opaque and skips the pass.
+- In-game counts: background 26,720 px neutralised, main 465, vehicles 1,004.
+  Screenshot inspection of the wire/roofline/palm edges and the green signage
+  confirms the fringe is gone and the signs are not.
+
+### The wall entry, finally drawn
+- The staged Agbero's residential walk existed only as simulation —
+  `entryScale` was written every frame and read by nothing, and the wall-route
+  men were drawn in the ordinary actor pass, popping onto the road from
+  nowhere. Now: `behindWallArt` picks queued/residential wall-route bodies
+  out of the actor pass, and `drawBackgroundActors` draws them BETWEEN the
+  residential backdrop and the main level — the wall art occludes them
+  everywhere except the broken opening, so they genuinely approach and
+  appear through it. `drawEnemy` multiplies its scale by `entryScale` (0.76
+  on the residential plane, growing through the crossing to 1 on the road),
+  and the crossing hands the body to the actor pass at the kerb where the
+  opening's own transparency makes the two passes continuous — same
+  coordinates one frame apart, no teleport.
+- **Sim bug found and fixed on the way:** the enemy loop's unconditional
+  `enemy.y = clampLane(enemy.y)` was clamping a background walker's
+  choreographed y (backgroundY 500 → kerb 556) onto the road band the frame
+  the entrance moved him, so the whole residential approach was squashed to
+  the tarmac line. The clamp is now gated on the body being on the main
+  plane; the crossing hands over at roadY 610, the lane top, so the clamp
+  resumes as a no-op.
+- Live-stepped verification through the real loop: queued → residential
+  (y 514, scale 0.79) → crossing (y 556, scale 0.88) → road (y 614, scale 1,
+  plane main), and screenshot pairs at each phase showing the man behind the
+  wall, at the kerb, then engaging on the road.
+
+### Traffic, for real this time
+- The interrupted build had deleted `let buses = []` and `buildBuses()` but
+  left the old `for (const bus of buses)` loop inside `update()` — a
+  ReferenceError thrown EVERY FRAME of gameplay, dead-stopping the sim
+  before the enemy loop (the boot gate never noticed; the first visual
+  harness did). The dead loop is removed; the staged `traffic` system takes
+  its place and is actually wired: `buildTraffic()` in `loadWorld`,
+  `updateTraffic(dt)` after the hit-stop gate (decorative, so it runs
+  through the level entry and keeps the street alive behind cutscene
+  returns), `drawVehicles()` after the fighters — passing traffic owns the
+  near lane, as the layer's z-order specifies.
+- All five bodies drive left (the art faces left; mirroring would mirror the
+  painted campaign lettering), wheels on their authored ride-height rows
+  with a contact-shadow ellipse, y-sorted so nearer rows draw in front, and
+  a body that clears the camera's left edge re-enters beyond the right one
+  on a jittered gap. Respawn jitter uses `Math.random`, not `combatRng` —
+  traffic is decoration and must never perturb the deterministic fight.
+
+### Verification
+- New `_chromakey/layerstepshots.js`: boots to gameplay, stages a wall-route
+  entrance through `__ror`, waits on each live phase, and screenshots all of
+  it (opening empty, residential, crossing, road, two traffic beats six
+  seconds apart, the west end). Its first runs caught the `buses` crash and
+  the lane-clamp squash; its final run is clean end to end.
+- `bgloadverify` PASS with the four plates (front end first, world behind
+  it, handover gated on a stalled `level-vehicles.png` — the stall path
+  moved from the retired `sky.png`). `bootprobe` boots. `waveverify` 14/14,
+  which also walks section 1's real wall-route reinforcements through the
+  new render path with zero page errors.
+- `WORLD_STEPS` was pre-bumped to 39 and now lands exactly: 35 sheets + 4
+  layers.
+
 ## 2026-07-12 — Lagos street side-scroller slice
 
 - Added `src/game.js`: side-scroller with movement (A/D, arrows), jump

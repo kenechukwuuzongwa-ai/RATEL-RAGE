@@ -1,0 +1,62 @@
+{
+  "generatedBy": "Hand-written for ASSETS/NEW SPRITES/darki_bat_attack_512x294_sheet.png (request 303), copied byte-for-byte. NOT the capital-D 'Darki_bat-attack' export (151 frames, a multi-swing string). Frames read off _chromakey/_batatk_lower_contact.png.",
+  "sprite": "DarkiBatAttack",
+  "image": "darki-bat-attack.png",
+  "frameWidth": 512,
+  "frameHeight": 294,
+  "sheet": {
+    "cols": 6,
+    "rows": 5,
+    "frames": 28,
+    "imageWidth": 3072,
+    "imageHeight": 1470
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 27,
+    "fps": 30,
+    "loop": false
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "batSwing",
+        "role": "custom",
+        "name": "Bat Swing",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27
+        ],
+        "fps": 30,
+        "loop": false,
+        "description": "One overhead swing: bat cocked back (0-4), swung through to full extension (5-11), pulled back (12-17), settling into his armed guard with the bat across his body (18-27) — the armed idle's pose, so the hand-back does not pop. 28 frames at 30fps = 0.93s. Faces RIGHT like every Darki sheet."
+      }
+    ]
+  }
+}

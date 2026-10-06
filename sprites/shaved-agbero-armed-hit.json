@@ -1,0 +1,44 @@
+{
+  "generatedBy": "Hand-written from ASSETS/NEW SPRITES/armed_shaved_hit_reaction_512x564_sheet.png (source footage ASSETS/New Animation/Armed-shaved-hit-reaction.mp4). The supplied sibling JSON has the GRID right (4x3, 11 drawn cells, 2048x1692 confirmed off the PNG header, cell 512x564) and declares no sections, so both sections below were cut by hand. Measured by _chromakey/_ayearmed.js, _ayezoom.js and _ayeidlecmp.js.",
+  "sprite": "ShavedAgberoArmedHit",
+  "image": "shaved-agbero-armed-hit.png",
+  "frameWidth": 512,
+  "frameHeight": 564,
+  "sheet": {
+    "cols": 4,
+    "rows": 3,
+    "frames": 11,
+    "imageWidth": 2048,
+    "imageHeight": 1692
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 10,
+    "fps": 30,
+    "loop": false
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "hit",
+        "role": "start",
+        "name": "Hit",
+        "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "fps": 30,
+        "loop": false,
+        "description": "HIS HIT REACTION WHILE STILL ARMED — struck, then recovering to his guard. This is the ONE he plays when a blow lands and does NOT knock him down; the knockdown that costs him the machete is a different take (see the note below). It runs 0 -> 10 and stops. It is a SMALL reaction and that is the performance, not a fault in it: his lowest ink row never leaves 523, his body area holds within 1%, and his normalised mass height stays flat at 0.491..0.497 across all 11 frames. What moves is his blade and his weight — frame 0 has the machete knocked down off-level with his weight forward, and by frame 10 he has pulled it back to horizontal and settled upright. A man braced behind two hands of steel absorbs a punch without his head going anywhere, which is why this reads as 'shrugged it off' rather than as 'nothing happened'. Earlier this sheet was mistaken for an idle on exactly that evidence; it is a hit reaction, per the artist."
+      },
+      {
+        "id": "idle",
+        "role": "middle",
+        "name": "Idle",
+        "frames": [8, 9, 10],
+        "fps": 8,
+        "loop": true,
+        "pingPong": true,
+        "description": "HIS ARMED READY POSE, and it is the TAIL of the reaction above rather than separate art — deliberately. Frame 10 is where the hit reaction lands him: upright, blade level, braced. That settled pose IS the stance he was in before he was hit, so reusing the last three frames as his standoff costs nothing and invents nothing. There is no dedicated armed-idle take on this character (ShavedAgbero-idle is his UNARMED fight stance — empty hands, checked against the art) and the sharpen take is a crouching action, not a stance. Ping-ponged at 8fps because frames 8-10 sit within 1% of each other in area: it is a breath, not a cycle. IF A REAL ARMED IDLE IS EVER SHOT, point the kit's `idle` slot at it and leave this section here — the hit reaction still needs its own tail."
+      }
+    ]
+  },
+  "note": "Cell 11 of the 4x3 grid is empty (0 opaque px) — the frame lists stop at 10 so the loader never walks it. All 11 drawn frames are UNIQUE (no duplicate padding), checked pixel-for-pixel by _ayeidlecmp.js, so the declared 30fps is the real rate. Background is already transparent; needs no chroma key. ART FACES LEFT like every other sheet on this character — see SHAVEDARMED_SHEET.faces in game.js. The blade reads purple-tinted on frames 0-2 and dark steel from frame 3 on; that is in the source art, not a key artefact (total magenta across the sheet is 180 px, 0.12% of one body). THE SECOND REACTION IS NOT SHEETED: ASSETS/New Animation/Agbero-unarmed-reaction.mp4 is his UNARMED reaction, the one for after a knockdown has taken the machete off him, and it exists only as footage. Until it is sprited the unarmed branch borrows the Agbero recoil, which is at least also an unarmed man flinching."
+}

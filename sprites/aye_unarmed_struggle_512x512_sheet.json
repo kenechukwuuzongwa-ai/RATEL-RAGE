@@ -1,0 +1,20 @@
+{
+  "generatedBy": "Hand-written for ASSETS/NEW SPRITES/aye_unarmed_struggle_512x512_sheet.png (copied byte-for-byte, same name). Grid and frame list from its supplied sibling JSON, confirmed against the PNG: 6x5, 26 drawn cells, 3072x2560, cell 512x512; cells 26-29 empty. NOT the similarly named Aye-unarmed-struggle_512x512_sheet.png, which is a different export (different hash).",
+  "sprite": "AyeUnarmedStruggle",
+  "image": "aye_unarmed_struggle_512x512_sheet.png",
+  "frameWidth": 512,
+  "frameHeight": 512,
+  "sheet": { "cols": 6, "rows": 5, "frames": 26, "imageWidth": 3072, "imageHeight": 2560 },
+  "defaultAnimation": { "start": 0, "end": 25, "fps": 30, "loop": true },
+  "animation": {
+    "sections": [
+      {
+        "id": "struggle", "role": "custom", "name": "Struggle",
+        "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+        "fps": 30, "loop": true,
+        "description": "The supplied 'Aye-unarmed-struggle' (0-25), held overhead and kicking. Looped because the hold runs up to CARRY.maxHold (6s) against the clip's 0.87s; 25 and 0 measure nearly the same box, so the wrap does not pop."
+      }
+    ]
+  },
+  "note": "UNARMED, held horizontal, head on the LEFT (-x) — the mirror of senior-carry.png, whose head is on the right. So this sheet is faces -1 where the senior's is faces 1."
+}

@@ -1,0 +1,20 @@
+{
+  "generatedBy": "Gameplay manifest for darki-armed-idle-grip.png (the better-grip Darki-armed-darki_idle_512x508_sheet, request 294). The menu reads the PNG directly; the game loads it through this. 26 frames in a 6x5 grid; cells 26-29 empty.",
+  "sprite": "DarkiBatIdle",
+  "image": "darki-armed-idle-grip.png",
+  "frameWidth": 512,
+  "frameHeight": 508,
+  "sheet": {
+    "cols": 6,
+    "rows": 5,
+    "frames": 26,
+    "imageWidth": 3072,
+    "imageHeight": 2540
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 25,
+    "fps": 30,
+    "loop": true
+  }
+}

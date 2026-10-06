@@ -1,0 +1,20 @@
+{
+  "generatedBy": "Hand-written for ASSETS/NEW SPRITES/Aye-unarmed-attack_1024x600_sheet.png (request 300). Pixels halved by _chromakey/_ayeprep2.js (6144x3600 -> 3072x1800, cell 1024x600 -> 512x300); grid and frame numbers unchanged. The supplied JSON has no sections; the one below was read off _chromakey/_aye_uattack_contact.png.",
+  "sprite": "AyeUnarmedAttack",
+  "image": "aye-unarmed-attack.png",
+  "frameWidth": 512,
+  "frameHeight": 300,
+  "sheet": { "cols": 6, "rows": 6, "frames": 36, "imageWidth": 3072, "imageHeight": 1800 },
+  "defaultAnimation": { "start": 0, "end": 35, "fps": 30, "loop": false },
+  "animation": {
+    "sections": [
+      {
+        "id": "ayeKick", "role": "custom", "name": "Aye Kick",
+        "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+        "fps": 30, "loop": false,
+        "description": "His EMPTY-HANDED attack, which is a SIDE KICK, not a punch: stance (0-5), knee chambered (6-10), leg out at full extension (11-17), retracting (18-21), landing (22-24), back in his stance (25-35). 36 frames at 30fps = 1.2s, played once. The leg is out on 11-17 — GINGER_MOVES.ayeKick's connect window is those frames."
+      }
+    ]
+  },
+  "note": "No machete in any frame (checked). Faces LEFT (the kick extends toward -x) like every sheet of him."
+}

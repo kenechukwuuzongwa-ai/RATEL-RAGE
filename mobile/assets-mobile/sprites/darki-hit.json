@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "Darki_Hit_Reaction_1",
+  "image": "darki-hit.png",
+  "note": "Standing flinch, REDRAWN SHORT (2026-08-15): 3 frames, not 11. 0 = guard, 1 = the same guard a hair looser, 2 = the head snapped back (the impact). He never leaves his feet. The play order is NOT 0-1-2 — the reaction table snaps 0->2 and settles back through 1 to 0, so it ends on the guard and blends into idle instead of freezing on the recoil. Frame 0 still measures 384 source px, the same reference the launch chain's drawH values are derived from (HURT_REF_H), so retiming this sheet left darki-hitlift/hitair/fall untouched. 2:1 downsample of ASSETS/NEW SPRITES/Darki_Hit_Reaction_1.png (see _chromakey/newmoves_prep.js); cell 3 is empty.",
+  "frameWidth": 512,
+  "frameHeight": 265,
+  "sheet": {
+    "cols": 2,
+    "rows": 2,
+    "frames": 3,
+    "imageWidth": 1024,
+    "imageHeight": 530
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 2,
+    "fps": 30,
+    "loop": false
+  }
+}

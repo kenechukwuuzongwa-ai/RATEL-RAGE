@@ -1,0 +1,34 @@
+{
+  "generatedBy": "Hand-written from ASSETS/NEW SPRITES/Shaved-agbero-weapon-walk.png. The supplied sibling JSON (shaved-agbero-walk.json in that folder) is an unedited analyzer template — it still names 'Wizard Walk' / 'Wizard Walk.png' and ships the section with loop:false. Its GRID is right (4x4, 15 frames, 4096x2728 measured off the PNG); its names and playback toggles are not. Measured by _chromakey/_shavedprobe.js, _shavedmeasure.js and _shavedplants.js.",
+  "sprite": "ShavedAgberoWeaponWalk",
+  "image": "shaved-agbero-walk.png",
+  "frameWidth": 1024,
+  "frameHeight": 682,
+  "sheet": {
+    "cols": 4,
+    "rows": 4,
+    "frames": 15,
+    "imageWidth": 4096,
+    "imageHeight": 2728
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 14,
+    "fps": 30,
+    "loop": true
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "walk",
+        "role": "middle",
+        "name": "Walk",
+        "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+        "fps": 30,
+        "loop": true,
+        "description": "His stalking stride, machete carried forward. ONE STEP PER LAP, not two — the foot spread rises to a single maximum at frame 6 (360 px against 80 at frame 0) and falls away again, where a full stride shows two. Frame 14 closes back onto frame 0's phase (mask IoU 0.65 against 0.42 for the mid-cycle frame 7), so the loop is seamless, but he leads with the same leg every lap. At 15 frames / 30 fps that is 0.5 s a step, 120 a minute — an ordinary walking cadence, which is why it reads as a low crouched shuffle rather than as a limp. If a two-step take is ever exported, replace this and re-measure the plants below."
+      }
+    ]
+  },
+  "note": "Cell 15 of the 4x4 grid is empty (0 opaque px) — the frame list stops at 14 so the loader never walks it. Background is already transparent; this sheet needs no chroma key. ART FACES LEFT, which is the opposite of every Agbero and Senior Agbero sheet — see SHAVEDWALK_SHEET.faces in game.js."
+}

@@ -1,0 +1,20 @@
+{
+  "generatedBy": "Hand-written for ASSETS/NEW SPRITES/'uarmed walk_512x440_sheet.png' (request 300), copied byte-for-byte as aye-unarmed-walk.png. Grid from its sibling JSON, confirmed against the PNG: 6x6 cells of 512x440, 31 drawn (0-30), cells 31-35 empty. The supplied JSON has no sections; the one below was read off _chromakey/_aye_uwalk_contact.png.",
+  "sprite": "AyeUnarmedWalk",
+  "image": "aye-unarmed-walk.png",
+  "frameWidth": 512,
+  "frameHeight": 440,
+  "sheet": { "cols": 6, "rows": 6, "frames": 31, "imageWidth": 3072, "imageHeight": 2640 },
+  "defaultAnimation": { "start": 0, "end": 30, "fps": 30, "loop": true },
+  "animation": {
+    "sections": [
+      {
+        "id": "walk", "role": "middle", "name": "Walk",
+        "frames": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+        "fps": 30, "loop": true,
+        "description": "His EMPTY-HANDED guarded step: wide stance (0-5), rear foot drawn in under him (8-12), lead foot stepping out (19-21), settling back to the stance (22-30), which is frame 0's pose, so the loop closes. 31 frames at 30fps = 1.03s per step. Faces LEFT like every sheet of him."
+      }
+    ]
+  },
+  "note": "No machete in any frame (checked). Used only while he does not own one."
+}

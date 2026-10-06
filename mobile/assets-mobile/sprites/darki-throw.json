@@ -1,0 +1,78 @@
+{
+  "generatedBy": "_chromakey/carry_prep.js",
+  "sprite": "darki-throw",
+  "image": "darki-throw.png",
+  "frameWidth": 304,
+  "frameHeight": 272,
+  "sheet": {
+    "cols": 5,
+    "rows": 4,
+    "frames": 20,
+    "imageWidth": 1520,
+    "imageHeight": 1088
+  },
+  "animation": {
+    "sections": [
+      {
+        "role": "custom",
+        "name": "throw",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "fps": 30,
+        "loop": false,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "play once forward"
+      }
+    ]
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 19,
+    "fps": 30,
+    "loop": false
+  },
+  "note": "Built by _chromakey/carry_prep.js. Frame numbers are PACKED indices; sourceFrames maps back to the export.",
+  "sourceFrames": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+  ]
+}

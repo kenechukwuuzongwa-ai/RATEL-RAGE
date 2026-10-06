@@ -1,0 +1,40 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer export (ASSETS/NEW SPRITES/JumpStrike.png), published to sprites/ and sectioned by hand.",
+  "sprite": "JumpStrike",
+  "image": "darki-jumpstrike.png",
+  "frameWidth": 1024,
+  "frameHeight": 530,
+  "sheet": {
+    "cols": 7,
+    "rows": 7,
+    "frames": 46,
+    "imageWidth": 7168,
+    "imageHeight": 3710
+  },
+  "defaultAnimation": { "start": 0, "end": 45, "fps": 30, "loop": false },
+
+  "note": "Darki's jump STRIKE — the air attack and nothing else. The supplied export is a whole self-contained move (0-13 a grounded wind-up, 14-16 the launch, 17 the tuck, 18-33 the strike, 34-37 the descent, 38-45 a landing), and most of that is deliberately unused: the game already owns the jump. He is airborne and tucked before the player has pressed anything, so the wind-up and the launch would be replaying a take-off that already happened, and the landing is shared with the ordinary jump by design (see darki-jumpkick.json's Land). Only the two clips that BEGIN at the moment of the press are cut here. Frame numbers read off the sheet's own pixels with _chromakey/jumpkick_sheet.js: 17 is the apex tuck at foot line 363, the leg is fully out from 20 to 32 at 403, and 34-37 bring him back down 451 -> 483.",
+
+  "animation": {
+    "sections": [
+      {
+        "id": "air_strike",
+        "role": "custom",
+        "name": "Air Kick",
+        "frames": [17, 18, 20, 22, 25, 28, 31],
+        "fps": 38,
+        "loop": false,
+        "description": "The strike. STARTS ON ITS OWN TUCK (17) rather than straight into the extension, because the player presses this while Darki is already tucked at the top of the jumpkick sheet's rise — entering on a matching pose is what makes the sheet swap invisible. 21-32 are twelve near-identical frames of the leg held out, so they are subsampled; playing them straight reads as the kick stalling in mid-air. CUT TO SEVEN FRAMES AT 38fps (0.18s) — it began at nine at 28 (0.32s), and the budget it has to live inside is the dive, not the jump: under 2.6x ramped gravity the whole descent is under 0.4s, so a third of a second of kick left the recovery two frames on screen. 20, 22 and 25 are the frames the hit window is pinned to (AIR_KICK_HIT in game.js reads sheet numbers, not positions, so this list can be re-cut without sliding the hit onto the wind-up) — keep them if you re-time it."
+      },
+      {
+        "id": "air_strike_fall",
+        "role": "custom",
+        "name": "Air Kick Fall",
+        "frames": [34, 35, 36, 37],
+        "fps": 24,
+        "loop": false,
+        "description": "The descent that belongs to THIS move — the leg coming back under him from the kick, 34-37, foot line 451 -> 483. An ordinary jump falls on the inverse of its own rise; a jump he struck out of falls on the recovery the strike was drawn with, so the leg he just kicked with is the leg he lands on. Holds 37 (feet almost down) until he actually arrives. 20fps rather than 12 for the same reason the strike above is 38: what is left of a rocket descent after the kick has played is a couple of tenths, and a clip slower than the fall it covers never reaches the pose it exists to arrive in."
+      }
+    ]
+  }
+}

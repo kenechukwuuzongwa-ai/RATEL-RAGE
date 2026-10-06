@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "Darki_Hit_Lift_Reaction",
+  "image": "darki-hitlift.png",
+  "note": "Launch, part 1 of 3: 0 struck, 1 tipping, 2-3 feet leave the tarmac, 4 horizontal and airborne. Frame 4 is the SAME pose as darki-hitair frame 0 — the join is exact. 2:1 downsample of ASSETS/NEW SPRITES/Darki_Hit_Lift_Reaction.png; cell 5 is empty.",
+  "frameWidth": 512,
+  "frameHeight": 265,
+  "sheet": {
+    "cols": 3,
+    "rows": 2,
+    "frames": 5,
+    "imageWidth": 1536,
+    "imageHeight": 530
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 4,
+    "fps": 30,
+    "loop": false
+  }
+}

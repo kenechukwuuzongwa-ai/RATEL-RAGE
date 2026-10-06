@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "Agberosidekick",
+  "image": "enemy-sidekick.png",
+  "note": "The Agbero's side kick — his long-range attack, and the one that goes through Darki's guard. 0-2 wind up, 3-5 chamber the knee, 6-7 drive it out, 8-9 the full extension (the impact sparks are drawn into the art, so the blow lands on frame 8). There is no retraction on the sheet: the move table plays it back down through 8-6-4-2-0 so he ends on the guard he started from. Frame 0 is pixel-identical to enemy-jab frame 0 (x 240-809, h 908 source px), so the two attack sheets share a neutral and swapping between them never shifts him — that shared pose is also why this sheet carries bodyFrame 0 and a drawH derived from what enemy-jab's frame 0 already draws at. Copied at source resolution (NOT downsampled), matching enemy-ginger / enemy-walk / enemy-jab; see _chromakey/newmoves_prep.js. Cells 10-11 are empty.",
+  "frameWidth": 1024,
+  "frameHeight": 1024,
+  "sheet": {
+    "cols": 4,
+    "rows": 3,
+    "frames": 10,
+    "imageWidth": 4096,
+    "imageHeight": 3072
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 9,
+    "fps": 30,
+    "loop": false
+  }
+}

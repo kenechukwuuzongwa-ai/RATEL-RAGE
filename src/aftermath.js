@@ -300,6 +300,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   let select = 1;                 // LEVEL_SELECT: 0 = replay 01, 1 = play 02
   let revealT = 0;                // NEXT_TARGET_REVEAL's own clock
   let cabalT = 0;
+  /* Where the chain's clock was when the player left it for the level chooser,
+   * so Circle can put him back on the screen he left rather than on a rebuild
+   * of it. See the LEVEL_SELECT back case. */
+  let cabalResume = 0;
 
   /* WHOSE FILE THE BOARD IS SHOWING.
    *
@@ -1348,11 +1352,19 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * bar names the button; this says whether pressing it will do anything. */
     ui.setFont(500, 11.5, 0.15);
     ctx.fillStyle = open ? C.text : C.dim;
+    /* "Nothing to open" WAS TRUE AND IS NOT ANY MORE. A rung with no evidence
+     * is no longer a dead end — it is the invitation to go and get some — so the
+     * line has to say the second half or the panel is talking the player out of
+     * the one press this screen most wants him to make. It still leads with the
+     * fact (no evidence), because that IS why there is no file to read. */
+    const playable = !!(c && LEVELS[c.level]?.playable);
     const line = open
       ? `File open — ${c.file.evidence.length} items recovered. Open it to read the evidence and the connection.`
-      : id && c ? 'No evidence recovered yet. Nothing to open.'
-        : id ? 'No case file. The trail does not reach this far.'
-          : 'No name, no face, no file. The chain runs on past what the evidence can prove.';
+      : id && c && playable
+        ? `No evidence recovered yet — nothing to read. ${LEVELS[c.level].code} is where it comes from.`
+        : id && c ? 'No evidence recovered yet. Nothing to open.'
+          : id ? 'No case file. The trail does not reach this far.'
+            : 'No name, no face, no file. The chain runs on past what the evidence can prove.';
     let y = box.y + 134;
     for (const l of ui.wrapLines(line, box.w - 52)) { ctx.fillText(l, box.x + 26, y); y += 17; }
   }
@@ -1889,6 +1901,49 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     return true;
   }
 
+  /* THE PLAYER CHOSE A RUNG ON THE NETWORK. One router, because "what does
+   * opening this man do" has exactly two answers and they depend on ONE thing:
+   * whether the case behind him has evidence yet.
+   *
+   *   has a file  -> his FILE. MC Olodo is behind us and the board is the point
+   *                  of having beaten him; sending that press to the level
+   *                  chooser instead threw away the only screen that answers
+   *                  "what did I find on him".
+   *   no file yet -> his LEVEL. Masood Jibril has no evidence because the
+   *                  player has not been there, so the only thing "open Masood"
+   *                  can mean is go and get some.
+   *   no case     -> nothing. The two UNIDENTIFIED rungs and The Cabal itself
+   *                  are the deliberate blanks of this screen; a press that
+   *                  opened them would be answering the question the sequence
+   *                  exists to leave open.
+   *
+   * The level path goes through `replayCase`, which is the same door the level
+   * chooser and the file's own Triangle use — including the `chosen` guard that
+   * stops a double press launching two missions. Where that lands (his intro,
+   * straight into gameplay, or the previous level when neither exists) is
+   * frontend.startLevel's decision and stays there; this only says WHO. */
+  function enterNode(node, ui) {
+    if (!node?.key) return false;
+    const c = caseFor(node.key);
+    if (!c) return false;
+    if (caseIsOpen(node.key)) return enterCase(node.key, ui);
+    return replayCase(c, ui);
+  }
+
+  /* What Cross will do on the network right now — used by the handler AND by
+   * the prompt, so the bar cannot promise one thing while the button does
+   * another. Null means "nothing selected", i.e. Cross still just continues. */
+  function chainAction() {
+    if (state !== 'CABAL_NETWORK_REVEAL' || !chainPinned) return null;
+    const node = AFTERMATH.cabal.chain[chainSel];
+    if (!node?.key) return null;
+    const c = caseFor(node.key);
+    if (!c) return null;
+    if (caseIsOpen(node.key)) return { node, c, kind: 'file' };
+    if (!LEVELS[c.level]?.playable) return null;
+    return { node, c, kind: 'level' };
+  }
+
   /* Input. One door, so the keyboard, the pad and the mouse cannot drift apart.
    * Returns true when the press was consumed. */
   function press(action) {
@@ -1956,10 +2011,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       }
       if (state === 'CABAL_NETWORK_REVEAL') {
         if (!chainPinned) return false;
-        const node = AFTERMATH.cabal.chain[chainSel];
-        if (!node?.key || !caseIsOpen(node.key)) return false;
-        enterCase(node.key, ui);
-        return true;
+        /* Through the same router Cross uses. Triangle used to refuse any rung
+         * without a file, which meant the one node the player most wants to act
+         * on — the NEXT TARGET — was the only one the button ignored. */
+        return enterNode(AFTERMATH.cabal.chain[chainSel], ui);
       }
       return false;
     }
@@ -2013,14 +2068,53 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         return false;
 
       case 'CABAL_NETWORK_REVEAL':
-        /* THE ONLY WAY OFF THIS SCREEN. Nothing times out here, so this press is
-         * not a skip — it is the exit, and it works from the first frame. A
-         * player who has read the chain and wants to move does not have to wait
-         * for a clock to agree with him. */
-        if (action === 'accept') { ui?.navForward(); go('LEVEL_SELECT'); return true; }
+        /* THE WAY OFF THIS SCREEN. Nothing times out here, so this press is not
+         * a skip — it is the exit, and it works from the first frame. A player
+         * who has read the chain and wants to move does not have to wait for a
+         * clock to agree with him.
+         *
+         * CROSS IS NOW CONTEXTUAL, and the caveat the Triangle comment above
+         * raises is answered rather than ignored. The objection to overloading
+         * Cross was that its meaning would change "depending on which page the
+         * panel happens to be showing" — i.e. incidentally. Here it only changes
+         * once the player has DELIBERATELY walked the network onto a rung, and
+         * the prompt above the bar changes with it, so the button never does
+         * something the screen did not just say it would. Untouched, the press
+         * still continues exactly as it always did. */
+        if (action === 'accept') {
+          const act = chainAction();
+          if (act && enterNode(act.node, ui)) return true;
+          /* Stamped so Circle off the chooser can put this screen back exactly
+           * as it was rather than rebuilding it — see the LEVEL_SELECT case. */
+          cabalResume = cabalT;
+          ui?.navForward(); go('LEVEL_SELECT'); return true;
+        }
         return false;
 
       case 'LEVEL_SELECT':
+        /* CIRCLE GOES BACK TO THE NETWORK, because the network is the only door
+         * into this screen and a chooser you cannot back out of is a dead end.
+         * It matters most on the rungs that offer nothing: pressing Cross on an
+         * UNIDENTIFIED node continues here by design, and without this the
+         * player who was only browsing the chain has no way back to it.
+         *
+         * IT RESTORES THE CLOCK RATHER THAN REWINDING IT. `go()` zeroes `cabalT`
+         * on the way into the network — right for arriving, wrong for RETURNING:
+         * it would replay the whole chain build-in and re-fire its tracing
+         * audio, making a back press cost two seconds and sound like a new
+         * reveal. Same rule the file's Circle already follows (it does not
+         * restart the read), so `cabalResume` is stamped on the way out and put
+         * back here.
+         *
+         * Refused once a level is committed: `chosen` means a mission is already
+         * loading and there is nothing to go back to. */
+        if (action === 'back') {
+          if (chosen) return true;
+          ui?.navBack();
+          go('CABAL_NETWORK_REVEAL');
+          cabalT = cabalResume;
+          return true;
+        }
         if (action === 'left' && select !== 0) { select = 0; ui?.navForward(); return true; }
         if (action === 'right' && select !== 1) { select = 1; ui?.navForward(); return true; }
         if (action === 'accept') {
@@ -2060,7 +2154,15 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     /* The prompts. Each names the button and what it will do — never a bare
      * "PRESS X". */
     if (state === 'WAIT_FOR_TARGET_X') prompt(ui, 'PRESS X TO TRACE THE NETWORK');
-    else if (state === 'CABAL_NETWORK_REVEAL' && cabalT > 1.4) prompt(ui, 'PRESS X TO CONTINUE', 0.85);
+    else if (state === 'CABAL_NETWORK_REVEAL' && cabalT > 1.4) {
+      /* NAMES THE MAN, not the verb alone. "OPEN FILE" under a column of five
+       * circles does not say which one, and this screen is the one place the
+       * player is choosing between people rather than pages. */
+      const act = chainAction();
+      prompt(ui, !act ? 'PRESS X TO CONTINUE'
+        : act.kind === 'file' ? `PRESS X TO OPEN ${assertPlayerSafe(act.node.top, 'cabal.top')}’S FILE`
+          : `PRESS X TO BEGIN ${LEVELS[act.c.level].code}`, 0.85);
+    }
     else if (state === 'LEVEL_SELECT') {
       prompt(ui, select === 1 ? 'PRESS X TO PLAY LEVEL 02' : 'PRESS X TO REPLAY LEVEL 01');
     } else prompt(ui, 'PRESS X TO SKIP', 0.5);
@@ -2069,7 +2171,11 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * "SKIP" under a screen whose X continues is the kind of small lie a player
      * stops trusting the whole HUD over. */
     const hints = state === 'LEVEL_SELECT'
-      ? [{ icon: 'dpad', label: 'CHOOSE' }, { icon: 'cross', label: 'CONFIRM' }]
+      ? [{ icon: 'dpad', label: 'CHOOSE' }, { icon: 'cross', label: 'CONFIRM' },
+        /* The way back to the chain. Named as the destination rather than as
+         * "BACK": this is the only screen in the sequence with one door behind
+         * it, and saying which one is what makes browsing the network safe. */
+        { icon: 'circleBtn', label: 'BACK TO NETWORK' }]
       : state === 'WAIT_FOR_TARGET_X'
         ? [{ icon: 'cross', label: 'CONTINUE' },
           /* Circle is whichever door the player came in through. */
@@ -2092,10 +2198,15 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     }
     if (state === 'CABAL_NETWORK_REVEAL') {
       hints.push({ icon: 'bumpers', label: 'L1 / R1  NETWORK' });
-      const node = chainPinned ? AFTERMATH.cabal.chain[chainSel] : null;
-      if (node?.key && caseIsOpen(node.key)) {
-        hints.push({ icon: 'triangleBtn', label: 'OPEN FILE' });
-      }
+      /* Off the SAME router the buttons use, so the legend cannot advertise a
+       * verb the press will refuse — it used to appear only for a rung with a
+       * file, which left the NEXT TARGET looking inert. */
+      const act = chainAction();
+      /* Cross carries the verb; Triangle still WORKS as an alias for players who
+       * learned it on the file pager, but it is not listed. Advertising the same
+       * words twice reads as a rendering bug, and the bar's job is to name what
+       * the primary button does — which it now does exactly. */
+      if (act) hints[0] = { icon: 'cross', label: act.kind === 'file' ? 'OPEN FILE' : 'BEGIN LEVEL' };
     }
     ui.drawControlBar(hints);
 
@@ -2173,9 +2284,28 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         pinned: chainPinned,
         index: chainSel,
         count: rungs.length,
+        /* The chain's own clock. Exposed so a test can prove that COMING BACK
+         * to this screen resumes it rather than rewinding it — `go()` zeroes it
+         * for an arrival, and a back press must not pay that two-second rebuild
+         * or re-fire the tracing audio. */
+        t: +cabalT.toFixed(2),
         key: node?.key ?? null,
         openable: !!(node?.key && caseIsOpen(node.key)),
         openableKeys: rungs.filter((r) => r.key && caseIsOpen(r.key)).map((r) => r.key),
+        /* WHAT THE BUTTON WILL ACTUALLY DO on this rung — 'file', 'level', or
+         * null for the three deliberate blanks. Read straight off `chainAction`,
+         * the same function the handler and the prompt use, so a test cannot
+         * pass against a second copy of the rule. `openable` alone stopped being
+         * the whole story once an unplayed rung started launching its level:
+         * Masood Jibril is not openable and is not inert either. */
+        action: chainAction()?.kind ?? null,
+        actions: rungs.map((r) => {
+          if (!r.key) return null;
+          const c = caseFor(r.key);
+          if (!c) return null;
+          if (caseIsOpen(r.key)) return 'file';
+          return LEVELS[c.level]?.playable ? 'level' : null;
+        }),
       };
     },
     /* Which file the board is drawing, and how the player got into it. */

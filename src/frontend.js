@@ -16,8 +16,19 @@
  * size, and is handed back at 1280x720 the moment gameplay takes over.
  */
 
-const W = 1280;
 const H = 720;
+/* FULL-BLEED MOBILE: on a phone wider than 16:9 the front end widens its
+ * virtual space to the device aspect (same rule as game.js), so the menus
+ * fill the screen instead of letterboxing. Centred layouts stay centred;
+ * edge-anchored panels move to the true screen edges. Desktop keeps 1280. */
+let W = 1280;
+if (/Android/.test(navigator.userAgent)) {
+  const sw = Math.max(window.screen.width || 0, window.screen.height || 0);
+  const sh = Math.min(window.screen.width || 0, window.screen.height || 0);
+  if (sw && sh && sw / sh > 16 / 9 + 0.01) {
+    W = Math.min(2200, Math.round((H * (sw / sh)) / 2) * 2);
+  }
+}
 
 /* ---------------------------------------------------------------- palette */
 
@@ -180,38 +191,77 @@ const TITLE_ART = {
   inkAspect: 1.8569,     // of the mark itself
 };
 
-/* Darki's opaque extents inside a 964x956 idle cell, measured across all 30
- * frames. His feet never move (y 888-890), so they are the anchor; the head
- * bobs 276-288, which is the whole idle. */
+/* THE MENU FIGURE IS THE ARMED IDLE — Darki standing with his bat.
+ *
+ * He was drawn here on `sprites/darki-idle.png`, his UNARMED idle, which is the
+ * sheet the game fights on. The menu is a poster, not a fight: he is supposed to
+ * be visibly carrying the bat. Same performance, same costume, same 26-frame
+ * breathing loop, re-rendered with the weapon — so this is a sheet swap, and
+ * NOTHING in game.js changes. Darki's gameplay logic still runs off his own
+ * sheets (and off `darki-idle-mobile.png` on Android); the menu is the only
+ * thing pointed at this file.
+ *
+ * IT IS ALSO 1.6 MB AGAINST 14.5 MB. The unarmed sheet is 5784x4780 and the menu
+ * was loading all of it to draw one figure and crop one 176px face. This one is
+ * 3072x2540 for the same 26 frames, which matters most on Android where the menu
+ * is the first thing that has to appear.
+ *
+ * EVERY NUMBER BELOW IS MEASURED by `_chromakey/_darkiarmedmeasure.js`, which
+ * runs the identical code over the OLD sheet first as a control and has to
+ * reproduce its published values (it returns x 25..667, y0 276, footY 890
+ * against the 26 / 666 / 276 / 889 that were here — within a pixel, so the
+ * method is the one these were measured with).
+ *
+ * x0/x1 are the FULL opaque box, which is this file's existing convention and
+ * which is safe here despite the bat: he holds it across himself at waist
+ * height and it reaches barely past his own arms, so the box grows 22 px left
+ * and 16 px right of his body. His centre as a fraction of the cell comes out
+ * at 0.358 against the unarmed sheet's 0.359 — which is why `L.darki.cx` is
+ * untouched and he does not move when the sheets swap.
+ */
+/* THE BETTER-GRIP TAKE (request 294). Two exports of this idle exist and they
+ * are easy to confuse: `darki_armed_darki_idle_512x508_sheet` (lowercase,
+ * Sep 30 — his right hand floats behind the end of the bat) and
+ * `Darki-armed-darki_idle_512x508_sheet` (capital D, Oct 1 — the hand closes
+ * round it). This is the second, byte-for-byte. It measures IDENTICALLY to the
+ * first in `_darkiarmedmeasure.js` — same 26 frames, full box x 14..353,
+ * y 148..469 — so every number below still holds and he does not move.
+ * A NEW FILENAME on purpose, not an overwrite: a phone that cached the old
+ * image under the old URL cannot keep showing it. */
 const IDLE = {
-  src: '../sprites/darki-idle.png',
-  fw: 964, fh: 956, cols: 6,
-  /* 26 FRAMES IN A 30-CELL GRID. 6x5 is the sheet's layout, but the last four
-   * cells (26-29) are EMPTY and `frames` is the count that may be played — the
-   * two are not the same number and nothing here may assume cols*rows.
+  src: '../sprites/darki-armed-idle-grip.png',
+  fw: 512, fh: 508, cols: 6,
+  /* 26 FRAMES IN A 30-CELL GRID. 6x5 is the layout; cells 26-29 are EMPTY and
+   * `frames` is the count that may be played — the two are not the same number
+   * and nothing here may assume cols*rows. Confirmed empty on THIS sheet, not
+   * assumed from the old one.
    *
-   * History, because it will come back if the sheet is ever re-exported: the
-   * shipped sheet's first frames came out of `_chromakey/recolor-idle.js` far
+   * History, because it will come back if a sheet is ever re-exported: the old
+   * unarmed sheet's first frames came out of `_chromakey/recolor-idle.js` far
    * brighter than the rest — frame 0 at +9.42 over the median, a 10.36 spread
    * and a +8.56 loop seam, which read on screen as a bright flash once per
-   * breathing cycle. The supplied art was never at fault (+1.33 / 2.20 / +0.17);
-   * the recolour's Reinhard skin transfer runs a 5-7x contrast gain, and that
-   * multiplied a difference nobody could see into one everybody could. The four
-   * hot frames were cut from the sheet by hand, which shifted 4-29 down to 0-25
-   * and left the tail blank. Measured after the cut: spread 1.81, seam -0.48.
+   * breathing cycle. The four hot frames were cut by hand, which is why that
+   * sheet also ran 26-of-30. THIS sheet was checked for the same fault before
+   * it was wired in and is clean: spread 1.92, frame 0 at +0.18, seam +0.49.
    *
-   * Playing to 29 drew those four blanks — 267 ms of no character, every 1.93 s.
-   * Re-run `_chromakey/idleflash.js` after ANY change to this sheet: it names
-   * empty cells outright, which is the one thing a brightness number will not
-   * tell you. */
+   * Re-run that check after ANY change to this sheet, and check for empty cells
+   * too — playing to 29 would draw four blanks, 267 ms of no character every
+   * 1.93 s, and a brightness number will never tell you that. */
   frames: 26,
   fps: 15,                       // the game plays its calm idle at half of 30
-  x0: 26, x1: 666, y0: 276, footY: 889,
+  x0: 14, x1: 353, y0: 148, footY: 469,
   /* Portrait crop for the profile card. `frame` because x and y are offsets
    * inside a CELL, not into the sheet — read as sheet coordinates this lands in
    * whichever frame happens to sit at the top-left, which is how the avatar came
-   * to be cut out of the flashing frame before the cut above. */
-  head: { frame: 0, x: 384, y: 270, w: 176, h: 176 },
+   * to be cut out of the flashing frame before the cut above.
+   *
+   * Re-framed for this sheet rather than scaled from the old one: the obvious
+   * derivation (match the head's centre of mass) does not work on either sheet,
+   * because the top of his silhouette is a raised SHOULDER in this crouched
+   * stance, not his head — the old published crop sits 106 px off that centre.
+   * Read off `_chromakey/_darkiarmed_ruler.png` instead and checked against the
+   * old avatar side by side in `_darki_avatar_try.png`. */
+  head: { frame: 0, x: 228, y: 138, w: 100, h: 100 },
 };
 
 const MAIN_ITEMS = [
@@ -486,6 +536,35 @@ const CUES = {
 /* ---------------------------------------------------------------- helpers */
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+/* ------------------------------------------------------------- the host ----
+ * WHO IS ALLOWED TO CLOSE THE GAME.
+ *
+ * In a browser tab nobody is: `window.close()` is refused for a page the user
+ * opened themselves, so QUIT could only ever print an apology — which is what
+ * it did ("QUIT IS CONTROLLED BY THE GAME HOST"). The packaged Android build
+ * DOES have a host: MainActivity installs `window.RatelHost` with a `quit()`
+ * that finishes the task and returns the player to their home screen.
+ *
+ * Every call is wrapped: an @JavascriptInterface method can throw across the
+ * bridge, and a menu item must never be able to take the front end down with
+ * it. `canQuit` is read through the same guard so the menus can offer the
+ * option only where it actually works, instead of printing the apology and
+ * hoping nobody minds. */
+export const HOST = {
+  get canQuit() {
+    try { return !!(window.RatelHost && window.RatelHost.canQuit && window.RatelHost.canQuit()); }
+    catch { return false; }
+  },
+  quit() {
+    try { window.RatelHost.quit(); return true; }
+    catch (e) { console.warn('[ror host] quit refused', e); return false; }
+  },
+};
+/* The packaged build. Named once so the mobile branches read as one decision
+ * rather than as a UA test scattered through the file — the splash and intro
+ * twins and the voice-over path all hang off it. */
+const IS_ANDROID = /Android/.test(navigator.userAgent);
 const lerp = (a, b, t) => a + (b - a) * t;
 const easeOut = (v) => 1 - Math.pow(1 - clamp(v, 0, 1), 3);
 const easeInOut = (v) => (v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2);
@@ -534,6 +613,35 @@ function loadSettings() {
 /* ------------------------------------------------------------------ icons
  * Line art on a 24x24 grid, one stroke weight, so every icon carries the same
  * visual mass. The caller sets stroke/fill colour and alpha. */
+
+/* WHICH PROMPT A TOUCH PLAYER SEES INSTEAD.
+ *
+ * Keyed by the pad glyph every hint in the game already asks for, so no call
+ * site has to know the player's device. `triangleBtn` maps to the tap as well:
+ * the phone build has no fourth face button and the action it carried — the
+ * EXECUTION — is on the GRAB control, which is a tap-and-hold like any other.
+ * `dpad` becomes the vertical swipe the gesture layer actually reads.
+ *
+ * Anything absent from this table draws the same on both (play, gear, lock and
+ * the rest are not hardware, they are pictures of what the row does). */
+const TOUCH_ICON = {
+  cross: 'tapBtn',
+  triangleBtn: 'tapBtn',
+  circleBtn: 'swipeLeft',
+  dpad: 'swipeUpDown',
+};
+
+/* Touch-shaped UI, not merely a touch-capable screen: a laptop with a
+ * touchscreen and a keyboard should keep the pad prompts, and the gesture layer
+ * uses the same gate (coarse pointer + real touch points) to decide whether it
+ * is in charge at all. Read live rather than cached so a harness can spoof it
+ * before the first frame. */
+const isTouchUI = () => {
+  try {
+    return navigator.maxTouchPoints > 0
+      && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  } catch { return false; }
+};
 
 const ICONS = {
   play(c) { c.beginPath(); c.moveTo(8.5, 5); c.lineTo(19, 12); c.lineTo(8.5, 19); c.closePath(); c.fill(); },
@@ -688,6 +796,50 @@ const ICONS = {
     c.closePath();
     c.stroke();
   },
+  /* ---------------------------------------------- the touch vocabulary ----
+   *
+   * A phone has no Cross, no Circle and no Triangle, so a hint bar that draws
+   * them is telling the player to press hardware they are not holding. These
+   * are the same prompts in the gestures the touch layer actually listens for
+   * (src/touch.js): a tap, a swipe right to go on, a swipe left to go back.
+   * They are drawn on the same 24-unit grid and the same 8.4 radius as the pad
+   * faces, so a bar of mixed hints still reads as one set.
+   *
+   * Substituted in `icon()` by TOUCH_ICON rather than at the ~20 call sites, so
+   * a new hint anywhere in the game is contextual without its author having to
+   * remember that it needs to be. */
+  tapBtn(c) {
+    // a fingertip on a surface, with the contact ring it just made
+    c.beginPath(); c.arc(12, 13.4, 8.4, 0, 7); c.stroke();
+    c.save();
+    c.globalAlpha *= 0.55;
+    c.beginPath(); c.arc(12, 13.4, 4.6, 0, 7); c.stroke();
+    c.restore();
+    c.beginPath(); c.arc(12, 13.4, 2.1, 0, 7); c.fill();
+  },
+  swipeRight(c) {
+    // the travel, then the arrow head: "carry on"
+    c.beginPath(); c.moveTo(4.6, 12); c.lineTo(16.4, 12); c.stroke();
+    c.beginPath(); c.moveTo(12.4, 7.4); c.lineTo(17.6, 12); c.lineTo(12.4, 16.6); c.stroke();
+    c.save();
+    c.globalAlpha *= 0.5;
+    c.beginPath(); c.arc(5.4, 12, 2.2, 0, 7); c.fill();   // the thumb it starts under
+    c.restore();
+  },
+  swipeLeft(c) {
+    c.beginPath(); c.moveTo(19.4, 12); c.lineTo(7.6, 12); c.stroke();
+    c.beginPath(); c.moveTo(11.6, 7.4); c.lineTo(6.4, 12); c.lineTo(11.6, 16.6); c.stroke();
+    c.save();
+    c.globalAlpha *= 0.5;
+    c.beginPath(); c.arc(18.6, 12, 2.2, 0, 7); c.fill();
+    c.restore();
+  },
+  swipeUpDown(c) {
+    // the scroll gesture the right half listens for, in place of the d-pad
+    c.beginPath(); c.moveTo(12, 4.6); c.lineTo(12, 19.4); c.stroke();
+    c.beginPath(); c.moveTo(8.2, 8.4); c.lineTo(12, 4.4); c.lineTo(15.8, 8.4); c.stroke();
+    c.beginPath(); c.moveTo(8.2, 15.6); c.lineTo(12, 19.6); c.lineTo(15.8, 15.6); c.stroke();
+  },
   /* The shoulder pair, as a step-left / step-right. Two chevrons rather than
    * two little rounded buttons: at the 19 px the hint bar draws icons at, a
    * drawn L1/R1 button reads as a smudge, and what this control actually DOES
@@ -780,9 +932,42 @@ export function createFrontEnd({
   let introVideo = null;
   let introLoadPromise = null;
   let introFallbackT = 0;
+  let voiceRetryT = 0;          // cadence of the intro voice's autoplay retries
+  let briefStallT = 0;          // how long the briefing VO has been buffering
   let introStarted = false;
   let introDone = false;
+  /* Set once the cinematic has played for THIS level run. The briefing's Back
+   * returns to the case file and Forward runs the pipeline again; without this
+   * the loading gate sent the flow back through 'intro' and the clip
+   * REPLAYED — the "intro is trapped in a loop" report. A fresh startLevel
+   * clears it, so replaying the level still plays the intro once. */
+  let introPlayed = false;
+  /* HAS THE PLAYER EVER SEEN THE CINEMATIC THROUGH? Persisted, because "after
+   * the first time" has to mean across launches — an intro you have already
+   * watched is not made fresh again by closing the app. `introPlayed` above is
+   * the per-RUN flag that stops the briefing's Back/Forward replaying it, and
+   * is a different question. */
+  const INTRO_SEEN_KEY = 'ror.introSeen';
+  let introSeen = false;
+  try { introSeen = localStorage.getItem(INTRO_SEEN_KEY) === '1'; } catch {}
+
+  /* TAP TO SKIP, ON THE SECOND VIEWING ONWARD, AFTER THREE SECONDS.
+   *
+   * Both conditions earn their place. Gating on `introSeen` means a first-time
+   * player cannot lose the opening to a stray thumb on a screen that has no
+   * controls and invites a tap. The three seconds stop a tap that was really
+   * aimed at the LOADING screen behind it — the phase changes under the finger
+   * — from eating the cinematic the moment it starts.
+   *
+   * Keyboard and pad keep skipping from frame one, as they always have: those
+   * are deliberate presses, not a thumb landing on glass. */
+  const INTRO_TAP_SKIP_AT = 3.0;
+  const introTapSkippable = () => introSeen && introFallbackT >= INTRO_TAP_SKIP_AT;
   let introLoadProgress = 0;
+  /* Set when the intro video fails or takes too long to produce its first
+   * frame: the story screen must never wedge on a media element, so the flow
+   * skips the cinematic instead of freezing at 15%. */
+  let introFailed = false;
 
   /* The case file's own clock, in seconds, driven by the briefing voiceover.
    * Kept separate from phaseT because phaseT is the SCREEN's transition clock —
@@ -1058,6 +1243,9 @@ export function createFrontEnd({
   const sfx = { ac: null, buffers: {}, ready: false };
 
   function initSfx() {
+    /* Idempotent: a second context would strand the buffers decoded into the
+     * first, the narration clips' among them. */
+    if (sfx.ac) return Promise.resolve();
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return Promise.resolve();
     try { sfx.ac = new AC(); } catch { return Promise.resolve(); }
@@ -1139,6 +1327,196 @@ export function createFrontEnd({
         } catch {}
       },
     };
+  }
+
+  /* ------------------------------------------------- the voice-over clips --
+   *
+   * THE NARRATION DOES NOT STREAM ON ANDROID.
+   *
+   * The three reads (the cinematic's, the case file's and the fight's opening
+   * line) were <audio> elements, and on the packaged build that put them on the
+   * WebView's streaming path, where two things went wrong at once:
+   *
+   *   1. Capacitor's local server answers a Range request from BYTE ZERO while
+   *      claiming the bytes start at the requested offset, so any re-buffer or
+   *      seek inside a clip fed the decoder the top of the file. The narrator
+   *      stopped mid-line, or never started. (Fixed natively as well --
+   *      mobile/android/.../RangeAwareWebViewClient.java -- but the element is
+   *      what exposed us to it.)
+   *   2. Seven preload='auto' elements are alive from boot, and under the world
+   *      load's memory pressure Android suspends them and drops their buffers.
+   *      Waking one re-fetches, which walked straight back into (1).
+   *
+   * Decoded WebAudio buffers have neither problem: one fetch with no Range
+   * header, no streaming, no element for the platform to suspend, and playback
+   * that cannot be interrupted by memory pressure. The three files are 0.29 MB,
+   * 0.57 MB and 0.70 MB, so holding them decoded is affordable where the 6 MB
+   * looping ambience would not be -- that one stays an element deliberately.
+   *
+   * This shim presents the slice of the HTMLAudioElement surface the front end
+   * actually uses (currentTime read AND write, duration, paused, ended, volume,
+   * play/pause, 'ended' and 'loadedmetadata'), so not one call site changes.
+   * DESKTOP IS UNTOUCHED: makeVoice returns a real element off Android. */
+  class VoiceClip {
+    constructor(url) {
+      this.src = String(url);
+      this.loop = false;
+      this.preload = 'auto';        // accepted and ignored: there is nothing to stream
+      this._volume = 1;
+      this._buffer = null;
+      this._node = null;
+      this._gain = null;
+      this._handlers = {};
+      this._startedAt = 0;          // ac.currentTime when the live run began
+      this._offset = 0;             // buffer position that run started from
+      this._paused = true;
+      this._ended = false;
+      this._loading = null;
+      this.load();                  // decode now; the screens that want it are minutes away
+    }
+
+    /* ---- the element's surface ------------------------------------------- */
+
+    get duration() { return this._buffer ? this._buffer.duration : NaN; }
+    get paused() { return this._paused; }
+    get ended() { return this._ended; }
+    get volume() { return this._volume; }
+
+    set volume(v) {
+      this._volume = clamp(Number(v) || 0, 0, 1);
+      if (this._gain) { try { this._gain.gain.value = this._volume; } catch {} }
+    }
+
+    /* Derived from the context clock, which is the same clock the samples are
+     * played against — so the case file's typewriter lands on the narrator's
+     * words exactly as it did when this was an element. */
+    get currentTime() {
+      if (!this._node || !this._buffer) return this._offset;
+      const ac = sfx.ac;
+      if (!ac) return this._offset;
+      const t = this._offset + (ac.currentTime - this._startedAt);
+      if (this.loop) return t % this._buffer.duration;
+      return Math.min(Math.max(0, t), this._buffer.duration);
+    }
+
+    set currentTime(v) {
+      const t = Math.max(0, Number(v) || 0);
+      this._ended = false;
+      if (this._node) this._start(t);      // live: restart the source at the new point
+      else this._offset = t;
+    }
+
+    addEventListener(type, fn) {
+      if (typeof fn !== 'function') return;
+      (this._handlers[type] ??= []).push(fn);
+    }
+
+    removeEventListener(type, fn) {
+      const list = this._handlers[type];
+      if (!list) return;
+      const i = list.indexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+    }
+
+    /* Resolves when the sound is actually running, rejects when it cannot —
+     * the same contract the callers already handle with .catch(). */
+    play() {
+      this._ended = false;
+      const ac = sfx.ac;
+      if (!ac) return Promise.reject(new Error('no audio context'));
+      if (ac.state === 'suspended') ac.resume().catch(() => {});
+      return this.load().then(() => {
+        if (!this._buffer) throw new Error('voice clip did not decode: ' + this.src);
+        this._start(this._offset >= this._buffer.duration ? 0 : this._offset);
+        this._paused = false;
+      });
+    }
+
+    pause() {
+      if (this._node) this._offset = this.currentTime;   // freeze exactly where we are
+      this._stop();
+      this._paused = true;
+    }
+
+    /* ---- internals -------------------------------------------------------- */
+
+    load() {
+      this._loading ??= (async () => {
+        try {
+          const res = await fetch(this.src);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const bytes = await res.arrayBuffer();
+          const ac = sfx.ac;
+          if (!ac) throw new Error('no audio context');
+          this._buffer = await ac.decodeAudioData(bytes);
+          this._emit('loadedmetadata');
+        } catch (e) {
+          /* A read that will not decode must not wedge the screen it belongs
+           * to: play() rejects, and every caller already falls back to its own
+           * clock on a rejected play(). */
+          console.warn('[ror voice] ' + this.src + ' failed to load: ' + (e && e.message));
+        }
+      })();
+      return this._loading;
+    }
+
+    _start(at) {
+      const ac = sfx.ac;
+      if (!ac || !this._buffer) return;
+      this._stop();
+      const src = ac.createBufferSource();
+      src.buffer = this._buffer;
+      src.loop = this.loop;
+      const gain = ac.createGain();
+      gain.gain.value = this._volume;
+      src.connect(gain).connect(ac.destination);
+      /* Fires for a natural finish AND for our own stop(); the identity check
+       * is what tells the two apart, because _stop() clears _node first. */
+      src.onended = () => {
+        if (this._node !== src) return;
+        this._node = null;
+        this._gain = null;
+        this._paused = true;
+        this._ended = true;
+        this._offset = this._buffer ? this._buffer.duration : 0;
+        this._emit('ended');
+      };
+      const from = Math.max(0, Math.min(at, this._buffer.duration));
+      try { src.start(0, from); } catch { return; }
+      this._node = src;
+      this._gain = gain;
+      this._startedAt = ac.currentTime;
+      this._offset = from;
+      this._paused = false;
+    }
+
+    _stop() {
+      const node = this._node;
+      this._node = null;
+      if (node) {
+        try { node.onended = null; node.stop(); } catch {}
+        try { node.disconnect(); } catch {}
+      }
+      if (this._gain) { try { this._gain.disconnect(); } catch {} }
+      this._gain = null;
+    }
+
+    _emit(type) {
+      for (const fn of this._handlers[type] || []) {
+        try { fn({ type, target: this }); } catch (e) { console.warn('[ror voice] ' + type + ' handler threw', e); }
+      }
+    }
+  }
+
+  /* One door for every narration clip. Android gets the decoded buffer; every
+   * other platform gets exactly the element it has always had. */
+  function makeVoice(url) {
+    if (!IS_ANDROID) {
+      const el = new Audio(url);
+      el.preload = 'auto';
+      return el;
+    }
+    return new VoiceClip(String(url));
   }
 
   /* The ONLY place navigation audio is produced. Every caller has already
@@ -1329,7 +1707,12 @@ export function createFrontEnd({
    *   `__rorMenu.splash` reports which of the two actually happened.
    */
   const splashVideo = document.createElement('video');
-  splashVideo.src = new URL('../frontend/splash/studio-splash.mp4', import.meta.url);
+  /* The packaged build ships a 720p twin beside the master and Android loads
+   * it: same card, far less decode work, far less chance of a dropped frame. */
+  const splashSrc = /Android/.test(navigator.userAgent)
+    ? '../frontend/splash/studio-splash-mobile.mp4'
+    : '../frontend/splash/studio-splash.mp4';
+  splashVideo.src = new URL(splashSrc, import.meta.url);
   splashVideo.preload = 'auto';
   splashVideo.playsInline = true;
   splashVideo.setAttribute('playsinline', '');
@@ -1357,23 +1740,64 @@ export function createFrontEnd({
    * A rejected play() is the browser's autoplay policy, not a broken file, and
    * the SAME element replayed muted is allowed. Both outcomes are recorded so a
    * silent card can be told from a stalled one without guessing. */
+  let splashStartTimer = 0;
   function startSplashVideo() {
     if (splashStarted || splashFailed) return;
     splashStarted = true;
     splashHoldT = -1;
-    splashVideo.currentTime = 0;
-    splashVideo.muted = false;
-    splashVideo.volume = clamp(settings.master * settings.sfx, 0, 1);
-    const p = splashVideo.play();
-    if (p?.then) {
-      p.then(() => { splashMuted = false; }).catch(() => {
-        splashVideo.muted = true;
-        splashMuted = true;
-        const q = splashVideo.play();
-        if (q?.catch) q.catch(() => { splashFailed = true; });
-      });
-    } else {
-      splashMuted = splashVideo.muted;
+    clearTimeout(splashStartTimer);
+    /* ONCE. Both the `loadeddata` listener and the 2.5 s ceiling below call
+     * this, and `{ once: true }` only de-duplicates the LISTENER — it does
+     * nothing about the timer. On a phone the clip is ready in well under 2.5 s,
+     * so the sequence was: card starts on loadeddata, plays for ~1.7 s, then the
+     * timer fires, `currentTime = 0` runs a second time and the card JUMPS BACK
+     * TO THE TOP. That is the one-off loop on the very first splash screen —
+     * once per run, always about two and a half seconds in. */
+    let begun = false;
+    const begin = () => {
+      if (splashFailed || begun) return;
+      begun = true;
+      clearTimeout(splashStartTimer);
+      splashVideo.currentTime = 0;
+      /* SOUND FIRST, SILENCE SECOND, NEVER NEITHER — on every platform.
+       *
+       * Android used to start MUTED outright, on the belief that "the packaged
+       * WebView rejects an unmuted play() before any gesture". It does not:
+       * Capacitor calls `settings.setMediaPlaybackRequiresUserGesture(false)`
+       * (Bridge.java) when it builds the WebView, which lifts the gesture
+       * requirement for exactly this case. So the card was silent on the phone
+       * for a restriction that was never in force.
+       *
+       * The "visible hiccup" that the muting was meant to avoid was almost
+       * certainly the double-`begin()` restart fixed above — the card jumping
+       * back to its first frame ~2.5 s in, which looks just like a failed retry.
+       *
+       * The unmuted attempt is still not ASSUMED to work: a rejection falls back
+       * to muted-and-playing, because a silent studio card is a disappointment
+       * while a card that never starts is a black screen. The retry deliberately
+       * does not reset currentTime, so the fallback resumes rather than restarts.
+       * `__rorMenu.splash.muted` reports which of the two actually happened. */
+      splashVideo.muted = false;
+      splashVideo.volume = clamp(settings.master * settings.sfx, 0, 1);
+      const p = splashVideo.play();
+      if (p?.then) {
+        p.then(() => { splashMuted = splashVideo.muted; }).catch(() => {
+          splashVideo.muted = true;
+          splashMuted = true;
+          const q = splashVideo.play();
+          if (q?.catch) q.catch(() => { splashFailed = true; });
+        });
+      } else {
+        splashMuted = splashVideo.muted;
+      }
+    };
+    /* Never start mid-buffer: the card begins on a picture, not on a stall.
+     * The 2.5 s ceiling keeps a stalled network from holding the phase — the
+     * SPLASH_MAX guard sits well past the clip plus this wait. */
+    if (splashVideo.readyState >= 2) begin();
+    else {
+      splashVideo.addEventListener('loadeddata', begin, { once: true });
+      splashStartTimer = setTimeout(begin, 2500);
     }
   }
 
@@ -1601,6 +2025,23 @@ export function createFrontEnd({
 
   function showMessage(text) { message = text; messageT = 2.2; }
 
+  /* QUIT, ON THE SECOND PRESS.
+   *
+   * Leaving the game is the one menu action with no way back, and on a phone
+   * the row is a thumb-sized target next to CREDITS. So the first press ARMS
+   * it and says so, and only a second press inside the window actually goes.
+   * The window is the message's own lifetime, so the prompt vanishing and the
+   * arming lapsing are the same event — there is no state the player can see
+   * that the code does not also believe. */
+  let quitArmedT = 0;
+  function requestQuit(label = 'QUIT') {
+    if (!HOST.canQuit) { showMessage('QUIT IS CONTROLLED BY THE GAME HOST'); return false; }
+    if (quitArmedT > 0) { quitArmedT = 0; HOST.quit(); return true; }
+    quitArmedT = 2.2;
+    showMessage(`PRESS ${label} AGAIN TO EXIT`);
+    return false;
+  }
+
   function reject(text) {
     rejectT = 0.42;
     showMessage(text);
@@ -1671,7 +2112,7 @@ export function createFrontEnd({
       else if (item.label === 'OPTIONS') go('options');
       else if (item.label === 'EXTRAS') go('extras');
       else if (item.label === 'CREDITS') go('credits');
-      else if (item.label === 'QUIT GAME') showMessage('QUIT IS CONTROLLED BY THE GAME HOST');
+      else if (item.label === 'QUIT GAME') requestQuit('QUIT');
       return;
     }
     if (phase === 'difficulty') {
@@ -1970,6 +2411,15 @@ export function createFrontEnd({
      * under a gizmo you are dragging — is how a positioning session ends up
      * launching a level. */
     if (darkiTool.on) { darkiToolPointerDown(pointerPos(e)); return; }
+    /* THE CINEMATIC HAS NO BUTTONS, so a tap on it would otherwise hit-test
+     * against nothing and be swallowed. The gesture layer is deliberately off
+     * during `intro` (a stray swipe there used to skip the clip), which means
+     * real touches land here on the canvas — so this is where the tap is
+     * answered. See introTapSkippable for why it is not simply always on. */
+    if (phase === 'intro') {
+      if (introTapSkippable()) { navForward(); finishIntro(); }
+      return;
+    }
     if (inputLock > 0 || pressGate.action) return;
     const hit = hitTest(pointerPos(e));
     if (!hit) return;
@@ -2424,10 +2874,21 @@ export function createFrontEnd({
   }
 
   function icon(name, cx, cy, size, color, alpha = 1, weight = 1.65) {
-    const fn = ICONS[name];
+    const fn = ICONS[TOUCH_ICON[name] && isTouchUI() ? TOUCH_ICON[name] : name];
     if (!fn) return;
     ctx.save();
-    ctx.globalAlpha = alpha;
+    /* MULTIPLIED, not assigned.
+     *
+     * This was `ctx.globalAlpha = alpha`, which THREW AWAY whatever fade the
+     * caller had already set. Every panel in the game fades by setting
+     * globalAlpha and then drawing its contents, so an icon inside one ignored
+     * the fade completely and kept drawing at its own opacity: the mission
+     * card's green tick stayed burned on screen after the card it belongs to
+     * had gone. It looked like a stuck sprite and was a compositing bug.
+     *
+     * Every icon in the game goes through here, so this fixes the tick, the
+     * gear, the pad glyphs and the hint bar in one place. */
+    ctx.globalAlpha *= alpha;
     ctx.translate(cx - size / 2, cy - size / 2);
     ctx.scale(size / 24, size / 24);
     ctx.strokeStyle = color;
@@ -3359,17 +3820,32 @@ export function createFrontEnd({
    * in/out is a 1.4 s half-sine, so this is the first number past it that
    * leaves the name standing still for a moment. */
   const SPLASH_CARD = 2.6;
+  /* THE STUDIO CARD OPENS THE GAME, and the clip follows it.
+   *
+   * "KENCRAFTS STUDIO / PRESENTS" on black used to be the FAILURE path only —
+   * drawn when the video 404'd. It is now the first beat of a healthy run too:
+   * two seconds of the name on black, then the clip. The card is where the
+   * game introduces itself and the clip is the show; running straight into the
+   * video gave the studio no moment of its own.
+   *
+   * The video is NOT started during the lead. It could be — it preloads from
+   * boot — but playing it behind a black card would spend the first two
+   * seconds of a six-second clip where nobody can see them. Delaying the start
+   * also means the "never begin mid-buffer" wait has almost always already
+   * been satisfied by the time the card clears. */
+  const SPLASH_CARD_LEAD = 2.0;
   /* Deadlock guard only — see the advance in update(). Comfortably past the
-   * 6.006 s clip plus its hold, so a healthy playthrough never reaches it. */
-  const SPLASH_MAX = 12;
+   * 6.006 s clip plus its hold, AND past the card lead that now precedes both,
+   * so a healthy playthrough never reaches it. */
+  const SPLASH_MAX = 12 + SPLASH_CARD_LEAD;
 
   function drawSplashVideo() {
-    /* FIT, never fill. The supplied clip happens to be exactly 16:9 so this is
-     * a no-op on it — which is precisely why it has to be here: the day a
-     * replacement is a different shape, the choice must already have been made,
-     * and letterboxing a studio card is right where cropping its logo is not. */
+    /* COVER, per the owner's call: the studio card fills the whole screen on
+     * every device aspect instead of letterboxing (the small vertical crop on
+     * a taller-than-16:9 phone lands in the clip's own safe area). Same rule as
+     * the level intro's cover fit. */
     const vw = splashVideo.videoWidth, vh = splashVideo.videoHeight;
-    const scale = Math.min(W / vw, H / vh);
+    const scale = Math.max(W / vw, H / vh);
     const dw = Math.round(vw * scale), dh = Math.round(vh * scale);
     ctx.drawImage(splashVideo, Math.round((W - dw) / 2), Math.round((H - dh) / 2), dw, dh);
 
@@ -3399,7 +3875,19 @@ export function createFrontEnd({
    * the same rule the logo follows (see loadLogoArt) and for the same reason —
    * nobody watching can tell a missing file from a slow one. */
   function drawSplashCard() {
-    const a = Math.sin(Math.min(1, phaseT / 1.4) * Math.PI);
+    /* TWO ENVELOPES, because this card now has two jobs.
+     *
+     * As the OPENING BEAT it has to stand still: up quickly, hold, and clear
+     * just before the clip takes the screen — the old half-sine peaked at 0.7s
+     * and was already back to nothing by 1.4s, which would have left the last
+     * six tenths of the lead on pure black.
+     *
+     * As the FAILURE card it keeps that half-sine: there is no clip coming, so
+     * the name rises, holds a moment and goes. */
+    const lead = phaseT < SPLASH_CARD_LEAD;
+    const a = lead
+      ? Math.min(1, phaseT / 0.45) * Math.min(1, (SPLASH_CARD_LEAD - phaseT) / 0.30)
+      : Math.sin(Math.min(1, phaseT / 1.4) * Math.PI);
     ctx.globalAlpha = a;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -3419,8 +3907,15 @@ export function createFrontEnd({
      * the flag says a frame ARRIVED once, this says one is decodable NOW, and
      * drawImage on a video without it paints nothing at all. */
     const live = !splashFailed && splashVideo.readyState >= 2 && splashVideo.videoWidth > 0;
-    if (live) drawSplashVideo();
-    else drawSplashCard();
+    /* THE CARD OWNS THE FIRST BEAT. After it, the clip — and the drawn card is
+     * still the FAILURE path beyond that, so a missing file keeps the name on
+     * screen rather than cutting to black. While the clip is merely still
+     * loading the screen stays on its black stage: swapping the wordmark in and
+     * then out behind the first video frame was the visible "pop" this
+     * originally fixed. */
+    if (phaseT < SPLASH_CARD_LEAD) drawSplashCard();
+    else if (live) drawSplashVideo();
+    else if (splashFailed) drawSplashCard();
 
     /* The card draws no button, but it is skippable and a skip is a press like
      * any other — so the frame itself is what answers it and the press beat
@@ -4125,7 +4620,10 @@ export function createFrontEnd({
     ctx.fillStyle = C.muted;
     ctx.fillText('LAGOS NEVER SLEEPS.', W / 2, 340);
     const f = Math.min(introLoadProgress, clamp(phaseT / 1.6, 0, 1));
-    const bx = 390, by = 420, bw = 500;
+    /* Centred against the LIVE viewport width: this bar was hardcoded at
+     * 390..890 for the old 1280 frame, which put it left of centre the moment
+     * the mobile layout widened to the device aspect. */
+    const bw = 500, by = 420, bx = Math.round(W / 2 - bw / 2);
     roundRectPath(ctx, bx, by, bw, 5, 2.5);
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     ctx.fill();
@@ -4142,7 +4640,9 @@ export function createFrontEnd({
     clear('#030405');
     const p = introProgress();
     if (introVideo && introVideo.readyState >= 2 && introVideo.videoWidth && introVideo.videoHeight) {
-      const scale = Math.min(W / introVideo.videoWidth, H / introVideo.videoHeight);
+      /* COVER, not contain: the cinematic fills the whole frame on every
+       * device aspect, cropping the small overflow rather than letterboxing. */
+      const scale = Math.max(W / introVideo.videoWidth, H / introVideo.videoHeight);
       const dw = Math.round(introVideo.videoWidth * scale);
       const dh = Math.round(introVideo.videoHeight * scale);
       const dx = Math.round((W - dw) / 2);
@@ -4168,7 +4668,19 @@ export function createFrontEnd({
     ctx.fillText('LEVEL 01  /  STORY INTRO', 28, 24);
     ctx.textAlign = 'right';
     ctx.fillStyle = C.muted;
-    ctx.fillText('X / SQUARE   SKIP', W - 28, 24);
+    /* NAME THE CONTROL THE PLAYER HAS. On a phone there is no X and no Square,
+     * and the hint fades in only once tap-to-skip is actually armed — a prompt
+     * that offers something the next tap will not do is worse than no prompt.
+     * See introTapSkippable: first viewing has no skip, and neither does the
+     * first three seconds of any viewing. */
+    if (isTouchUI()) {
+      if (introTapSkippable()) {
+        const fade = clamp((introFallbackT - INTRO_TAP_SKIP_AT) / 0.6, 0, 1);
+        ctx.globalAlpha = fade * 0.85;
+        ctx.fillText('TAP TO SKIP', W - 28, 24);
+        ctx.globalAlpha = 1;
+      }
+    } else ctx.fillText('X / SQUARE   SKIP', W - 28, 24);
     ctx.textBaseline = 'alphabetic';
 
     if (settings.subtitles) {
@@ -4828,7 +5340,11 @@ export function createFrontEnd({
 
   async function preloadIntro() {
     if (!introVideo) {
-      const src = introSrcOverride ?? '../frontend/intro/intro.mp4?v=master37-fixed';
+      /* MOBILE INTRO: the packaged build ships a 720p transcode beside the
+       * master (mobile/assets-mobile/frontend/intro/intro-mobile.mp4, ~8MB vs
+       * 67MB) so the first frame lands quickly even while the world load is
+       * hammering the phone. Desktop and the master keep their source. */
+      const src = introSrcOverride ?? INTRO_MASTER;
       introVideo = document.createElement('video');
       introVideo.dataset.rorSrc = src;
       introVideo.src = new URL(src, import.meta.url);
@@ -4841,13 +5357,31 @@ export function createFrontEnd({
     }
     if (introVideo.readyState >= 2) { introLoadProgress = 1; return; }
     if (!introLoadPromise) {
-      introLoadPromise = new Promise((resolve, reject) => {
+      introLoadPromise = new Promise((resolve) => {
+        let settled = false;
         const cleanup = () => {
           introVideo.removeEventListener('loadeddata', ready);
           introVideo.removeEventListener('error', failed);
+          clearTimeout(watchdog);
         };
-        const ready = () => { cleanup(); introLoadProgress = 1; resolve(); };
-        const failed = () => { cleanup(); reject(new Error('Could not load the Level 01 intro video')); };
+        const ready = () => {
+          if (settled) return;
+          settled = true; cleanup(); introLoadProgress = 1; resolve();
+        };
+        /* A FAILED OR SLOW INTRO MUST NEVER WEDGE THE STORY SCREEN. The gate
+         * to the next phase is `introLoadProgress >= 1`; before this, an
+         * error event rejected an un-awaited promise and the bar simply sat
+         * at its 15% mark forever. Failure now marks the intro unavailable,
+         * completes the progress and lets the flow skip the cinematic. */
+        const failed = () => {
+          if (settled) return;
+          settled = true; cleanup();
+          console.warn('[ror intro] video failed to produce a first frame; skipping the cinematic');
+          introFailed = true; introLoadProgress = 1; resolve();
+        };
+        /* Patient: the world load shares the thread and the local server while
+         * this runs, so a slow-but-loading intro must NOT be skipped early. */
+        const watchdog = setTimeout(failed, 45000);
         introVideo.addEventListener('loadeddata', ready, { once: true });
         introVideo.addEventListener('error', failed, { once: true });
         introVideo.load();
@@ -4861,7 +5395,7 @@ export function createFrontEnd({
     introStarted = false;
     introDone = false;
     setAmbiencePlaying(false);
-    if (introVideo) {
+    if (introVideo && !introFailed) {
       introVideo.pause();
       introVideo.currentTime = 0;
       introVideo.muted = true;
@@ -4879,6 +5413,15 @@ export function createFrontEnd({
   function finishIntro() {
     if (introDone) return;
     introDone = true;
+    introPlayed = true;          // this level run has shown the cinematic
+    /* …and the player has now seen it at all, which is what arms tap-to-skip on
+     * every later viewing. Written however the intro ended — watched, skipped
+     * with a key, or abandoned because the file would not play: in all three
+     * cases they have had their chance at it. */
+    if (!introSeen) {
+      introSeen = true;
+      try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {}
+    }
     if (introVideo) { introVideo.pause(); introVideo.currentTime = 0; }
     if (voice) {
       const start = voice.volume;
@@ -4917,9 +5460,20 @@ export function createFrontEnd({
    * own reuses the shipped one rather than showing black — the reuse is
    * deliberate and it is recorded, so a test can tell it apart from a mis-wire.
    */
+  /* THE TWIN IS NOT OPTIONAL ON ANDROID. build-demo.js DELETES the 67 MB master
+   * from the packaged www once the mobile transcode is present, so naming the
+   * master here shipped a path that 404s on the phone: preloadIntro's error
+   * handler set introFailed and the cinematic was silently skipped — but only
+   * on the routes that come through startLevel (the post-mission "play 02" and
+   * "run 01 again"), which is why a first run looked fine and a replay did not.
+   * The master's own file is `Intro.mp4`, capital I, and Android asset paths are
+   * case-sensitive, so it could not have resolved even if it shipped. */
+  const INTRO_MASTER = IS_ANDROID
+    ? '../frontend/intro/intro-mobile.mp4'
+    : '../frontend/intro/Intro.mp4?v=master37-fixed';
   const LEVEL_INTRO = {
-    1: '../frontend/intro/intro.mp4?v=master37-fixed',
-    2: '../frontend/intro/intro.mp4?v=master37-fixed',
+    1: INTRO_MASTER,
+    2: INTRO_MASTER,
   };
   function startLevel(level = 1) {
     const id = LEVEL_INTRO[level] ? level : 1;
@@ -4934,6 +5488,7 @@ export function createFrontEnd({
       introLoadPromise = null;
     }
     introSrcOverride = src;
+    introPlayed = false;          // a fresh level run plays the cinematic once
     stopBriefing();
     pendingGameplay = false;
     pausedOrigin = false;
@@ -4957,12 +5512,10 @@ export function createFrontEnd({
      * screen this frame and the title is ~6 s away. drawTitle falls back to
      * the wordmark for as long as this is in flight. */
     loadTitleArt();
-    /* KICK THE STUDIO CLIP HERE, because `splash` is the phase the front end
-     * BOOTS INTO — it is assigned directly, so it never passes through go() and
-     * nothing else would ever start it. (A session that skipped the splash via
-     * `rorSkipSplash` starts on the menu; startSplashVideo is a no-op there
-     * because drawSplash is never reached and the element stays paused.) */
-    if (phase === 'splash') startSplashVideo();
+    /* The clip is NOT kicked here any more: the studio card holds the screen
+     * for SPLASH_CARD_LEAD first, and update() starts the video when that beat
+     * is done. (A session that skipped the splash via `rorSkipSplash` starts on
+     * the menu, where neither ever runs.) */
     loadDarkiPlacement(); // before the first draw, so he never jumps into place
     /* Said once, at boot. The tool draws nothing until it is opened, so without
      * this the only way to know it is there is to already know. */
@@ -4987,22 +5540,28 @@ export function createFrontEnd({
       .then((img) => { assets.olodo = img; })
       .catch(() => {});
 
+    /* AHEAD OF THE NARRATION, not after it. initSfx builds the AudioContext the
+     * voice clips play out of (see VoiceClip), so on Android a clip constructed
+     * before this line would have nothing to decode into. The cue decoding it
+     * kicks off is still in the background and still un-awaited. */
+    initSfx();
+
+    /* The ambience is the one read that stays an element: 6.2 MB looping, which
+     * decoded is over 100 MB of PCM. It only ever plays start-to-end on repeat
+     * and never seeks, so it was never exposed to the range bug. */
     ambience = new Audio(new URL('../frontend/audio/bg2.mp3', import.meta.url));
     ambience.loop = true;
     ambience.preload = 'auto';
-    voice = new Audio(new URL('../frontend/audio/level1-voiceover.mp3', import.meta.url));
-    voice.preload = 'auto';
+    voice = makeVoice(new URL('../frontend/audio/level1-voiceover.mp3', import.meta.url));
     voice.addEventListener('ended', finishIntro);
-    gameplayStartVo = new Audio(new URL('../sounds/voices/voice-gameplay-start.mp3', import.meta.url));
-    gameplayStartVo.preload = 'auto';
+    gameplayStartVo = makeVoice(new URL('../sounds/voices/voice-gameplay-start.mp3', import.meta.url));
 
     /* The case file's read — 45.9 s, and the clock its whole reveal is animated
      * against (BRIEF_SCRIPT). Fetched here and never awaited, like the portrait
      * it plays over: the screen that wants it is minutes away past the intro.
      * Deliberately has NO 'ended' handler — the read finishing must not dismiss
      * the case file, which waits for Cross and nothing else. */
-    briefVo = new Audio(new URL(BRIEF_VO.src, import.meta.url));
-    briefVo.preload = 'auto';
+    briefVo = makeVoice(new URL(BRIEF_VO.src, import.meta.url));
     /* The measured value above makes the first frame deterministic; metadata is
      * still authoritative if production replaces the cut again. */
     briefVo.addEventListener('loadedmetadata', () => {
@@ -5010,8 +5569,9 @@ export function createFrontEnd({
     });
     applyAudioSettings();
 
-    /* Cues decode in the background — a slow decode must not hold up boot. */
-    initSfx();
+    /* initSfx has already run, above the narration clips — it has to, because it
+     * builds the context they decode into. Calling it a second time here would
+     * open a SECOND AudioContext and orphan everything in the first. */
 
     const play = bgVideo.play();
     if (play?.catch) play.catch(() => {});
@@ -5030,6 +5590,8 @@ export function createFrontEnd({
     phaseT += dt;
     if (inputLock > 0) inputLock = Math.max(0, inputLock - dt);
     if (messageT > 0) messageT = Math.max(0, messageT - dt);
+    /* Tied to the prompt, not to its own clock — see requestQuit. */
+    if (quitArmedT > 0) quitArmedT = Math.max(0, quitArmedT - dt);
     if (rejectT > 0) rejectT = Math.max(0, rejectT - dt);
 
     /* Ahead of the pendingGameplay hold below, because the press being answered
@@ -5071,6 +5633,11 @@ export function createFrontEnd({
      * like a long dramatic pause. It is set well past the clip's own length so
      * it can never be what normally advances the screen. */
     if (phase === 'splash') {
+      /* The studio card's beat is over: roll the clip. Guarded by
+       * startSplashVideo's own `splashStarted` latch, so calling it every frame
+       * after the lead costs nothing and the start cannot be missed by a frame
+       * that happened to straddle the boundary. */
+      if (phaseT >= SPLASH_CARD_LEAD) startSplashVideo();
       const dur = Number.isFinite(splashVideo.duration) ? splashVideo.duration : 0;
       const rolled = dur > 0 && splashVideo.currentTime >= dur - 0.05;
       const live = !splashFailed && splashVideo.readyState >= 2;
@@ -5097,15 +5664,74 @@ export function createFrontEnd({
     else if (phase === 'title') {
       if (titleReadyAt === null && worldProgress() >= 1) titleReadyAt = phaseT;
     }
-    else if (phase === 'loading' && phaseT > 1.6 && introLoadProgress >= 1) go('intro');
+    else if (phase === 'loading' && phaseT > 1.6 && introLoadProgress >= 1) {
+      /* The cinematic plays ONCE per level run: re-entering the loading phase
+       * from the briefing's Back → Forward must not replay it. */
+      go(introPlayed ? 'levelTitle' : 'intro');
+    }
     else if (phase === 'intro') {
+      /* The intro could not produce its first frame: skip the cinematic
+       * straight to the case file rather than holding a black screen. */
+      if (introFailed) { finishIntro(); return; }
       introFallbackT += dt;
+      /* VOICE RETRY. On a phone the first play() can meet the autoplay policy
+       * (the element refuses until a trusted gesture has landed) — a rejection
+       * used to leave the whole cinematic silent. Retry once a second; once it
+       * takes, move the narration to where the picture already is so the two
+       * stay on the same clock. That catch-up is a buffer offset on Android
+       * (VoiceClip) rather than a media seek, so it costs nothing. */
+      if (!introStarted && voice) {
+        voiceRetryT += dt;
+        if (voiceRetryT > 1) {
+          voiceRetryT = 0;
+          applyAudioSettings();
+          const p = voice.play();
+          if (p?.then) p.then(() => {
+            introStarted = true;
+            if (introVideo && introVideo.readyState >= 2 && introVideo.currentTime > 1
+              && Number.isFinite(voice.duration) && voice.duration > 1) {
+              try {
+                voice.currentTime = Math.min(introVideo.currentTime, voice.duration - 0.5);
+              } catch {}
+            }
+          }).catch(() => {});
+        }
+      }
+      /* SYNC WITHOUT SEEKING AT ALL.
+       *
+       * This used to hard-resync on drift > 0.5s (`introVideo.currentTime =
+       * voice.currentTime`) and THAT is what made the cinematic play in short
+       * loops on the phone: a seek to a non-zero offset issues a Range request,
+       * and the packaged server answered every one of them with the top of the
+       * file, so the picture jumped back to frame one. Drift then grew again
+       * and the next resync did it once more — the loop the device showed.
+       *
+       * The native range handler now serves those honestly, but the seek earns
+       * nothing here regardless: rate-nudging closes half a second of drift in
+       * a few seconds, invisibly, while a seek on a phone costs a re-buffer and
+       * a visible jump. So there is no longer a seek in this path at all — only
+       * the ±15% rate correction, widened to cover what the resync used to. */
       if (introVideo && voice && introStarted && !voice.paused && introVideo.readyState >= 2) {
-        const drift = Math.abs(introVideo.currentTime - voice.currentTime);
-        if (drift > 0.14 && !introVideo.seeking) introVideo.currentTime = voice.currentTime;
+        const drift = introVideo.currentTime - voice.currentTime;   // + = video ahead
+        if (Math.abs(drift) > 0.12 && !introVideo.seeking) {
+          introVideo.playbackRate = Math.max(0.85, Math.min(1.15, 1 - drift * 0.4));
+        } else if (introVideo.playbackRate !== 1) {
+          introVideo.playbackRate = 1;
+        }
         if (introVideo.paused && !introVideo.ended) introVideo.play().catch(() => {});
       }
-      if (introFallbackT > 40 || introProgress() >= 0.999) finishIntro();
+      /* END ON THE CLIP'S CLOCK. The blunt 40 s cap cut a still-playing intro
+       * in half whenever the media stalled momentarily; it now only fires when
+       * no media clock exists at all, with a hard ceiling well past the clip
+       * as the final guard. */
+      const mediaAlive = (voice && !voice.paused && voice.currentTime > 0)
+        || (introVideo && introVideo.readyState >= 2 && !introVideo.paused);
+      if ((mediaAlive && introProgress() >= 0.999)
+        || (!mediaAlive && introFallbackT > 40)
+        || introFallbackT > 120) {
+        if (introVideo) introVideo.playbackRate = 1;
+        finishIntro();
+      }
     }
     /* The case file runs on the VOICEOVER's clock, not on its own. The typewriter
      * has to land on the narrator's words, and a dt accumulator drifts against a
@@ -5114,7 +5740,16 @@ export function createFrontEnd({
      * or missing play(). */
     else if (phase === 'levelTitle') {
       if (briefPinned) { /* a harness owns the clock — leave it exactly where it was put */ }
-      else if (briefVo && briefStarted && !briefVo.paused && briefVo.currentTime > 0) briefT = briefVo.currentTime;
+      else if (briefVo && briefStarted && !briefVo.paused && briefVo.currentTime > 0) {
+        briefT = briefVo.currentTime;
+        briefStallT = 0;
+      }
+      /* A VO that is merely BUFFERING must not hand the clock to dt: the case
+       * file used to run ahead of the narrator and finish before he did. Hold
+       * for a short grace window, then fall back only if the clip never resumes. */
+      else if (briefVo && briefStarted && !briefVo.ended && briefStallT < 3) {
+        briefStallT += dt;
+      }
       else briefT += dt;
     }
     /* `levelTitle` deliberately has no timeout — it is a case file the player
@@ -5190,6 +5825,15 @@ export function createFrontEnd({
   window.__rorMenu = {
     get phase() { return phase; },
     get selection() { return selection; },
+    /* The plate along the bottom — "SETTINGS RESET", and the QUIT arming's
+     * "PRESS QUIT AGAIN TO EXIT". A two-press confirmation is only honest if
+     * the prompt is really on screen, so a test has to be able to read it. */
+    get message() { return messageT > 0 ? message : ''; },
+    /* The VIRTUAL frame the menus are laid out in. 1280x720 normally, wider on
+     * Android where the viewport grows to the device aspect — so anything
+     * converting a drawn hitbox back into a screen point has to ask rather than
+     * assume 1280. */
+    get viewport() { return { w: W, h: H }; },
     /* The main list as drawn, so a test can find a row BY NAME instead of
      * hardcoding an index into a list that gets edited. */
     get mainItems() { return MAIN_ITEMS.map((i) => i.label); },
@@ -5467,6 +6111,10 @@ export function createFrontEnd({
       briefPinned = true;
       if (briefVo && !briefVo.paused) briefVo.pause();
     },
+    /* The narration objects themselves, so a harness can DRIVE the clock —
+     * seek it, pause it — and prove the Android voice path behaves like the
+     * element it replaced. The numeric getters below can only report. */
+    get voiceClips() { return { intro: voice, brief: briefVo, gameplay: gameplayStartVo }; },
     get briefVo() {
       if (!briefVo) return null;
       return {
@@ -5522,6 +6170,28 @@ export function createFrontEnd({
     wrapLines,
     drawControlBar, drawGrain, drawVignette, captureBackdrop,
     pressPulse, navForward, navBack, hitTest, pointerPos,
+    /* DARKI'S FACE, cropped out of the idle sheet at boot (buildAvatar) and
+     * already used by the menu and the pause panel. Shared so the fight's
+     * status plate can put him in its portrait ring rather than the grey
+     * silhouette the art ships with — one crop, three screens, and no second
+     * copy of the head to keep in step with the first. Null until the sheet
+     * lands; every caller draws the ring without him in that case. */
+    get avatar() { return avatarCanvas; },
+    /* The pause menu's QUIT TO DESKTOP goes through the SAME two-press arming
+     * and the same host guard the main menu's QUIT GAME uses — one quit path,
+     * so the two can never disagree about whether leaving is even possible. */
+    requestQuit, get canQuit() { return HOST.canQuit; },
+    /* …and the plate that shows what requestQuit just said. The front end's own
+     * draw() does not run while the fight is paused, so without this the arming
+     * prompt would be invisible exactly where it matters most — a two-press
+     * confirmation nobody can see is a button that ignores the first press. */
+    messagePlate,
+    /* The pause menu drives its own clock while frozen, so it has to age the
+     * message itself; update() is not running. */
+    tickMessage(dt) {
+      if (messageT > 0) messageT = Math.max(0, messageT - dt);
+      if (quitArmedT > 0) quitArmedT = Math.max(0, quitArmedT - dt);
+    },
     /* The one audio door for callers that own the frame. aftermath.js draws with
      * these widgets, so it sounds through this bus too — same master/SFX
      * sliders, same decoded buffers, same click-free ramps. A second Audio()

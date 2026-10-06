@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer (downsampled 2:1 by _chromakey/olodo_prep.js)",
+  "sprite": "boss-olodo-hookkick",
+  "image": "boss-olodo-hookkick.png",
+  "frameWidth": 512,
+  "frameHeight": 258,
+  "sheet": {
+    "cols": 6,
+    "rows": 6,
+    "frames": 32,
+    "imageWidth": 3072,
+    "imageHeight": 1548
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 31,
+    "fps": 30,
+    "loop": false
+  },
+  "note": "MC_Olodo's spinning hook kick. Frames 0-2 wind up, 3-5 turn away and coil, 6 is the EXTENSION (the leg is horizontal at head height — this is the frame that connects), 7-11 spin down and recover, and 12-31 are a near-identical standing guard tail that the game does not play. This sheet faces LEFT (cap peak, shades and beard point left in every guard frame) — the same way as the EMOTE stance and OPPOSITE to SpecialMove. The BOSS.hook / BOSS.hookSuper tables in game.js are the authoritative frame order."
+}

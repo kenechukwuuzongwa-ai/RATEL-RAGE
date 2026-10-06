@@ -1,0 +1,20 @@
+{
+  "generatedBy": "Hand-written for ASSETS/NEW SPRITES/darki_armed_walk_512x420_sheet.png (request 303), copied byte-for-byte. NOT the capital-D 'Darki-armed_walk' export, which is a different take (wider stance, lace wrapper). This one is pose-for-pose the same 57-frame performance as darki-walk.png with the bat added (checked at frames 0/14/28/42 in _chromakey/_armedwalk_cmp.png), so DARKI_FOOTFALLS.walk carries over unchanged.",
+  "sprite": "DarkiBatWalk",
+  "image": "darki-bat-walk.png",
+  "frameWidth": 512,
+  "frameHeight": 420,
+  "sheet": {
+    "cols": 8,
+    "rows": 8,
+    "frames": 57,
+    "imageWidth": 4096,
+    "imageHeight": 3360
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 56,
+    "fps": 30,
+    "loop": true
+  }
+}

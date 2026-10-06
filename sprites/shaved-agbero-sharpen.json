@@ -1,0 +1,89 @@
+{
+  "generatedBy": "Hand-written for the COLOUR-CORRECTED sharpen sheet. Pixels are ASSETS/NEW SPRITES/Agbero-sharpen-machete.png put through _chromakey/_sharpenfix.js; grid and frame list are from its supplied sibling JSON, confirmed against the PNG (6x5, 28 drawn cells, 3072x1710, cell 512x342).",
+  "sprite": "ShavedAgberoSharpen",
+  "image": "shaved-agbero-sharpen.png",
+  "frameWidth": 512,
+  "frameHeight": 342,
+  "sheet": {
+    "cols": 6,
+    "rows": 5,
+    "frames": 28,
+    "imageWidth": 3072,
+    "imageHeight": 1710
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 27,
+    "fps": 30,
+    "loop": false
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "sharpen",
+        "role": "custom",
+        "name": "Sharpen",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27
+        ],
+        "fps": 30,
+        "loop": false,
+        "description": "He runs the blade along something and comes back up — 28 frames at 30fps, 0.93s, played once. The supplied section name was 'Shaved_sharpen machete'; renamed to `Sharpen` so the loader's camelCase gives `sharpen` rather than `shavedSharpenMachete`. Measured shape: he starts upright with the blade held high (frame 0 ink 254 src px tall), folds down to his lowest at about frame 12 (174 px), and rises back to 248 px by frame 27 — so it opens and closes near the same pose and can be entered and left from a standing guard without a pop. NOT WIRED TO ANYTHING YET: this is the telegraph the spec wants in front of the chop (sharpen-then-attack, stages 7-8), and it stays unused until that state exists, because a sharpen that plays at the wrong moment is exactly the 'wrong animation at the wrong state' failure the spec warns about."
+      },
+      {
+        "id": "pickupRise",
+        "role": "custom",
+        "name": "Pickup Rise",
+        "frames": [
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27
+        ],
+        "fps": 30,
+        "loop": false,
+        "description": "The back half of the sharpen — from his lowest fold (12) back up to standing (27), blade in both hands — reused as the rise after he picks his machete up off the road. 16 frames at 30fps = 0.53s — WEAPON_RECOVERY.rise. Same pixels as the sharpen; only the entry point differs."
+      }
+    ]
+  },
+  "note": "COLOUR-CORRECTED, AND THAT IS THE IMPORTANT THING ABOUT THIS FILE. The supplied sheet had an After Effects Curves pass left on it which made him read sickly green against every other sheet on this character — skin mean red/green was 141/96 here against 141/73 on his walk, and the sheet's overall mean had GREEN above RED (65.6/68.6) where every other sheet of him has red clearly on top. The artist confirmed the edit and supplied the curve: red bowed well below the diagonal, green near-linear, blue in between. Measured off the pixels by _chromakey/_sharpencolour.js (per-channel quantiles against the pooled attack + armed-hit + walk sheets) and inverted by _chromakey/_sharpenfix.js as a per-channel gamma — FORWARD gammas R 1.6147, G 1.0286, B 1.3498, so this file has had exponents 1/1.6147, 1/1.0286, 1/1.3498 applied. Gamma rather than histogram matching on purpose: the artist's curves are pinned at (0,0) and (255,255), and a matching LUT mapped pure black to rgb(15,8,8), which would have lifted every shadow on him into grey. After correction his skin red-minus-green is 69.8 against a 66.3 average across the three reference sheets. IF A CLEAN RE-EXPORT EVER ARRIVES, take its pixels and DO NOT run the correction again — it is already baked into this file and applying it twice would push him orange. Cells 28 and 29 of the 6x5 grid are empty. ART FACES LEFT like every sheet on this character."
+}

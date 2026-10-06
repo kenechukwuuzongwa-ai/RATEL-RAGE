@@ -1,0 +1,16 @@
+{
+  "name": "ratelrage-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android packaging shell for Ratel Rage (investor demo). The game source stays untouched; this folder only builds the APK.",
+  "scripts": {
+    "build:www": "node build-demo.js",
+    "android:sync": "node build-demo.js && npx cap sync android",
+    "android:debug": "node build-demo.js && npx cap sync android && cd android && gradlew.bat assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1"
+  }
+}

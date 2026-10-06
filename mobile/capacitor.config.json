@@ -1,0 +1,12 @@
+{
+  "appId": "com.ratelrage.demo",
+  "appName": "Ratel Rage",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#080b12"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

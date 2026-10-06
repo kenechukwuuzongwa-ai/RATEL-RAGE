@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer (downsampled 2:1 by _chromakey/olodo_prep.js)",
+  "sprite": "boss-olodo-special",
+  "image": "boss-olodo-special.png",
+  "frameWidth": 512,
+  "frameHeight": 258,
+  "sheet": {
+    "cols": 6,
+    "rows": 5,
+    "frames": 29,
+    "imageWidth": 3072,
+    "imageHeight": 1290
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 28,
+    "fps": 30,
+    "loop": false
+  },
+  "note": "MC_Olodo's fist combo. Two punch extensions (frames 2-5 and 23-28) plus a turn-and-flex flourish (8-16); frame 17 carries a render artefact and is never played. The BOSS.combo table in game.js is the authoritative frame order."
+}

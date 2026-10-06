@@ -1,0 +1,21 @@
+{
+  "generatedBy": "Hand-written for ASSETS/MACHETE.png. Not an analyzer export — this is a single still, not a performance, so there is no grid to read and no sections to cut. Dimensions measured off the PNG header and the ink box by _chromakey/_ayescale.js's sibling probe; rendered isolated as _chromakey/_machete_only.png.",
+  "sprite": "Machete",
+  "image": "machete.png",
+  "frameWidth": 2113,
+  "frameHeight": 744,
+  "sheet": {
+    "cols": 1,
+    "rows": 1,
+    "frames": 1,
+    "imageWidth": 2113,
+    "imageHeight": 744
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 0,
+    "fps": 1,
+    "loop": true
+  },
+  "note": "THE WEAPON ITSELF, as a world object — the one physical machete that changes owner. One frame, because a dropped blade does not animate: where it lies and which way it points are position and rotation, not art. Ink box is 2055x374 of the 2113x744 canvas, at (26,215); the loader crops to that union automatically, so the padding costs nothing. BLADE POINTS LEFT, handle on the right, which matches the facing of every sheet on this character — so a machete drawn unflipped agrees with an Aye drawn unflipped, and the same flip rule (`facing !== faces`) serves both. The red wrapped grip is the same red that reads as ~1.2% of every frame of his attack sheet, which is how the two were confirmed to be the same prop. NOT YET LOADED by loadWorld: nothing draws it until the weapon entity exists (spec stages 5-6), and adding an unused 0.8 MB sheet to every level load buys nothing. The sheet config is defined in game.js so the measurements live with the rest of them."
+}

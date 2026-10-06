@@ -1,0 +1,58 @@
+{
+  "generatedBy": "_chromakey/_batrender.js — a turntable render of ASSETS/BAT/scene.gltf (\"Post-Apocalyptic Baseball Bat\", also ASSETS/BAT.gltf). Pre-rendered because the game is 2D canvas and ships no 3D engine.",
+  "sprite": "BatPickup",
+  "image": "bat-pickup.png",
+  "frameWidth": 160,
+  "frameHeight": 320,
+  "sheet": {
+    "cols": 8,
+    "rows": 3,
+    "frames": 24,
+    "imageWidth": 1280,
+    "imageHeight": 960
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 23,
+    "fps": 18,
+    "loop": true
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "spin",
+        "role": "middle",
+        "name": "Spin",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23
+        ],
+        "fps": 18,
+        "loop": true,
+        "description": "One full 360° turn about the vertical in 24 frames; barrel (nailed end) up, tilted 18°."
+      }
+    ]
+  }
+}
