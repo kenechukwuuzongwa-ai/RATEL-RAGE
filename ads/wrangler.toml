@@ -1,0 +1,19 @@
+# rr-ads: billboard bookings, artwork serving, view counts and the admin queue.
+# Deploy from this folder: npx wrangler deploy      (see docs/ADS.md)
+name = "rr-ads"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rr-ads"
+database_id = "0654e092-82c9-4c7a-8bcc-d85b627ebf33"
+
+[vars]
+ALLOWED_ORIGINS = "https://ratel-rage.pages.dev,https://*.ratel-rage.pages.dev,https://localhost"
+GAME_ORIGIN = "https://ratel-rage.pages.dev"
+CURRENCY = "NGN"
+# Secrets (npx wrangler secret put NAME):
+#   ADMIN_PASSWORD   the /admin page (HTTP Basic, any user name)
+#   PAYSTACK_SECRET  optional; without it bookings are paid by invoice and marked paid on /admin

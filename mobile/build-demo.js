@@ -26,6 +26,7 @@ const ALLOWLIST = [
   'styles.css',
   'analytics-config.js',   // index.html loads it; analytics stays off while its endpoint is empty
   'supabase-config.js',    // index.html loads it; accounts stay off while its url/key are empty
+  'ads-config.js',          // index.html loads it; the boards keep the house art while its endpoint is empty
   'favicon.png',           // index.html's icon link (the app's own launcher art)
   'src',
   'frontend',

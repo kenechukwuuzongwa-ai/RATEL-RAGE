@@ -33,7 +33,7 @@ const OUT = outAt >= 0 ? path.resolve(args[outAt + 1]) : path.join(__dirname, 'd
 const MOBILE = path.join(ROOT, 'mobile', 'assets-mobile');
 const CF_FILE_LIMIT = 25 * 1024 * 1024;
 
-const ALLOWLIST = ['index.html', 'privacy.html', 'styles.css', 'analytics-config.js', 'supabase-config.js', 'favicon.png', 'src', 'frontend',
+const ALLOWLIST = ['index.html', 'privacy.html', 'styles.css', 'analytics-config.js', 'supabase-config.js', 'ads-config.js', 'favicon.png', 'src', 'frontend',
   'layers', 'sprites', 'sounds', 'music', 'buildings', 'level1'];
 
 const sha = (f) => crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex');
@@ -151,6 +151,17 @@ if (!process.argv.includes('--no-stats')) {
   fs.writeFileSync(cfgPath, cfg.replace(/endpoint: '',/, `endpoint: '${STATS_ENDPOINT}',`));
 }
 
+/* Billboard ads (ads/worker.js, docs/ADS.md): the WEB build points the game's boards
+ * at the rr-ads Worker. The source ads-config.js stays empty, so the editor and the APK
+ * keep the house art and count nothing. `--no-ads` leaves it off. */
+const ADS_ENDPOINT = 'https://rr-ads.kenechukwuuzongwa.workers.dev';
+if (!process.argv.includes('--no-ads')) {
+  const adsPath = path.join(OUT, 'ads-config.js');
+  const cfg = fs.readFileSync(adsPath, 'utf8');
+  if (!/endpoint: '',/.test(cfg)) { console.error('ads-config.js: empty endpoint line not found'); process.exit(1); }
+  fs.writeFileSync(adsPath, cfg.replace(/endpoint: '',/, `endpoint: '${ADS_ENDPOINT}',`));
+}
+
 /* Player accounts (src/account.js, docs/ACCOUNTS.md): the WEB build connects to the
  * Supabase project "Ratel Rage". The key is the PUBLISHABLE one (public by design;
  * RLS protects the data). The source supabase-config.js stays empty, so the editor
@@ -180,6 +191,8 @@ fs.writeFileSync(path.join(OUT, '_headers'), [
   '/analytics-config.js',
   '  Cache-Control: no-cache',
   '/supabase-config.js',
+  '  Cache-Control: no-cache',
+  '/ads-config.js',
   '  Cache-Control: no-cache',
   '/src/*',
   '  Cache-Control: public, max-age=300',

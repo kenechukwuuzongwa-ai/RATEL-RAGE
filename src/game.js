@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v76';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v77';
 import { createAftermath } from './aftermath.js?v=ratelrage-jimoh-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-level2-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -3128,7 +3128,15 @@ const CLEARED_MENU = [
   { label: 'MAIN MENU', icon: 'power' },
 ];
 const gameOver = { active: false, t: 0, stats: null, art: null, cleared: false };
-const menuItems = () => (gameOver.active ? (gameOver.cleared ? CLEARED_MENU : GAMEOVER_MENU) : PAUSE_MENU);
+/* The board row (request 446) sits just above QUIT TO MENU, only while this pause offers one. */
+const pauseList = () => {
+  if (!pauseAd) return PAUSE_MENU;
+  const at = PAUSE_MENU.findIndex((it) => it.label === 'QUIT TO MENU');
+  const list = PAUSE_MENU.slice();
+  list.splice(at < 0 ? list.length : at, 0, { label: pauseAd.label, icon: pauseAd.icon });
+  return list;
+};
+const menuItems = () => (gameOver.active ? (gameOver.cleared ? CLEARED_MENU : GAMEOVER_MENU) : pauseList());
 // MC_Olodo has taken the killing blow and the ending is coming (request 338).
 const bossBeaten = () => !!(boss && boss.dying && !gameOver.active);
 
@@ -3214,6 +3222,8 @@ function togglePause() {
   if (outro.active || bossBeaten() || gameOver.active) return;
   paused = !paused;
   if (paused) { stopControllerRumble(); pauseChoice = 0; }
+  pauseAd = paused ? pauseAdRow() : null;   // the board row is decided once, as the menu opens
+  if (paused) flushAds();
   clearPauseInput();
   // Every transient press is dropped on BOTH edges. Going in, so a button held
   // at the moment of pausing is not still queued; coming out, so the press that
@@ -3241,6 +3251,13 @@ function activatePauseChoice() {
   const item = menuItems()[pauseChoice]?.label;
   frontEnd?.ui.pressPulse(`pause:${pauseChoice}`);
   if (item === 'RESUME') { frontEnd?.ui.navForward(); togglePause(); return; }
+  if (pauseAd && item === pauseAd.label && !gameOver.active) {   // the board row (request 446)
+    frontEnd?.ui.navForward();
+    queueAdCount(pauseAd.slot, 't');
+    flushAds();
+    openExternal(pauseAd.url);
+    return;
+  }
   frontEnd?.ui.navForward();
   if (item === 'RESTART CHECKPOINT' || item === 'RETRY' || item === 'REPLAY LEVEL') {
     rrGameEvent('retry', { level: frontEnd?.level ?? 1, from: gameOver.active ? 'game_over' : 'pause' });
@@ -6737,6 +6754,7 @@ function startLevelEntry(transitionFrame = null, duration = LEVEL_ENTRY.fallback
    * every level empty-handed — and it takes any weapon still in flight with it. */
   weapons.length = 0;
   resetRun();                      // the clock, the streak, the score and the medpacks (request 338)
+  refreshAds();                    // a long session picks up newly approved adverts (request 446)
   // The bat is back on its spawn point — a Level 01 street prop, so not in the facility.
   batPickup.taken = activeLevel === 2; batPickup.t = 0; batPickup.flash = 0; batPickup.respawnT = 0;
 
@@ -18093,6 +18111,7 @@ function update(dt) {
     attackTokens.clear();
     player.invuln = Math.max(player.invuln, 0.5);
   } else updateRun(dt);
+  updateAds(dt);                            // billboard views (request 446): live play only
 
   // ---- combat timers ----
   player.invuln = Math.max(0, player.invuln - dt);
@@ -19200,18 +19219,26 @@ function drawFrontage() {
  *
  * Each board is a SLOT, keyed by `id`: the QR codes will lead to a booking app
  * where an approved advert replaces a slot's artwork, so the art is looked up
- * per slot and the rest of the game never needs to know which is which. */
+ * per slot and the rest of the game never needs to know which is which.
+ *
+ * `face` is the printable panel inside each board's frame and `qrRect` its printed
+ * QR, in the board art's own pixels (request 446). The ad server's register
+ * (ads/boards.js) carries the same rectangles: keep the two in step. */
 const ADVERT_SLOTS = [
-  { id: 'board-1', x: 2700, y: 136, w: 539, h: 413, src: 'layers/adverts/board-1.png', qr: false },  // MIVA (taken)
-  { id: 'board-2', x: 3745, y: 216, w: 201, h: 338, src: 'layers/adverts/board-2.png', qr: true },   // portrait sign
+  { id: 'board-1', x: 2700, y: 136, w: 539, h: 413, src: 'layers/adverts/board-1.png', qr: false,
+    face: { x: 8, y: 24, w: 489, h: 208 }, qrRect: null },  // MIVA (taken)
+  { id: 'board-2', x: 3745, y: 216, w: 201, h: 338, src: 'layers/adverts/board-2.png', qr: true,
+    face: { x: 15, y: 8, w: 171, h: 209 }, qrRect: { x: 37, y: 102, w: 60, h: 60 } },   // portrait sign
   /* `fit` (request 345): the big two-post board is 525 px of art — planted, its
    * panel's top ran ~116 px off the top of the frame. Scaled about its foot
    * centre so the posts stay planted where they stood, to fit whole at the
    * usual fighting lane (Darki at y 700: the frame's top there is world ~168,
    * so 556 - 168 = 388 px of height is all there is; 0.70 = 367 px leaves its
    * frame a margin under the top edge). Only this board. */
-  { id: 'board-3', x: 4345, y: 21, w: 658, h: 525, src: 'layers/adverts/board-3.png', qr: true, fit: 0.70 },    // big two-post
-  { id: 'board-4', x: 7527, y: 126, w: 491, h: 391, src: 'layers/adverts/board-4.png', qr: true },   // before the mural
+  { id: 'board-3', x: 4345, y: 21, w: 658, h: 525, src: 'layers/adverts/board-3.png', qr: true, fit: 0.70,
+    face: { x: 14, y: 12, w: 631, h: 251 }, qrRect: { x: 80, y: 52, w: 146, h: 142 } },    // big two-post
+  { id: 'board-4', x: 7527, y: 126, w: 491, h: 391, src: 'layers/adverts/board-4.png', qr: true,
+    face: { x: 10, y: 8, w: 470, h: 189 }, qrRect: { x: 60, y: 38, w: 110, h: 104 } },   // before the mural
 ];
 /* PLANTED ON THE WALKWAY (request 344). As authored the boards' feet ended on
  * the back edge of the pavement (546-554) or, board-4, 30 px above it (517) —
@@ -19266,8 +19293,175 @@ function drawAdverts() {
       ctx.ellipse(x + (a + b) / 2 * k, foot - 1, ((b - a) / 2 + 9) * k, 4.5 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.drawImage(img, x, foot - (slot.h - gap) * k, slot.w * k, slot.h * k);
+    const top = foot - (slot.h - gap) * k;
+    ctx.drawImage(img, x, top, slot.w * k, slot.h * k);
+    drawAdvertFace(slot, x, top, k);
   }
+}
+
+/* ============================================== THE BILLBOARD ADS (request 446)
+ *
+ * The rr-ads Worker (ads/worker.js, docs/ADS.md) says what each board shows. A
+ * booking that is approved, paid and inside its dates comes back as `live`, and
+ * its artwork is drawn over the board's FACE; every other board keeps the house
+ * art, with a real QR to its booking page drawn over the printed one.
+ *
+ * OFF while ads-config.js has no endpoint (the source tree, the editor, the APK
+ * today): the boards are exactly the house art and nothing is fetched or sent.
+ * Nothing here can hold the game up: the fetch is fire-and-forget, a board whose
+ * artwork has not arrived just keeps its house art, and the counts are batched
+ * and sent with sendBeacon.
+ *
+ * A VIEW is the industry's: at least half the face on screen for at least one
+ * second, once per pass. A TAP is the pause menu's board row (a tap on the board
+ * itself mid-fight would be a punch). */
+const ADS = {
+  endpoint: '', fetchedAt: 0,
+  slots: new Map(),          // id -> { page, live: { id, url, brand, link } | null }
+  art: new Map(),            // id -> loaded artwork (Image)
+  qr: new Map(),             // id -> QR canvas (house art only)
+  vis: new Map(),            // id -> visible fraction of the face, from the last draw
+  seen: new Map(),           // id -> { t, counted }
+  last: null,                // { id, at } — the board most recently in view (pause row)
+  queue: new Map(),          // 'slot|booking|k' -> n
+  flushT: 0,
+};
+const ADS_ROW_HOLD_MS = 20000;   // the pause row offers a board seen this recently
+function adsEndpoint() {
+  const e = typeof window !== 'undefined' ? window.RR_ADS?.endpoint : '';
+  return typeof e === 'string' && /^https:\/\/[^\s]+$/.test(e) ? e.replace(/\/+$/, '') : '';
+}
+function makeQrCanvas(text) {
+  try {
+    const qr = window.qrcode?.(0, 'M');
+    if (!qr) return null;
+    qr.addData(text); qr.make();
+    const n = qr.getModuleCount(), q = 2, px = 4;       // a 2-module quiet zone, 4 px a module
+    const c = makeCanvas((n + q * 2) * px, (n + q * 2) * px);
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let col = 0; col < n; col++)
+      if (qr.isDark(r, col)) g.fillRect((col + q) * px, (r + q) * px, px, px);
+    return c;
+  } catch { return null; }
+}
+async function refreshAds(force = false) {
+  ADS.endpoint = adsEndpoint();
+  if (!ADS.endpoint) return;
+  if (!force && Date.now() - ADS.fetchedAt < 5 * 60 * 1000) return;
+  ADS.fetchedAt = Date.now();
+  for (const slot of ADVERT_SLOTS)                       // the QR needs only the address
+    if (slot.qrRect && !ADS.qr.has(slot.id)) { const q = makeQrCanvas(`${ADS.endpoint}/b/${slot.id}`); if (q) ADS.qr.set(slot.id, q); }
+  try {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const tm = setTimeout(() => ctl?.abort(), 8000);
+    const r = await fetch(`${ADS.endpoint}/api/slots?level=1`, { signal: ctl?.signal });
+    clearTimeout(tm);
+    if (!r.ok) return;
+    const o = await r.json();
+    const ids = new Set();
+    for (const s of Array.isArray(o?.slots) ? o.slots : []) {
+      if (!ADVERT_SLOTS.some((a) => a.id === s.id)) continue;
+      ids.add(s.id);
+      const prev = ADS.slots.get(s.id);
+      ADS.slots.set(s.id, { page: typeof s.page === 'string' ? s.page : `${ADS.endpoint}/b/${s.id}`, live: s.live || null });
+      if (!s.live?.url) { ADS.art.delete(s.id); continue; }
+      if (prev?.live?.id === s.live.id && ADS.art.has(s.id)) continue;
+      ADS.art.delete(s.id);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => { if (ADS.slots.get(s.id)?.live?.id === s.live.id) ADS.art.set(s.id, img); };
+      img.src = s.live.url;
+    }
+    for (const id of [...ADS.slots.keys()]) if (!ids.has(id)) { ADS.slots.delete(id); ADS.art.delete(id); }
+  } catch { /* offline or blocked: the house art stays */ }
+}
+// What a board is showing right now: its live booking (only once the artwork is drawn) or the house art.
+const adLiveOf = (id) => (ADS.art.has(id) ? ADS.slots.get(id)?.live || null : null);
+function drawAdvertFace(slot, x, top, k) {
+  const f = slot.face;
+  if (!f || !ADS.endpoint) return;
+  const fx = x + f.x * k, fy = top + f.y * k, fw = f.w * k, fh = f.h * k;
+  const art = ADS.art.get(slot.id);
+  if (art) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(art, fx, fy, fw, fh);
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';              // sit it in the street's light, not on top of it
+    ctx.fillRect(fx, fy, fw, fh);
+    ctx.restore();
+  } else if (slot.qrRect && ADS.qr.has(slot.id)) {
+    const q = slot.qrRect;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(ADS.qr.get(slot.id), x + q.x * k, top + q.y * k, q.w * k, q.h * k);
+    ctx.restore();
+  }
+  // How much of the face is on screen, in the canvas's own pixels (whatever transform is live).
+  if (reflecting || ctx.canvas !== canvas) return;      // a mirror or offscreen pass is not a view
+  const m = ctx.getTransform();
+  const ax = m.a * fx + m.e, ay = m.d * fy + m.f, bx = m.a * (fx + fw) + m.e, by = m.d * (fy + fh) + m.f;
+  const area = Math.abs((bx - ax) * (by - ay));
+  const ix = Math.max(0, Math.min(Math.max(ax, bx), canvas.width) - Math.max(Math.min(ax, bx), 0));
+  const iy = Math.max(0, Math.min(Math.max(ay, by), canvas.height) - Math.max(Math.min(ay, by), 0));
+  ADS.vis.set(slot.id, area > 0 ? (ix * iy) / area : 0);
+}
+function queueAdCount(slotId, k) {
+  const b = adLiveOf(slotId)?.id || '';
+  const key = `${slotId}|${b}|${k}`;
+  ADS.queue.set(key, (ADS.queue.get(key) || 0) + 1);
+}
+function flushAds() {
+  if (!ADS.endpoint || !ADS.queue.size) return;
+  const items = [...ADS.queue].map(([key, n]) => { const [slot, b, k] = key.split('|'); return { slot, b, k, n }; });
+  ADS.queue.clear();
+  const body = JSON.stringify({ items });
+  try {
+    if (navigator.sendBeacon?.(`${ADS.endpoint}/api/e`, new Blob([body], { type: 'text/plain' }))) return;
+  } catch {}
+  try { fetch(`${ADS.endpoint}/api/e`, { method: 'POST', body, keepalive: true, headers: { 'Content-Type': 'text/plain' } }).catch(() => {}); } catch {}
+}
+// Live play only: read the fractions the last draw measured, then forget them.
+function updateAds(dt) {
+  if (!ADS.endpoint) return;
+  const now = performance.now();
+  for (const slot of ADVERT_SLOTS) {
+    const v = ADS.vis.get(slot.id) || 0;
+    const s = ADS.seen.get(slot.id) || { t: 0, counted: false };
+    if (v >= 0.5) {
+      s.t += dt;
+      ADS.last = { id: slot.id, at: now };
+      if (s.t >= 1 && !s.counted) { s.counted = true; queueAdCount(slot.id, 'v'); }
+    } else if (v < 0.25) { s.t = 0; s.counted = false; }   // gone (with slack) -> the next pass counts again
+    ADS.seen.set(slot.id, s);
+  }
+  ADS.vis.clear();
+  ADS.flushT += dt;
+  if (ADS.flushT >= 30) { ADS.flushT = 0; flushAds(); }
+}
+/* The pause menu's board row, decided when the pause opens: VISIT <brand> for a
+ * live advert that has a link, ADVERTISE ON THIS BOARD for the house art. */
+let pauseAd = null;
+function pauseAdRow() {
+  if (!ADS.endpoint || !ADS.last || performance.now() - ADS.last.at > ADS_ROW_HOLD_MS) return null;
+  const id = ADS.last.id;
+  const live = adLiveOf(id);
+  if (live) {
+    if (!/^https?:\/\//i.test(live.link || '')) return null;
+    const brand = String(live.brand || 'SPONSOR').toUpperCase().slice(0, 18).trim();
+    return { label: `VISIT ${brand}`, icon: 'play', url: live.link, slot: id };
+  }
+  return { label: 'ADVERTISE ON THIS BOARD', icon: 'play', url: ADS.slots.get(id)?.page || `${ADS.endpoint}/b/${id}`, slot: id };
+}
+function openExternal(url) {
+  try { if (window.RatelHost?.openUrl) { window.RatelHost.openUrl(url); return; } } catch {}
+  try { window.open(url, '_blank', 'noopener'); } catch {}
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => flushAds());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAds(); });
 }
 
 // Road surface is part of the street layer above; nothing extra to draw.
@@ -20845,13 +21039,16 @@ function drawPauseOverlay() {
   ctx.translate(0, (1 - ease) * 16);
 
   /* The list, left â€” the same button() every menu row in the game is drawn by. */
-  const bx = 58, by = 196, bw = 430, bh = 52, gap = 10;
-  for (let i = 0; i < PAUSE_MENU.length; i++) {
+  const rows = pauseList();                    // PAUSE_MENU, plus the board row when one is offered
+  // Eight rows (the board row on the packaged build) would reach the footer: pack them a little tighter.
+  const tight = rows.length > 7;
+  const bx = 58, by = 196, bw = 430, bh = tight ? 46 : 52, gap = tight ? 7 : 10;
+  for (let i = 0; i < rows.length; i++) {
     ui.button({
       id: `pause:${i}`,
       x: bx, y: by + i * (bh + gap), w: bw, h: bh,
-      label: PAUSE_MENU[i].label,
-      icon: PAUSE_MENU[i].icon,
+      label: rows[i].label,
+      icon: rows[i].icon,
       focused: i === pauseChoice,
       index: i,
     });
@@ -22368,6 +22565,14 @@ window.__ror = {
   registerHitRaw(d) { registerHit(d); },
   // The advert slots as loaded, and a switch to draw the world without them.
   get adverts() { return advertArt.map(({ slot, img, feet }) => ({ id: slot.id, x: slot.x, y: slot.y, w: slot.w, h: slot.h, loaded: !!img, footY: ADVERT_FOOT_Y, feet: feet?.length ?? 0, fit: slot.fit ?? 1 })); },
+  // The billboard ads (request 446): what the server said, what is drawn, what is queued.
+  get ads() {
+    return { endpoint: ADS.endpoint, fetchedAt: ADS.fetchedAt, slots: Object.fromEntries(ADS.slots),
+      drawn: [...ADS.art.keys()], qr: [...ADS.qr.keys()], seen: Object.fromEntries(ADS.seen),
+      last: ADS.last, queue: Object.fromEntries(ADS.queue), pauseRow: pauseAd, menu: menuItems().map((i) => i.label) };
+  },
+  adsRefresh() { return refreshAds(true); },
+  adsFlush() { flushAds(); },
   hideAdverts(hide) { if (hide && advertArt.length) { advertStash = advertArt; advertArt = []; } else if (!hide && advertStash) { advertArt = advertStash; advertStash = null; } },
   get streetScale() { return tune.streetScale; },
   // Boss-intro subtitles: scrub them to `t` seconds into the line (test hook),
@@ -23689,6 +23894,7 @@ async function loadWorld() {
     // saved override still wins (hence the TUNE_KEY bump when the art changes).
     if (bg.main && bg.main.width) tune.streetScale = WORLD_W / bg.main.width;
     advertArt = await inPrepLane(() => loadAdverts());   // the billboards (drawAdverts)
+    refreshAds(true);                        // …and what is booked on them (request 446) — never awaited
     /* MOBILE PLATE COMPENSATION (see mobile/gen-mobile-assets.js): the Android
      * build ships the sky and residential plates at half resolution so the
      * renderer's memory budget holds; the draw scale doubles for both. The
