@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v75';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v76';
 import { createAftermath } from './aftermath.js?v=ratelrage-jimoh-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-level2-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -14559,17 +14559,25 @@ function sidestep(a, b, aMove, bMove, maxStep) {
   if (b !== player) b.y = clampLaneBody(b.y - direction * maxStep * bMove, b.x);
 }
 
+/* NOBODY ON THE RESIDENTIAL PLANE IS SEPARATED (request 445). sidestep is a ROAD
+ * rule, like the lane clamp in the enemy loop: it clamps both bodies into the
+ * road band, whose back edge is 645. Wall-route men queue and walk close
+ * together at y ~548-558 behind the wall, so every frame two of them overlapped,
+ * the step snapped both to 645 AFTER updateWallEntrance had placed them, and
+ * wave 2 walked in sunk ~90 px into the pavement. Their y belongs to the
+ * entrance until the crossing hands them to the road. */
 function separateActors(dt) {
   if (!tune.laneSep) return;
   const maxStep = 170 * dt;                    // â‰ˆ walking pace, no snapping
+  const separable = (e) => isGrounded(e) && !isBackgroundEntrant(e);
   for (const e of enemies) {
     if (player.attackCommit?.has(e.id)) continue;
-    if (isGrounded(e)) sidestep(e, player, 1, 0, maxStep);
+    if (separable(e)) sidestep(e, player, 1, 0, maxStep);
   }
   for (let i = 0; i < enemies.length; i++) {
     for (let j = i + 1; j < enemies.length; j++) {
       if (player.attackCommit?.has(enemies[i].id) || player.attackCommit?.has(enemies[j].id)) continue;
-      if (isGrounded(enemies[i]) && isGrounded(enemies[j])) {
+      if (separable(enemies[i]) && separable(enemies[j])) {
         sidestep(enemies[i], enemies[j], 0.5, 0.5, maxStep);
       }
     }
