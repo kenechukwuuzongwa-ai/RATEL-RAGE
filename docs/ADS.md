@@ -41,6 +41,42 @@ Once that's done:
 - the signed `charge.success` webhook marks a booking paid, but only for the full amount
 - you still have to approve the artwork
 
+## Rotation: sharing a board (request 448)
+
+Each board is sold in **shares**: 3 by default, from 1 to 6, set on /admin.
+
+**Booking shares**
+- An advertiser books 1 to 3 shares.
+- Booking every share gives them the whole board: their advert is the only one on it.
+- The board's price on /admin is for the **whole board**. One share costs its fraction (₦80,000 / 3 = ₦26,667 a month on board 3).
+
+**Approval limits**
+- Approved bookings on one board may overlap in time.
+- Their shares can't add up past the board's on any single day.
+- Booking and approving both refuse anything that would.
+- You can't lower a board's shares below what approved bookings already hold.
+
+**In the game**
+- The game lists every live booking for a board in a cycle weighted by shares. A 1+2 board cycles B, A, B.
+- The board shows the next advert only once a counted pass is over **and** the board is completely off screen, so an advert never changes in front of the player.
+- Each session starts the cycle at a random point, so across all players each booking gets about its share of the views.
+- Views and taps are credited to the advert that was on the board at that moment.
+
+**The status page** tells a sharing advertiser what share of the views to expect.
+
+**Database change:** `migrations/0002_rotation.sql` added the columns. Bookings made before rotation were given every share, so each keeps its whole board.
+
+## Rotation vs targeting
+
+| | Rotation (built) | Targeting (not built) |
+|---|---|---|
+| Who sees what | Everyone sees the same cycle; it advances per pass | Each player is matched to adverts by city, device, time of day, or age/gender from the opt-in profile |
+| What the advertiser buys | A share of a board's views for set dates | An audience, with a budget spread across dates |
+| Price | Flat, per share per month | Per view or per tap, once view numbers are steady |
+| Server work per request | None: one list for everyone, cached for 60 s | A decision per player: campaign matching, pacing and a frequency cap |
+| Data needed | None about the player | Location from the connection, plus profile data only for players who chose to give it |
+| Fairness | Guaranteed by the weighted cycle | Depends on how much each audience plays; small audiences may under-deliver |
+
 ## What counts
 
 - **View:** at least half of a board's face on screen for at least one second, once per pass. This is the industry standard.

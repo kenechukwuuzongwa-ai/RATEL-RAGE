@@ -2,7 +2,8 @@
 CREATE TABLE IF NOT EXISTS boards (
   id TEXT PRIMARY KEY,
   price INTEGER NOT NULL,              -- naira per month
-  bookable INTEGER NOT NULL DEFAULT 1
+  bookable INTEGER NOT NULL DEFAULT 1,
+  shares INTEGER NOT NULL DEFAULT 3     -- rotation: how many advertisers can share it at once
 );
 CREATE TABLE IF NOT EXISTS bookings (
   id TEXT PRIMARY KEY,                 -- also the Paystack reference and the artwork id
@@ -11,6 +12,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   business TEXT NOT NULL, brand TEXT NOT NULL, name TEXT NOT NULL,
   email TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
   start_day TEXT NOT NULL, end_day TEXT NOT NULL, months INTEGER NOT NULL,
+  shares INTEGER NOT NULL DEFAULT 1,   -- how many of the board's shares it takes (its rotation weight)
   amount INTEGER NOT NULL,             -- naira, fixed at booking time
   status TEXT NOT NULL DEFAULT 'review',   -- review | approved | rejected | cancelled
   paid INTEGER NOT NULL DEFAULT 0, pay_ref TEXT NOT NULL DEFAULT '',

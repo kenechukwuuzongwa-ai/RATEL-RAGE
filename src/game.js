@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v77';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v78';
 import { createAftermath } from './aftermath.js?v=ratelrage-jimoh-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-level2-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -19314,11 +19314,21 @@ function drawAdverts() {
  *
  * A VIEW is the industry's: at least half the face on screen for at least one
  * second, once per pass. A TAP is the pause menu's board row (a tap on the board
- * itself mid-fight would be a punch). */
+ * itself mid-fight would be a punch).
+ *
+ * ROTATION (request 448): a board can carry several live bookings at once, each
+ * holding some of its shares. The game cycles them PER PASS — the next one is
+ * picked only once the board has been seen and has left the screen completely,
+ * so an advert never changes in front of the player. The cycle is weighted by
+ * shares (a 2-share booking appears twice per lap of a 1+2 board) and each
+ * session starts it at a random point, so across players every booking gets its
+ * share of the views. Every view and tap is credited to the booking on the board
+ * at that moment. */
 const ADS = {
   endpoint: '', fetchedAt: 0,
-  slots: new Map(),          // id -> { page, live: { id, url, brand, link } | null }
-  art: new Map(),            // id -> loaded artwork (Image)
+  slots: new Map(),          // id -> { page, rotation: [{ id, url, brand, link, weight }] }
+  art: new Map(),            // booking id -> loaded artwork (Image)
+  cycle: new Map(),          // board id -> { seq: [booking ids, weighted], i }
   qr: new Map(),             // id -> QR canvas (house art only)
   vis: new Map(),            // id -> visible fraction of the face, from the last draw
   seen: new Map(),           // id -> { t, counted }
@@ -19360,30 +19370,49 @@ async function refreshAds(force = false) {
     clearTimeout(tm);
     if (!r.ok) return;
     const o = await r.json();
-    const ids = new Set();
+    const ids = new Set(), wanted = new Set();
     for (const s of Array.isArray(o?.slots) ? o.slots : []) {
       if (!ADVERT_SLOTS.some((a) => a.id === s.id)) continue;
       ids.add(s.id);
-      const prev = ADS.slots.get(s.id);
-      ADS.slots.set(s.id, { page: typeof s.page === 'string' ? s.page : `${ADS.endpoint}/b/${s.id}`, live: s.live || null });
-      if (!s.live?.url) { ADS.art.delete(s.id); continue; }
-      if (prev?.live?.id === s.live.id && ADS.art.has(s.id)) continue;
-      ADS.art.delete(s.id);
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => { if (ADS.slots.get(s.id)?.live?.id === s.live.id) ADS.art.set(s.id, img); };
-      img.src = s.live.url;
+      // `rotation` since request 448; a server that predates it sends one `live`
+      const rotation = (Array.isArray(s.rotation) ? s.rotation : s.live ? [s.live] : [])
+        .filter((r) => r && typeof r.id === 'string' && typeof r.url === 'string');
+      ADS.slots.set(s.id, { page: typeof s.page === 'string' ? s.page : `${ADS.endpoint}/b/${s.id}`, rotation });
+      const seq = [];                                        // weighted and interleaved: 1+2 -> B A B
+      const left = rotation.map((r) => ({ id: r.id, n: Math.max(1, Math.min(6, Math.round(r.weight) || 1)) }));
+      while (left.some((r) => r.n > 0)) { left.sort((a, b) => b.n - a.n); for (const r of left) if (r.n > 0) { seq.push(r.id); r.n--; } }
+      const was = ADS.cycle.get(s.id);
+      if (!was || was.seq.join() !== seq.join()) ADS.cycle.set(s.id, { seq, i: seq.length ? Math.floor(Math.random() * seq.length) : 0 });
+      for (const r of rotation) {
+        wanted.add(r.id);
+        if (ADS.art.has(r.id)) continue;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => ADS.art.set(r.id, img);
+        img.src = r.url;
+      }
     }
-    for (const id of [...ADS.slots.keys()]) if (!ids.has(id)) { ADS.slots.delete(id); ADS.art.delete(id); }
+    for (const id of [...ADS.slots.keys()]) if (!ids.has(id)) { ADS.slots.delete(id); ADS.cycle.delete(id); }
+    for (const id of [...ADS.art.keys()]) if (!wanted.has(id)) ADS.art.delete(id);
   } catch { /* offline or blocked: the house art stays */ }
 }
-// What a board is showing right now: its live booking (only once the artwork is drawn) or the house art.
-const adLiveOf = (id) => (ADS.art.has(id) ? ADS.slots.get(id)?.live || null : null);
+/* What a board is showing right now: the booking at its place in the cycle — or,
+ * if that artwork has not arrived yet, the next one that has — else the house art. */
+function adLiveOf(id) {
+  const c = ADS.cycle.get(id), rot = ADS.slots.get(id)?.rotation;
+  if (!c || !c.seq.length || !rot) return null;
+  for (let k = 0; k < c.seq.length; k++) {
+    const bid = c.seq[(c.i + k) % c.seq.length];
+    if (ADS.art.has(bid)) return rot.find((r) => r.id === bid) || null;
+  }
+  return null;
+}
 function drawAdvertFace(slot, x, top, k) {
   const f = slot.face;
   if (!f || !ADS.endpoint) return;
   const fx = x + f.x * k, fy = top + f.y * k, fw = f.w * k, fh = f.h * k;
-  const art = ADS.art.get(slot.id);
+  const live = adLiveOf(slot.id);
+  const art = live ? ADS.art.get(live.id) : null;
   if (art) {
     ctx.save();
     ctx.imageSmoothingEnabled = true;
@@ -19429,12 +19458,19 @@ function updateAds(dt) {
   const now = performance.now();
   for (const slot of ADVERT_SLOTS) {
     const v = ADS.vis.get(slot.id) || 0;
-    const s = ADS.seen.get(slot.id) || { t: 0, counted: false };
+    const s = ADS.seen.get(slot.id) || { t: 0, counted: false, passed: false };
     if (v >= 0.5) {
       s.t += dt;
       ADS.last = { id: slot.id, at: now };
-      if (s.t >= 1 && !s.counted) { s.counted = true; queueAdCount(slot.id, 'v'); }
+      if (s.t >= 1 && !s.counted) { s.counted = true; s.passed = true; queueAdCount(slot.id, 'v'); }
     } else if (v < 0.25) { s.t = 0; s.counted = false; }   // gone (with slack) -> the next pass counts again
+    /* The rotation steps only once a counted pass is over AND the board is wholly
+     * off screen — never in front of the player. */
+    if (s.passed && v === 0) {
+      s.passed = false;
+      const c = ADS.cycle.get(slot.id);
+      if (c && c.seq.length > 1) c.i = (c.i + 1) % c.seq.length;
+    }
     ADS.seen.set(slot.id, s);
   }
   ADS.vis.clear();
@@ -22568,7 +22604,9 @@ window.__ror = {
   // The billboard ads (request 446): what the server said, what is drawn, what is queued.
   get ads() {
     return { endpoint: ADS.endpoint, fetchedAt: ADS.fetchedAt, slots: Object.fromEntries(ADS.slots),
-      drawn: [...ADS.art.keys()], qr: [...ADS.qr.keys()], seen: Object.fromEntries(ADS.seen),
+      loaded: [...ADS.art.keys()], qr: [...ADS.qr.keys()], seen: Object.fromEntries(ADS.seen),
+      showing: Object.fromEntries(ADVERT_SLOTS.map((sl) => [sl.id, adLiveOf(sl.id)?.id || null])),
+      cycles: Object.fromEntries([...ADS.cycle].map(([k, v]) => [k, { seq: v.seq.slice(), i: v.i }])),
       last: ADS.last, queue: Object.fromEntries(ADS.queue), pauseRow: pauseAd, menu: menuItems().map((i) => i.label) };
   },
   adsRefresh() { return refreshAds(true); },

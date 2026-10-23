@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHmac } from 'node:crypto';
 import path from 'node:path';
-import worker, { today, addMonths, imageInfo } from '../worker.js';
+import worker, { today, addMonths, imageInfo, peakShares, priceFor } from '../worker.js';
 import { BOARDS, uploadSize } from '../boards.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -110,7 +110,7 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
 
   // a second booking that clashes
   const two = await (await post({ business: 'Other', brand: 'Other' })).json();
-  check('a clashing booking for taken dates is refused at booking time', two.error && /already booked/.test(two.error), two);
+  check('a clashing booking for taken dates is refused at booking time', two.error && /fully booked/.test(two.error), two);
   const later = await (await post({ business: 'Later Co', brand: 'Later', start: addMonths(today(), 2), months: 1 })).json();
   check('the next free dates can be booked', !!later.id, later);
   check('approving it does not clash', (await act(later.id, 'approve')).status === 200);
@@ -159,6 +159,42 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   env.DB.raw.prepare('UPDATE bookings SET paid = 0').run();
   await call(env, '/api/paystack', { method: 'POST', body: short, headers: { 'x-paystack-signature': createHmac('sha512', 'sk_test_x').update(short).digest('hex') } });
   check('an underpayment does not mark it paid', env.DB.raw.prepare('SELECT paid FROM bookings').get().paid === 0);
+}
+
+// ---------- rotation (request 448)
+check('peakShares: back-to-back bookings do not add up, overlapping ones do',
+  peakShares([{ start_day: '2026-11-01', end_day: '2026-12-01', shares: 2 }, { start_day: '2026-12-01', end_day: '2027-01-01', shares: 2 }], '2026-11-01', '2027-01-01') === 2
+  && peakShares([{ start_day: '2026-11-01', end_day: '2026-12-15', shares: 2 }, { start_day: '2026-12-01', end_day: '2027-01-01', shares: 1 }], '2026-11-01', '2027-01-01') === 3);
+check('priceFor: a share is its fraction of the whole board', priceFor({ price: 90000, shares: 3 }, 1, 2) === 60000 && priceFor({ price: 80000, shares: 3 }, 3, 1) === 80000);
+{
+  const env = mkEnv();
+  const post = (o) => call(env, '/api/bookings', { method: 'POST', body: form(o) });
+  const act = (id, action, extra = {}) => call(env, `/api/admin/bookings/${id}`, { method: 'POST', headers: { ...admin, 'Content-Type': 'application/json' }, body: { action, ...extra } });
+  const a = await (await post({ brand: 'A', shares: 1 })).json();
+  const b = await (await post({ brand: 'B', shares: 2 })).json();
+  check('a one-share booking costs a third of the board', a.amount === Math.round(80000 / 3) * 2 && a.shares === 1, a);
+  check('shares outside 1..3 are refused', (await post({ shares: 4 })).status === 400 && (await post({ shares: 0 })).status === 400);
+  for (const x of [a, b]) { await act(x.id, 'approve'); await act(x.id, 'paid'); }
+  const slots = await (await call(env, '/api/slots?level=1')).json();
+  const s3 = slots.slots.find((s) => s.id === 'board-3');
+  check('both live bookings rotate on the board, weighted by shares', s3.rotation.length === 2 && s3.rotation.map((r) => r.weight).sort().join() === '1,2' && s3.live.id === s3.rotation[0].id, s3.rotation);
+  const full = await post({ brand: 'C', shares: 1 });
+  check('the board is full (1 + 2 of 3): a new booking for those dates is refused', full.status === 409, await full.json());
+  const later = await (await post({ brand: 'D', shares: 3, start: addMonths(today(), 2), months: 1 })).json();
+  check('the whole board is still bookable once those end', !!later.id, later);
+  await act(b.id, 'cancel');
+  const c = await (await post({ brand: 'C', shares: 2 })).json();
+  const e = await (await post({ brand: 'E', shares: 1 })).json();
+  check('approve C (1 + 2 = 3 shares)', (await act(c.id, 'approve')).status === 200);
+  const over = await act(e.id, 'approve');
+  check("approving past the board's shares is refused with a reason", over.status === 409 && /free shares/.test((await over.json()).error));
+  const shrink = await call(env, '/api/admin/boards/board-3', { method: 'POST', headers: { ...admin, 'Content-Type': 'application/json' }, body: { price: 80000, shares: 2, bookable: true } });
+  check('shares cannot drop below what approved bookings hold', shrink.status === 409);
+  const grow = await call(env, '/api/admin/boards/board-3', { method: 'POST', headers: { ...admin, 'Content-Type': 'application/json' }, body: { price: 80000, shares: 4, bookable: true } });
+  check('…but can grow, and then E fits', grow.status === 200 && (await act(e.id, 'approve')).status === 200);
+  const pub = (await (await call(env, '/api/boards')).json()).boards.find((x) => x.id === 'board-3');
+  check('the board list reports shares and what is free today', pub.shares === 4 && pub.freeToday === 0, { shares: pub.shares, free: pub.freeToday });
+  check('the status page shows the share', (await (await call(env, `/status/${a.token}`)).text()).includes('"shares":1'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

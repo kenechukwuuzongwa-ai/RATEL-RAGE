@@ -16,7 +16,14 @@
  *   /api/admin/...            the same, as JSON
  *
  * A board shows an advert only when its booking is APPROVED and PAID and today
- * is inside its dates. Everything else shows the game's own house art. */
+ * is inside its dates. Everything else shows the game's own house art.
+ *
+ * ROTATION (request 448): a board is sold in SHARES (boards.shares, 3 by
+ * default). A booking takes 1..shares of them; booking them all is the whole
+ * board to yourself. Approved bookings on one board may overlap as long as their
+ * shares never add up past the board's on any day. The game rotates the live
+ * ones per pass, weighted by shares, so each gets about its share of the views.
+ * The board's price is for the WHOLE board; a share costs its fraction. */
 import { BOARDS, boardById, uploadSize, ART_SCALE, SAFE_MARGIN } from './boards.js';
 import { landingPage, boardPage, statusPage, adminPage } from './pages.js';
 
@@ -41,9 +48,20 @@ export function addMonths(day, months) {
   t.setUTCDate(Math.min(d, last));
   return t.toISOString().slice(0, 10);
 }
+const nextDay = (d) => new Date(Date.parse(d + 'T00:00:00Z') + DAY).toISOString().slice(0, 10);
 const validDay = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s + 'T00:00:00Z'))
   && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
 const overlaps = (a, b) => a.start_day < b.end_day && b.start_day < a.end_day;
+// The most shares the given bookings hold on any single day inside [start, end).
+export function peakShares(list, start, end) {
+  const inRange = list.filter((b) => overlaps(b, { start_day: start, end_day: end }));
+  const days = new Set([start, ...inRange.map((b) => b.start_day).filter((d) => d > start && d < end)]);
+  let peak = 0;
+  for (const d of days) peak = Math.max(peak, inRange.filter((b) => b.start_day <= d && b.end_day > d).reduce((a, b) => a + (b.shares || 1), 0));
+  return peak;
+}
+// What a booking costs: the whole board's monthly price, times the fraction of it taken, times the months.
+export const priceFor = (board, shares, months) => Math.round(board.price * shares / board.shares) * months;
 const rid = (n = 16) => { const a = new Uint8Array(n); crypto.getRandomValues(a); return [...a].map((x) => x.toString(16).padStart(2, '0')).join(''); };
 const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
 
@@ -97,30 +115,32 @@ export function imageInfo(u) {
 
 // ---- boards and what is live
 async function boardRows(env) {
-  const rows = (await env.DB.prepare('SELECT id, price, bookable FROM boards').all()).results || [];
+  const rows = (await env.DB.prepare('SELECT id, price, bookable, shares FROM boards').all()).results || [];
   const byId = new Map(rows.map((r) => [r.id, r]));
   const missing = BOARDS.filter((b) => !byId.has(b.id));
   if (missing.length) {
-    await env.DB.batch(missing.map((b) => env.DB.prepare('INSERT OR IGNORE INTO boards (id, price, bookable) VALUES (?, ?, ?)').bind(b.id, b.price, b.bookable)));
-    for (const b of missing) byId.set(b.id, { id: b.id, price: b.price, bookable: b.bookable });
+    await env.DB.batch(missing.map((b) => env.DB.prepare('INSERT OR IGNORE INTO boards (id, price, bookable, shares) VALUES (?, ?, ?, ?)').bind(b.id, b.price, b.bookable, b.shares)));
+    for (const b of missing) byId.set(b.id, { id: b.id, price: b.price, bookable: b.bookable, shares: b.shares });
   }
-  return BOARDS.map((b) => ({ ...b, price: byId.get(b.id).price, bookable: !!byId.get(b.id).bookable, upload: uploadSize(b) }));
+  return BOARDS.map((b) => ({ ...b, price: byId.get(b.id).price, bookable: !!byId.get(b.id).bookable,
+    shares: Math.max(1, byId.get(b.id).shares || 1), upload: uploadSize(b) }));
 }
 async function liveBookings(env, day = today()) {
-  return (await env.DB.prepare(`SELECT id, slot, brand, link, start_day, end_day FROM bookings
+  return (await env.DB.prepare(`SELECT id, slot, brand, link, start_day, end_day, shares FROM bookings
     WHERE status = 'approved' AND paid = 1 AND start_day <= ? AND end_day > ? ORDER BY start_day`).bind(day, day).all()).results || [];
 }
 async function boardsPublic(env) {
   const day = today();
   const boards = await boardRows(env);
-  const taken = (await env.DB.prepare(`SELECT slot, start_day, end_day FROM bookings WHERE status = 'approved' AND end_day > ? ORDER BY start_day`).bind(day).all()).results || [];
+  const taken = (await env.DB.prepare(`SELECT slot, start_day, end_day, shares FROM bookings WHERE status = 'approved' AND end_day > ? ORDER BY start_day`).bind(day).all()).results || [];
   const since = today(Date.now() - 30 * DAY);
   const views = (await env.DB.prepare('SELECT slot, SUM(views) v, SUM(taps) t FROM ad_stats WHERE day >= ? GROUP BY slot').bind(since).all()).results || [];
   const vMap = new Map(views.map((r) => [r.slot, r]));
   return boards.map((b) => ({
     id: b.id, level: b.level, name: b.name, where: b.where, art: b.art, artW: b.artW, artH: b.artH,
-    face: b.face, upload: b.upload, safe: SAFE_MARGIN, price: b.price, bookable: b.bookable,
-    taken: taken.filter((t) => t.slot === b.id).map((t) => ({ start: t.start_day, end: t.end_day })),
+    face: b.face, upload: b.upload, safe: SAFE_MARGIN, price: b.price, bookable: b.bookable, shares: b.shares,
+    taken: taken.filter((t) => t.slot === b.id).map((t) => ({ start: t.start_day, end: t.end_day, shares: t.shares })),
+    freeToday: b.shares - peakShares(taken.filter((t) => t.slot === b.id), day, nextDay(day)),
     views30: vMap.get(b.id)?.v || 0,
   }));
 }
@@ -149,8 +169,13 @@ async function createBooking(req, env) {
   if (start < today()) return json({ error: 'The start date is in the past.' }, 400);
   if (start > addMonths(today(), 12)) return json({ error: 'Bookings open up to a year ahead.' }, 400);
   const end = addMonths(start, months);
-  const clash = (await env.DB.prepare(`SELECT start_day, end_day FROM bookings WHERE slot = ? AND status = 'approved'`).bind(b.id).all()).results || [];
-  if (clash.some((c) => overlaps(c, { start_day: start, end_day: end }))) return json({ error: 'Those dates are already booked on this board. See the dates shown as taken.' }, 409);
+  const shares = body.shares == null ? board.shares : Math.round(Number(body.shares));
+  if (!(shares >= 1 && shares <= board.shares)) return json({ error: `Choose 1 to ${board.shares} shares.` }, 400);
+  const clash = (await env.DB.prepare(`SELECT start_day, end_day, shares FROM bookings WHERE slot = ? AND status = 'approved'`).bind(b.id).all()).results || [];
+  const peak = peakShares(clash, start, end);
+  if (peak + shares > board.shares) return json({ error: peak >= board.shares
+    ? 'Those dates are fully booked on this board. See the dates shown as taken.'
+    : `Only ${board.shares - peak} of this board's ${board.shares} shares are free for those dates.` }, 409);
   const open = await env.DB.prepare(`SELECT COUNT(*) n FROM bookings WHERE slot = ? AND status = 'review'`).bind(b.id).first();
   if ((open?.n || 0) >= MAX_OPEN_PER_BOARD) return json({ error: 'This board has too many bookings waiting for review. Please try again later.' }, 429);
 
@@ -166,13 +191,13 @@ async function createBooking(req, env) {
   if (info.w < b.face.w) return json({ error: `The artwork is too small: at least ${b.face.w} px wide, ideally ${want.w}.` }, 400);
 
   const id = 'rr' + rid(8), token = rid(18), now = Date.now();
-  const amount = board.price * months;
+  const amount = priceFor(board, shares, months);
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO bookings (id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, amount, created, updated)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, token, b.id, f.business, f.brand, f.name, f.email, f.phone, f.link, f.note, start, end, months, amount, now, now),
+    env.DB.prepare(`INSERT INTO bookings (id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, created, updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, token, b.id, f.business, f.brand, f.name, f.email, f.phone, f.link, f.note, start, end, months, shares, amount, now, now),
     env.DB.prepare('INSERT INTO creatives (booking, mime, w, h, data) VALUES (?, ?, ?, ?, ?)').bind(id, info.mime, info.w, info.h, m[2]),
   ]);
-  return json({ ok: true, id, token, status: `/status/${token}`, amount, end, pay: env.PAYSTACK_SECRET ? `/api/pay/${token}` : null });
+  return json({ ok: true, id, token, status: `/status/${token}`, amount, end, shares, pay: env.PAYSTACK_SECRET ? `/api/pay/${token}` : null });
 }
 
 async function bookingByToken(env, token) {
@@ -184,7 +209,7 @@ async function bookingStats(env, id) {
   return { days: rows, views: rows.reduce((a, r) => a + r.views, 0), taps: rows.reduce((a, r) => a + r.taps, 0) };
 }
 const publicBooking = (r) => ({ id: r.id, slot: r.slot, business: r.business, brand: r.brand, link: r.link,
-  start: r.start_day, end: r.end_day, months: r.months, amount: r.amount, status: r.status, paid: !!r.paid, reason: r.reason });
+  start: r.start_day, end: r.end_day, months: r.months, shares: r.shares, amount: r.amount, status: r.status, paid: !!r.paid, reason: r.reason });
 
 // ---- payments (Paystack): amounts are in kobo
 async function payInit(req, env, token) {
@@ -260,9 +285,13 @@ async function adminAction(req, env, id) {
   const set = (sql, ...a) => env.DB.prepare(`UPDATE bookings SET ${sql}, updated = ? WHERE id = ?`).bind(...a, now, id).run();
   switch (body.action) {
     case 'approve': {
-      const others = (await env.DB.prepare(`SELECT id, start_day, end_day FROM bookings WHERE slot = ? AND status = 'approved' AND id != ?`).bind(r.slot, id).all()).results || [];
-      const hit = others.find((o) => overlaps(o, r));
-      if (hit) return json({ error: `Clashes with approved booking ${hit.id} (${hit.start_day} to ${hit.end_day}).` }, 409);
+      const board = (await boardRows(env)).find((x) => x.id === r.slot);
+      const others = (await env.DB.prepare(`SELECT id, start_day, end_day, shares FROM bookings WHERE slot = ? AND status = 'approved' AND id != ?`).bind(r.slot, id).all()).results || [];
+      const peak = peakShares(others, r.start_day, r.end_day);
+      if (peak + (r.shares || 1) > board.shares) {
+        const hits = others.filter((o) => overlaps(o, r)).map((o) => `${o.id} (${o.shares} share${o.shares > 1 ? 's' : ''}, ${o.start_day} to ${o.end_day})`);
+        return json({ error: `Not enough free shares: this booking needs ${r.shares}, ${board.shares - peak} of ${board.shares} are free on its busiest day. Approved alongside: ${hits.join(', ')}.` }, 409);
+      }
       await set("status = 'approved', reason = ''"); break;
     }
     case 'reject': await set("status = 'rejected', reason = ?", str(body.reason, 300)); break;
@@ -279,7 +308,7 @@ async function adminAction(req, env, id) {
   return json({ ok: true, booking: { ...(await env.DB.prepare('SELECT * FROM bookings WHERE id = ?').bind(id).first()), token: undefined } });
 }
 async function adminData(env) {
-  const bookings = (await env.DB.prepare(`SELECT id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, amount, status, paid, pay_ref, reason, created FROM bookings ORDER BY created DESC LIMIT 500`).all()).results || [];
+  const bookings = (await env.DB.prepare(`SELECT id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, status, paid, pay_ref, reason, created FROM bookings ORDER BY created DESC LIMIT 500`).all()).results || [];
   const live = new Set((await liveBookings(env)).map((b) => b.id));
   const since = today(Date.now() - 30 * DAY);
   const stats = (await env.DB.prepare('SELECT slot, booking, SUM(views) views, SUM(taps) taps FROM ad_stats WHERE day >= ? GROUP BY slot, booking').bind(since).all()).results || [];
@@ -305,9 +334,10 @@ export default {
         const level = Number(url.searchParams.get('level')) || 1;
         const live = await liveBookings(env);
         const slots = BOARDS.filter((b) => b.level === level).map((b) => {
-          const L = live.find((x) => x.slot === b.id);
-          return { id: b.id, page: `${url.origin}/b/${b.id}`,
-            live: L ? { id: L.id, url: `${url.origin}/c/${L.id}`, brand: L.brand, link: L.link, until: L.end_day } : null };
+          // every live booking on the board, weighted by its shares: the game rotates them per pass
+          const rotation = live.filter((x) => x.slot === b.id)
+            .map((L) => ({ id: L.id, url: `${url.origin}/c/${L.id}`, brand: L.brand, link: L.link, until: L.end_day, weight: L.shares || 1 }));
+          return { id: b.id, page: `${url.origin}/b/${b.id}`, rotation, live: rotation[0] || null };   // `live`: what a v77 game reads
         });
         return json({ day: today(), slots }, 200, { ...CORS, 'Cache-Control': 'public, max-age=60' });
       }
@@ -337,7 +367,7 @@ export default {
         const r = await bookingByToken(env, m[1]);
         if (!r) return html(statusPage({ missing: true }), 404);
         return html(statusPage({ booking: { ...publicBooking(r), token: r.token }, stats: await bookingStats(env, r.id),
-          board: boardById(r.slot), gameOrigin: env.GAME_ORIGIN, payments: !!env.PAYSTACK_SECRET, today: today() }));
+          board: (await boardRows(env)).find((x) => x.id === r.slot), gameOrigin: env.GAME_ORIGIN, payments: !!env.PAYSTACK_SECRET, today: today() }));
       }
       if (M === 'POST' && (m = /^\/api\/pay\/([0-9a-f]{36})$/.exec(p))) return payInit(req, env, m[1]);
       if (M === 'POST' && p === '/api/paystack') return payWebhook(req, env);
@@ -354,7 +384,14 @@ export default {
           await boardRows(env);
           const price = Math.round(Number(body.price));
           if (!(price >= 0 && price <= 100_000_000)) return json({ error: 'Price must be a number of naira.' }, 400);
-          await env.DB.prepare('UPDATE boards SET price = ?, bookable = ? WHERE id = ?').bind(price, body.bookable ? 1 : 0, m[1]).run();
+          const cur = (await boardRows(env)).find((x) => x.id === m[1]);
+          const shares = body.shares == null ? cur.shares : Math.round(Number(body.shares));
+          if (!(shares >= 1 && shares <= 6)) return json({ error: 'A board has 1 to 6 shares.' }, 400);
+          // never fewer shares than the approved bookings already hold on their busiest day
+          const held = (await env.DB.prepare(`SELECT start_day, end_day, shares FROM bookings WHERE slot = ? AND status = 'approved' AND end_day > ?`).bind(m[1], today()).all()).results || [];
+          const busiest = held.length ? peakShares(held, today(), held.reduce((z, h) => (h.end_day > z ? h.end_day : z), today())) : 0;
+          if (shares < busiest) return json({ error: `Approved bookings already hold ${busiest} shares on this board.` }, 409);
+          await env.DB.prepare('UPDATE boards SET price = ?, bookable = ?, shares = ? WHERE id = ?').bind(price, body.bookable ? 1 : 0, shares, m[1]).run();
           return json({ ok: true });
         }
       }
