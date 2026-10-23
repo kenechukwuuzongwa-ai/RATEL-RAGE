@@ -24,6 +24,9 @@ const WWW = path.join(__dirname, 'www');
 const ALLOWLIST = [
   'index.html',
   'styles.css',
+  'analytics-config.js',   // index.html loads it; analytics stays off while its endpoint is empty
+  'supabase-config.js',    // index.html loads it; accounts stay off while its url/key are empty
+  'favicon.png',           // index.html's icon link (the app's own launcher art)
   'src',
   'frontend',
   'layers',
@@ -118,11 +121,15 @@ if (fs.existsSync(MOBILE_ASSETS)) {
   if (fs.existsSync(feRoot)) copyDir(feRoot, path.join(WWW, 'frontend'));
   /* The packaged build is Android-only: when the 720p intro twin is present,
    * the 67MB master is dead weight in the APK, so the generated www drops it. */
-  const mobileIntro = path.join(WWW, 'frontend', 'intro', 'intro-mobile.mp4');
-  const masterIntro = path.join(WWW, 'frontend', 'intro', 'Intro.mp4');
-  if (fs.existsSync(mobileIntro) && fs.existsSync(masterIntro)) {
-    fs.rmSync(masterIntro);
-    console.log('master intro removed from www (mobile twin ships instead)');
+  /* …and Level 2's cut the same way (request 399): frontend.js LEVEL_INTRO asks
+   * for the twin by name on Android. */
+  for (const [master, twin] of [['Intro.mp4', 'intro-mobile.mp4'], ['level2-intro.mp4', 'level2-intro-mobile.mp4']]) {
+    const mobileIntro = path.join(WWW, 'frontend', 'intro', twin);
+    const masterIntro = path.join(WWW, 'frontend', 'intro', master);
+    if (fs.existsSync(mobileIntro) && fs.existsSync(masterIntro)) {
+      fs.rmSync(masterIntro);
+      console.log(`master ${master} removed from www (mobile twin ships instead)`);
+    }
   }
   console.log('mobile asset overlay applied (downscaled plates + sheets + frontend overrides)');
 }

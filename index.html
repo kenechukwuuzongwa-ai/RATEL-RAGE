@@ -2,18 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#080b12" />
-  <title>RATEL RAGE â€” The Street Tax</title>
+  <meta name="description" content="RATEL RAGE: The Street Tax. A 2D arcade beat-'em-up on the streets of Lagos." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>RATEL RAGE — The Street Tax</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="favicon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main class="game-shell" aria-label="RATEL RAGE game">
     <canvas id="game" width="1280" height="720" tabindex="0" aria-label="RATEL RAGE arcade game canvas"></canvas>
-    <div id="loading" class="loading">PREPARING THE STREETSâ€¦</div>
+    <div id="loading" class="loading">PREPARING THE STREETS…</div>
   </main>
+  <div id="rotate-hint" class="rotate-hint" aria-hidden="true">TURN YOUR PHONE SIDEWAYS TO PLAY</div>
   <noscript>This game requires JavaScript.</noscript>
-  <script src="src/touch.js?v=ratelrage-mobile-v37"></script>
-  <script type="module" src="src/game.js?v=ratelrage-mobile-v37"></script>
+  <!-- Optional analytics: off unless analytics-config.js names an endpoint
+       (or supabase-config.js names a project). -->
+  <script src="supabase-config.js?v=ratelrage-mobile-v75"></script>
+  <script src="analytics-config.js?v=ratelrage-mobile-v75"></script>
+  <script src="src/analytics.js?v=ratelrage-mobile-v75"></script>
+  <!-- Progress: local first; account sync is off unless supabase-config.js names a project. -->
+  <script src="src/progress.js?v=ratelrage-mobile-v75"></script>
+  <script src="src/account.js?v=ratelrage-mobile-v75"></script>
+  <script src="src/webshell.js?v=ratelrage-mobile-v75"></script>
+  <script src="src/touch.js?v=ratelrage-mobile-v75"></script>
+  <script type="module" src="src/game.js?v=ratelrage-mobile-v75"></script>
 </body>
 </html>

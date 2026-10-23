@@ -46,11 +46,15 @@ const CHARACTERS = {
     role: 'Motorpark Chairman',
     level: 1,
   },
+  /* The key stays 'jibril' (every aftermath screen and the case index resolve
+   * through it); the PERSON is the one the supplied Level 2 media names —
+   * "AIG Moshun Jimoh" on the intro's laptop screen and in both narrations
+   * (request 399). Assistant Inspector-General of Police. */
   jibril: {
     internalReference: 'CASE_REFERENCE_001',
-    displayName: 'Commissioner Masood Jibril',
-    shortName: 'MASOOD JIBRIL',
-    rank: 'COMMISSIONER',
+    displayName: 'AIG Moshun Jimoh',
+    shortName: 'MOSHUN JIMOH',
+    rank: 'AIG',
     /* NOT "the head of The Cabal". The whole point of this beat is that nobody
      * — including the player — knows how high he sits. Any copy that settles
      * that question is a copy bug, not a wording preference. */
@@ -91,14 +95,14 @@ const LEVELS = {
   2: {
     id: 2,
     code: 'LEVEL 02',
-    title: 'THE COMMISSIONER',
-    place: 'LAGOS · POLICE COMMAND',
+    /* "Ratel Rage — Level 2: Operation Clean Sweep" (request 399). The place is
+     * the sign over the facility's first bay in LEVEL 2.psd. */
+    title: 'OPERATION CLEAN SWEEP',
+    place: 'LAGOS · NPF EVIDENCE & PROPERTY WING',
     boss: 'jibril',
-    /* No cut for Level 02 has been delivered yet, so it opens on the existing
-     * one. Deliberate reuse, flagged: `introOwn: false` is what a test reads to
-     * prove this is a placeholder rather than a mis-wire. */
-    intro: '../frontend/intro/intro.mp4?v=master37-fixed',
-    introOwn: false,
+    /* Its own cut, delivered with request 399 (LEVEL 2 INTRO.mp4). */
+    intro: '../frontend/intro/level2-intro.mp4',
+    introOwn: true,
     caseNo: 'CASE FILE 002',
     playable: true,
   },
@@ -222,7 +226,7 @@ const AFTERMATH = {
     heading: 'CONNECTION TO THE CABAL',
     narration:
       'Olodo was only one link. The evidence points higher, but the people behind '
-      + 'the network remain hidden. Masood Jibril is the next name on the board. '
+      + 'the network remain hidden. Moshun Jimoh is the next name on the board. '
       + 'Beyond him, the trail disappears.',
     fallbackDur: 9.6,
     script: [[0.25, 3.40], [3.70, 7.10], [7.40, 9.20]],
@@ -230,7 +234,7 @@ const AFTERMATH = {
      * must leave this screen certain that The Cabal exists and no more. */
     chain: [
       { key: 'olodo', top: 'MC OLODO', bottom: 'LEVEL 01 · DEFEATED', tone: 'green', portrait: true },
-      { key: 'jibril', top: 'MASOOD JIBRIL', bottom: 'LEVEL 02 · NEXT TARGET', tone: 'red', portrait: true },
+      { key: 'jibril', top: 'MOSHUN JIMOH', bottom: 'LEVEL 02 · NEXT TARGET', tone: 'red', portrait: true },
       /* No caption but the status. `unknown` makes the node draw the same
        * faceless avatar Masood Jibril's does — a person on the board whose face
        * has not been obtained. It used to draw a typographic '?' with another

@@ -1,0 +1,40 @@
+{
+ "canvas": {
+  "w": 9259,
+  "h": 1080
+ },
+ "boards": [
+  {
+   "id": "board-1",
+   "src": "layers/adverts/board-1.png",
+   "x": 2700,
+   "y": 136,
+   "w": 539,
+   "h": 413
+  },
+  {
+   "id": "board-2",
+   "src": "layers/adverts/board-2.png",
+   "x": 3745,
+   "y": 216,
+   "w": 201,
+   "h": 338
+  },
+  {
+   "id": "board-3",
+   "src": "layers/adverts/board-3.png",
+   "x": 4345,
+   "y": 21,
+   "w": 658,
+   "h": 525
+  },
+  {
+   "id": "board-4",
+   "src": "layers/adverts/board-4.png",
+   "x": 7527,
+   "y": 126,
+   "w": 491,
+   "h": 391
+  }
+ ]
+}

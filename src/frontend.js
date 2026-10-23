@@ -16,6 +16,9 @@
  * size, and is handed back at 1280x720 the moment gameplay takes over.
  */
 
+// The cinematic bars, shared with game.js (request 399): Level 2's screen changes.
+import { createBarCut } from './bars.js';
+
 const H = 720;
 /* FULL-BLEED MOBILE: on a phone wider than 16:9 the front end widens its
  * virtual space to the device aspect (same rule as game.js), so the menus
@@ -284,21 +287,365 @@ const SETTINGS_DEFAULTS = {
   comboAssist: true,
 };
 
-const SUBTITLES = [
-  [0.26, 1.98, 'Lagos.'],
-  [2.54, 4.16, 'Every corner has a price.'],
-  [5.20, 6.30, 'Drivers pay.'],
-  [6.78, 7.74, 'Traders pay.'],
-  [8.24, 9.96, 'The collectors take their share.'],
-  [10.62, 14.16, 'The money moves up the chain.'],
-  [14.92, 19.10, 'At the top sits MC Olodo.'],
-  [19.78, 23.80, 'Then Darki walks into their territory.'],
-  [24.52, 27.32, 'The street tax is demanded.'],
-  [28.18, 30.32, 'Darki refuses.'],
-  [30.66, 32.16, 'Word reaches Olodo.'],
-  [32.74, 35.20, 'The order comes down.'],
-  [35.60, 36.42, 'Attack.'],
+/* THE LEVEL 1 INTRO NARRATION, word for word (request 337 — the old table was a
+ * paraphrase: "Drivers pay.", "Attack." — none of which is said). Transcribed
+ * from frontend/audio/level1-voiceover.mp3 (the clip the intro clock reads) with
+ * Whisper-small; every phrase's start and end taken off the clip's own
+ * waveform and the word stamps refitted inside it, as for the boss line in
+ * game.js. Seconds from the clip's first sample. */
+const INTRO_SUBS = [
+  { at: 0.26, end: 4.28, words: [['In', 0.26], ['the', 0.39], ['streets', 0.65], ['of', 0.88], ['Lagos,', 1.14], ['survival', 2.54], ['has', 2.98], ['a', 3.14], ['price.', 3.40]] },
+  { at: 5.20, end: 9.82, words: [['Every', 5.20], ['bus,', 5.57], ['every', 6.78], ['shop,', 7.16], ['every', 8.24], ['honest', 8.77], ['worker,', 9.28]] },
+  { at: 10.62, end: 14.04, words: [['forced', 10.62], ['to', 10.95], ['pay', 11.18], ['those', 11.53], ['who', 11.84], ['claim', 12.33], ['to', 12.58], ['own', 12.85], ['the', 13.13], ['streets.', 13.46]] },
+  { at: 14.94, end: 16.73, words: [['Their', 14.94], ['collections', 15.39], ['travel', 15.92], ['upward', 16.41]] },
+  { at: 16.73, end: 18.98, words: [['from', 16.73], ['the', 16.93], ['street', 17.18], ['thugs', 17.51], ['to', 17.93], ['their', 18.10], ['bosses,', 18.57]] },
+  { at: 19.78, end: 23.56, words: [['and', 19.78], ['from', 19.94], ['the', 20.08], ['bosses', 20.43], ['to', 20.73], ['a', 20.94], ['system', 21.17], ['built', 21.52], ['on', 21.80], ['fear', 22.19], ['and', 22.49], ['corruption.', 22.98]] },
+  { at: 24.56, end: 27.20, words: [['But', 24.56], ['one', 24.84], ['man', 25.17], ['refuses', 25.75], ['to', 26.21], ['pay.', 26.49]] },
+  { at: 28.18, end: 28.80, words: [['Darki.', 28.18]] },
+  { at: 29.66, end: 31.86, words: [['Tonight,', 29.66], ['he', 30.27], ['starts', 30.60], ['at', 30.85], ['the', 30.93], ['bottom.', 31.26]] },
+  { at: 32.74, end: 35.06, words: [['Olodo', 32.74], ['controls', 33.72], ['this', 34.02], ['street.', 34.37]] },
+  { at: 35.60, end: 36.30, words: [['Stop', 35.60], ['him.', 36.16]] },
 ];
+
+/* LEVEL 2'S INTRO (request 399). LEVEL 2 INTRO.mp4 carries its own narration
+ * (Darki, first person) and has NO burned-in subtitles — checked frame by
+ * frame — so these are drawn in the same subtitle style as Level 1's. Made the
+ * way INTRO_SUBS was: Whisper-small word stamps off the video's own audio track
+ * (decoded in Chrome, _chromakey/req399/decodevid.js + stt.mjs), each line's
+ * start refitted to the clip's voiced runs (20 ms RMS, req399/runs.js), and the
+ * names spelled as the video itself spells them on screen: "Moshun Jimoh",
+ * "AHMAD AKANDE MURDER CASE" (Whisper heard "Oloto", "Amada Konde", "a lodo").
+ * Seconds on the VIDEO's clock — the clip is both the picture and the voice. */
+const INTRO_SUBS_L2 = [
+  { at: 0.22, end: 2.86, words: [["I", 0.22], ["thought", 0.34], ["taking", 0.72], ["down", 1.58], ["MC", 1.84], ["Olodo", 2.26], ["would", 2.48]] },
+  { at: 2.86, end: 5.40, words: [["expose", 2.86], ["the", 3.38], ["man", 3.74], ["controlling", 4.02], ["the", 4.64], ["streets.", 4.98]] },
+  { at: 6.24, end: 7.84, words: [["But", 6.24], ["the", 6.40], ["evidence", 6.58], ["I", 6.94], ["recovered", 7.22]] },
+  { at: 7.84, end: 9.56, words: [["revealed", 7.84], ["something", 8.34], ["bigger.", 8.94]] },
+  { at: 10.60, end: 13.08, words: [["Buried", 10.60], ["in", 10.80], ["Olodo’s", 10.96], ["phone", 11.58], ["was", 11.96], ["a", 12.48], ["name.", 12.68]] },
+  { at: 13.68, end: 15.80, words: [["AIG.", 13.68], ["Moshun Jimoh.", 14.74]] },
+  { at: 16.28, end: 18.44, words: [["Alongside", 16.28], ["it", 16.98], ["were", 17.18], ["coded", 17.40], ["payments", 17.76]] },
+  { at: 18.44, end: 19.90, words: [["and", 18.44], ["a", 18.90], ["case", 19.04], ["reference.", 19.36]] },
+  { at: 20.34, end: 22.32, words: [["The", 20.34], ["Ahmad", 20.34], ["Akande", 20.92], ["murder", 21.36], ["case.", 21.74]] },
+  { at: 23.26, end: 24.28, words: [["Two", 23.26], ["men", 23.38], ["are", 23.64], ["dead.", 23.84]] },
+  { at: 25.02, end: 26.68, words: [["One", 25.02], ["man", 25.20], ["stands", 25.54], ["accused.", 26.08]] },
+  { at: 27.70, end: 28.30, words: [["And", 27.70], ["now,", 27.84]] },
+  { at: 28.96, end: 31.22, words: [["the", 28.96], ["same", 29.06], ["name", 29.42], ["has", 29.80], ["surfaced", 30.02], ["in", 30.52], ["another", 30.84]] },
+  { at: 31.22, end: 35.24, words: [["controversy", 31.22], ["involving", 31.94], ["allegations", 32.66], ["of", 33.56], ["compromised", 33.94], ["evidence.", 34.50]] },
+  { at: 36.22, end: 36.92, words: [["Then", 36.22], ["tonight,", 36.40]] },
+  { at: 37.70, end: 38.96, words: [["I", 37.70], ["got", 37.82], ["new", 38.04], ["intel.", 38.38]] },
+  { at: 39.86, end: 41.12, words: [["My", 39.86], ["source", 40.04], ["says,", 40.42]] },
+  { at: 41.56, end: 43.84, words: [["“Moshun", 41.56], ["Jimoh", 42.12], ["has", 42.60], ["ordered", 42.88], ["his", 43.24], ["boys", 43.52]] },
+  { at: 43.84, end: 46.56, words: [["to", 43.84], ["destroy", 44.18], ["evidence", 44.66], ["connected", 45.22], ["to", 45.78], ["the", 46.14], ["case", 46.28]] },
+  { at: 46.56, end: 48.00, words: [["before", 46.56], ["the", 47.10], ["court", 47.34], ["hearing.", 47.58]] },
+  { at: 48.88, end: 49.92, words: [["If", 48.88], ["they’re", 49.06], ["successful,", 49.36]] },
+  { at: 50.34, end: 51.58, words: [["the", 50.34], ["truth", 50.40], ["could", 50.64], ["disappear", 50.92]] },
+  { at: 51.58, end: 54.42, words: [["and", 51.58], ["an", 52.18], ["innocent", 52.34], ["man", 52.72], ["could", 53.18], ["lose", 53.46], ["everything.”", 53.80]] },
+  { at: 55.28, end: 57.14, words: [["I", 55.28], ["found", 55.38], ["the", 55.66], ["trail", 56.22], ["through", 56.62], ["Olodo.", 56.80]] },
+  { at: 58.02, end: 61.08, words: [["Now", 58.02], ["I’m", 58.28], ["following", 58.60], ["it", 58.98], ["straight", 59.28], ["into", 59.62], ["the", 59.94], ["police", 60.14], ["station.", 60.46]] },
+  { at: 61.92, end: 64.60, words: [["Tonight,", 61.92], ["I’m", 62.92], ["going", 63.16], ["in", 63.46], ["for", 63.68], ["the", 63.88], ["evidence.", 64.08]] },
+];
+
+/* ONE SUBTITLE STYLE for every spoken line in the game (the intro narration
+ * here, MC_Olodo's stand-off line in game.js): a column of lines that scrolls
+ * up inside a clipped band — the line being said rises into the centre row,
+ * the one before it scrolls up and out under the band's top edge, a line is
+ * never shown before it starts, and each word lights as it is spoken.
+ *
+ *   lines  [{ at, end, words: [[text, at], ...] }]   seconds on the voice clock
+ *   t      seconds on that clock
+ *   band   { x, y, w, h } — the clip; the current line is centred in it
+ *   o      { font, lineH, alpha?, maskPad?, cy? } — cy: the current line's row (default: band centre)
+ * Returns false when there is nothing to draw (before the first line, or after
+ * the last has faded), so callers can skip their own furniture with it. */
+export const SUB_SCROLL = { lead: 0.22, scroll: 0.30, linger: 0.7, fade: 0.4 };
+/* KEEP A MUSIC BED ALIVE (request 347). The menu ambience and the level music
+ * are <audio> elements that were only ever told to play at the moment a screen
+ * or a fight began. On Android the WebView pauses them behind our back — the
+ * app sent to the background, a notification taking audio focus, a media stall
+ * — and nothing ever asked again, so the music "just disappeared". Called once
+ * a frame by each owner with whether that bed SHOULD be sounding:
+ *   paused while wanted  -> play() again, at most once a second;
+ *   playing but its clock frozen for 4 s (a stalled stream) -> reload in place.
+ * `st` is the caller's own small state object. Nothing happens while the page
+ * is hidden: the OS is entitled to silence a backgrounded app. */
+export function keepMediaAlive(el, st, dt, wanted) {
+  if (!el || !wanted || document.visibilityState === 'hidden') { st.stuckT = 0; st.lastT = null; return null; }
+  st.retryT = (st.retryT ?? 0) - dt;
+  if (el.ended && !el.loop) return null;   // a playlist's 'ended' handler moves it on, not us
+  if (el.paused || el.error) {
+    st.stuckT = 0;
+    if (st.retryT > 0) return null;
+    st.retryT = 1;
+    if (el.error) el.load();
+    const p = el.play();
+    if (p?.catch) p.catch(() => {});
+    return 'resumed';
+  }
+  const t = el.currentTime;
+  st.stuckT = st.lastT != null && Math.abs(t - st.lastT) < 1e-3 && !el.ended ? (st.stuckT ?? 0) + dt : 0;
+  st.lastT = t;
+  if (st.stuckT < 4 || st.retryT > 0) return null;
+  st.stuckT = 0;
+  st.retryT = 2;
+  el.addEventListener('loadedmetadata', () => { try { el.currentTime = t; } catch {} }, { once: true });
+  el.load();
+  const p = el.play();
+  if (p?.catch) p.catch(() => {});
+  return 'reloaded';
+}
+
+/* DOUBLE TAP TO SKIP (request 349). One tap on a video or the narrated entry
+ * never skips any more: it was waking a dimmed phone, or a thumb resting on the
+ * glass, and it threw away the one place the game explains itself. Two taps
+ * inside `window` seconds do, but only from `hintAt` on, the moment the hint
+ * saying so appears (it also stops a tap aimed at the screen before from
+ * counting). Shared by the studio splash, the story intro and Level 1's
+ * opening voice-over. */
+export const SKIP_TAP = { window: 0.65, hintAt: 3.0, fade: 0.6, text: 'Double tap screen to skip.' };
+export function makeDoubleTap() {
+  let last = -Infinity;
+  return {
+    /** A tap at `now` (s). True when it completes a double tap. */
+    tap(now = performance.now() / 1000) {
+      if (now - last <= SKIP_TAP.window) { last = -Infinity; return true; }
+      last = now;
+      return false;
+    },
+    reset() { last = -Infinity; },
+  };
+}
+/* The hint, top-right, from `hintAt` seconds into the video or the line,
+ * fading in. `y` is its baseline row; `panel` puts a dark pill behind it for
+ * screens with no bar of their own (the full-frame splash clip). */
+export function drawSkipHint(ctx, W, t, y = 28, panel = false) {
+  if (!(t >= SKIP_TAP.hintAt)) return;
+  const a = Math.min(1, (t - SKIP_TAP.hintAt) / SKIP_TAP.fade);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.font = `600 15px ${FONT}`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const x = W - 28;
+  if (panel) {
+    const w = ctx.measureText(SKIP_TAP.text).width + 28;
+    ctx.fillStyle = 'rgba(4,6,9,0.62)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x - w + 14, y - 15, w, 30, 15); else ctx.rect(x - w + 14, y - 15, w, 30);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#f4f1e8';
+  ctx.fillText(SKIP_TAP.text, x, y);
+  ctx.restore();
+}
+
+/* THE TAP CUE (request 353) — drawn in code; the reference clip is never
+ * loaded. That MP4 was measured frame by frame for its MOTION only (see
+ * _chromakey/req353*): an element just under half the frame wide, centred, on a
+ * fast 0.4 s beat whose every cycle opens with a hard near-BLACK impact frame,
+ * then blooms a ring out and settles, while a caption line fades in a few
+ * frames LATER than the ring. Impact first, flourish second, words last.
+ *
+ * Ours keeps that order at a tempo a player can read — two taps (it IS a double
+ * tap) and then a rest, the press snapping in fast and easing back out, the
+ * ripple blooming slowest of all — and it arrives with the top-right hint it
+ * belongs to. It sits LOWER-CENTRE on every screen the player can skip out of
+ * (studio splash, story intro, Level 1's narrated entry); `inset` is how far up
+ * that screen's own furniture reaches, so it never sits on a subtitle band or a
+ * letterbox bar. `since` (seconds after the player's own skip landed) runs the
+ * motion the other way: one burst, the caption crossing from the instruction to
+ * SKIPPING, and the plate lifting away. */
+export const TAP_CUE = {
+  loop: 1.5,                        // one two-beat cycle
+  gap: 0.22,                        // the second tap of the double
+  press: 0.13,                      // a press reaches full here…
+  rest: 0.42,                       // …and leaves no trace by here
+  ripple: 0.62,                     // a ripple's life — the slowest of the three
+  out: 0.5,                         // the confirm animation's length
+  text: 'DOUBLE TAP TO SKIP',
+  done: 'SKIPPING',
+};
+const easeOut3 = (v) => 1 - Math.pow(1 - v, 3);
+/* Where the cue last drew, for the harness (request 353): its rect, its beat
+ * pulse and whether it is on screen at all. Mutated in place, never allocated,
+ * so reading it costs nothing. */
+export const tapCueState = { drawn: false, x: 0, y: 0, w: 0, h: 0, pulse: 0, t: 0, since: null, alpha: 0, text: '' };
+/* The same element serves the title's TAP TO ENTER (request 357), where ONE tap
+ * enters: `text` is its caption, `taps: 1` beats once per cycle, `hintAt` is when
+ * it arrives on that screen's clock and `cy` pins its centre to the prompt row. */
+export function drawTapCue(ctx, W, H, t, o = {}) {
+  /* The clock is recorded even when the cue is hidden, so a reader can always
+   * tell "not yet" from "not any more" rather than reading a stale number. */
+  tapCueState.t = t;
+  const hintAt = o.hintAt ?? SKIP_TAP.hintAt;
+  const text = o.text ?? TAP_CUE.text;
+  if (!(t >= hintAt)) { tapCueState.drawn = false; return; }
+  const since = o.since ?? null;
+  const u = since == null ? 0 : Math.min(1, since / TAP_CUE.out);
+  tapCueState.since = since;
+  if (since != null && u >= 1) { tapCueState.drawn = false; return; }
+  const arrival = Math.min(1, (t - hintAt) / SKIP_TAP.fade);
+  /* Each of the cycle's taps has its own age (s since it landed); a tap
+   * older than `rest` has nothing left to show. */
+  const ages = (o.taps === 1 ? [0] : [0, 1]).map((k) => {
+    const p = (t - k * TAP_CUE.gap) % TAP_CUE.loop;
+    return p < 0 ? p + TAP_CUE.loop : p;
+  });
+  const pulse = Math.max(...ages.map((a) => Math.max(0, 1 - a / TAP_CUE.rest)));
+  const newest = Math.min(...ages);
+
+  ctx.save();
+  ctx.font = `700 15px ${FONT}`;
+  const textW = Math.max(ctx.measureText(text).width, ctx.measureText(TAP_CUE.done).width);
+  const pad = 17, glyphW = 52, h = 58;
+  const w = Math.round(pad * 2 + glyphW + textW);
+  const cy = Math.round((o.cy ?? H - (o.inset ?? 56) - h / 2) - (since == null ? 0 : easeOut3(u) * 12));
+  const x = Math.round((W - w) / 2), y = cy - Math.round(h / 2);
+  const alpha = arrival * (since == null ? 1 : 1 - easeOut3(u));
+  tapCueState.drawn = true; tapCueState.x = x; tapCueState.y = y;
+  tapCueState.w = w; tapCueState.h = h; tapCueState.pulse = pulse;
+  tapCueState.t = t; tapCueState.since = since; tapCueState.alpha = alpha;
+  tapCueState.text = since == null ? text : TAP_CUE.done;
+
+  /* THE PLATE: the same dark glass and hairline gold the game's other panels
+   * use, so the cue reads as part of the HUD and not as a video overlay. */
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, h / 2); else ctx.rect(x, y, w, h);
+  ctx.fillStyle = 'rgba(4,6,9,0.74)';
+  ctx.fill();
+  ctx.strokeStyle = `rgba(233,182,84,${0.22 + 0.10 * pulse})`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  /* THE GLYPH. The ring is the screen ("tap here"); the fingertip dips and
+   * settles; a ripple leaves on each tap, the second one behind the first —
+   * that pair IS the double tap, and it is why the plate can say so little. */
+  const gx = x + pad + glyphW / 2, gy = cy;
+  ctx.strokeStyle = 'rgba(244,241,232,0.20)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(gx, gy, 17, 0, Math.PI * 2);
+  ctx.stroke();
+  for (const a of ages) {
+    if (a >= TAP_CUE.ripple) continue;
+    const k = a / TAP_CUE.ripple;
+    ctx.strokeStyle = `rgba(255,214,140,${(0.55 * Math.pow(1 - k, 1.7)).toFixed(3)})`;
+    ctx.lineWidth = 0.6 + 2.4 * (1 - k);
+    ctx.beginPath();
+    ctx.arc(gx, gy, 10 + 26 * easeOut3(k), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  /* …and on a confirmed skip the two become one burst, outward and gone. */
+  if (since != null) {
+    ctx.strokeStyle = `rgba(255,214,140,${(0.60 * (1 - u)).toFixed(3)})`;
+    ctx.lineWidth = 0.6 + 2.6 * (1 - u);
+    ctx.beginPath();
+    ctx.arc(gx, gy, 17 + 36 * easeOut3(u), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  const ps = newest < TAP_CUE.press ? 0.80 + 0.20 * easeOut3(newest / TAP_CUE.press) : 1;
+  ctx.fillStyle = `rgba(255,226,160,${(0.76 + 0.24 * pulse).toFixed(3)})`;
+  ctx.beginPath();
+  ctx.arc(gx, gy + (1 - ps) * 9, 7.4 * ps, 0, Math.PI * 2);
+  ctx.fill();
+
+  /* THE WORDS, last — as in the reference, where the caption trails the ring.
+   * They warm on each tap, and on the confirm they cross from the instruction
+   * to SKIPPING inside the same slot, so the plate never changes size. */
+  const tx = x + pad + glyphW;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  if (since == null) {
+    const mix = (a, b) => Math.round(a + (b - a) * pulse);
+    ctx.fillStyle = `rgb(${mix(230, 255)},${mix(226, 240)},${mix(212, 202)})`;
+    ctx.fillText(text, tx, cy + 0.5);
+  } else {
+    const cross = Math.min(1, u * 2.2);
+    ctx.fillStyle = `rgba(244,241,232,${(1 - cross).toFixed(3)})`;
+    ctx.fillText(text, tx, cy + 0.5);
+    ctx.fillStyle = `rgba(255,214,140,${cross.toFixed(3)})`;
+    ctx.fillText(TAP_CUE.done, tx, cy + 0.5);
+  }
+  ctx.restore();
+}
+
+/* NO DIMMING DURING THE VIDEOS (request 349). Each caller names its reason
+ * ('video' for the splash and story intro, 'entry' for Level 1's narrated
+ * entry); the screen stays on while ANY reason holds. In the app that is the
+ * native FLAG_KEEP_SCREEN_ON via window.RatelHost.keepScreenOn; in a browser,
+ * the Screen Wake Lock API where it exists. Cheap to call every frame: it only
+ * acts when the answer changes. */
+const awakeReasons = new Set();
+let awakeOn = false, wakeLock = null;
+export function keepAwake(reason, on) {
+  if (on) awakeReasons.add(reason); else awakeReasons.delete(reason);
+  const want = awakeReasons.size > 0;
+  if (want === awakeOn) return;
+  awakeOn = want;
+  try {
+    if (window.RatelHost?.keepScreenOn) { window.RatelHost.keepScreenOn(want); return; }
+  } catch {}
+  if (want) {
+    navigator.wakeLock?.request?.('screen').then((l) => { wakeLock = l; if (!awakeOn) l.release(); }).catch(() => {});
+  } else if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+/* …AND HOLD A WEB AUDIO CONTEXT RUNNING (request 348). A phone can suspend or
+ * interrupt one at any time; every sound on it then stops while <audio> music
+ * plays on. 'suspended' AND 'interrupted' are both resumed (the old recovery
+ * only knew the first, and only on a press), at most twice a second, never while
+ * the page is hidden. Returns true on the frames it asked. */
+export function keepContextAlive(ac, st, dt) {
+  if (!ac || document.visibilityState === 'hidden') return false;
+  if (ac.state === 'running' || ac.state === 'closed') { st.retryT = 0; return false; }
+  // Before the first real gesture the browser refuses anyway; the first press resumes it.
+  if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return false;
+  st.retryT = (st.retryT ?? 0) - dt;
+  if (st.retryT > 0) return false;
+  st.retryT = 0.5;
+  ac.resume().catch(() => {});
+  return true;
+}
+
+export function drawSubtitleScroll(ctx, lines, t, band, o) {
+  const S = SUB_SCROLL, last = lines[lines.length - 1];
+  const fade = 1 - Math.max(0, Math.min(1, (t - last.end - S.linger) / S.fade));
+  if (fade <= 0 || t < lines[0].at - S.lead) return false;
+  let p = 0;                                          // continuous scroll position
+  for (let i = 1; i < lines.length; i++) {
+    const u = Math.max(0, Math.min(1, (t - (lines[i].at - S.lead)) / S.scroll));
+    p += u * u * (3 - 2 * u);
+  }
+  const pad = o.maskPad ?? 4, cy = o.cy ?? band.y + band.h / 2, alpha = (o.alpha ?? 1) * fade;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(band.x, band.y + pad, band.w, band.h - pad);
+  ctx.clip();
+  ctx.font = o.font;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const space = ctx.measureText(' ').width;
+  const now = Math.round(p);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (t < line.at - S.lead) continue;                // never shown before it starts to rise
+    const y = cy + (i - p) * o.lineH;
+    if (y < band.y - o.lineH || y > band.y + band.h + o.lineH) continue;
+    const widths = line.words.map(([w]) => ctx.measureText(w).width);
+    let x = band.x + band.w / 2 - (widths.reduce((a, b) => a + b, 0) + space * (widths.length - 1)) / 2;
+    const said = i < now;                              // scrolled past: dimmed
+    line.words.forEach(([w, at], k) => {
+      const lit = said || t >= at;
+      ctx.globalAlpha = alpha * (said ? 0.5 : lit ? 1 : 0.32);
+      ctx.fillStyle = lit && !said ? '#ffffff' : '#cfd8ea';
+      ctx.fillText(w, x, y);
+      x += widths[k] + space;
+    });
+  }
+  ctx.restore();
+  return true;
+}
 
 /* The Level 01 case file — the last screen before the fight.
  *
@@ -372,68 +719,72 @@ const DOSSIERS = {
   file: 'DOSSIER FILE:  RR-LV01-OMC',
   },
 
-  /* LEVEL 02 — PLACEHOLDER COPY, written from the evidence the player has just
-   * seen and from nothing else. Every line is hedged on purpose: the case
-   * against him is an INVESTIGATION, not a verdict, and how high he sits is the
-   * question the level exists to answer. Replace with the writers’ pass; the
-   * shape is identical to Level 01’s, so nothing else needs to change. */
+  /* LEVEL 02 — OPERATION CLEAN SWEEP (request 399).
+   *
+   * THE WRITTEN BLOCKS ARE THE DEBRIEFING, WORD FOR WORD. `body` and `call` are
+   * the transcript of frontend/audio/level2-debriefing.mp3 (Whisper-small, names
+   * corrected to the intro's on-screen spelling), split at the read's own
+   * pauses: four paragraphs, then its three closing beats in gold — the shape
+   * Level 01's file has. They type on that clip's clock (BRIEF_SCRIPT_L2).
+   * The rest of the card (profile, objectives, chain) is drawn from the same
+   * read, the intro and the brief's mission objective, and invents nothing.
+   *
+   * `stamp: null`: the static pledge plate is not narration, and the left
+   * column needs its 62 px for a read half again as long as Level 01's. */
   2: {
     code: 'LEVEL 02',
-    title: 'THE COMMISSIONER',
+    title: 'OPERATION CLEAN SWEEP',
     place: 'LAGOS, NIGERIA',
-    /* NO PHOTOGRAPH HAS BEEN SUPPLIED for him. The card draws a redacted
-     * plate rather than the previous target's face. */
-    portrait: false,
-    target: 'MASOOD JIBRIL',
-    role: 'COMMISSIONER OF POLICE',
+    /* His photograph: ASSETS/AIG JIMOH.png, supplied with request 403
+     * (frontend/jimoh-dossier.jpg). Keyed, so it can never be Level 01's. */
+    portrait: 'jimoh',
+    target: 'MOSHUN JIMOH',
+    role: 'AIG · SENIOR POLICE OFFICER',
     threat: { label: 'SEVERE', filled: 7, of: 8 },
     body: [
-      'Three items recovered from MC Olodo point to the same senior police official. A recording, a set of witness accounts, and a case file whose timelines do not match.',
-      'None of it is proof. Together it is a pattern, and the pattern runs through one office.',
-      'Commissioner Masood Jibril has not been charged with anything. What he has is access — to the case, to the files, and to whoever sits above him.',
+      "AIG Moshun Jimoh. Senior police officer. Powerful connections. Untouchable reputation.",
+      "Jimoh built his career moving through strategic police commands, eventually gaining influence over the very institutions meant to uphold the law. But intelligence suggests his real power doesn’t come from his badge. It comes from the people behind it. Politicians. Contractors. Street enforcers. Criminal networks.",
+      "According to our sources, Jimoh operates a protection racket disguised as law enforcement. For the right price, investigations disappear, witnesses change their stories, and evidence never makes it to court.",
+      "His name surfaced in the aftermath of the Ahmad Akande murder case, alongside suspicious payments and a trail of compromised evidence.",
     ],
     call: [
-      'Find out what the Commissioner was protecting.',
-      'Follow the case file, not the man.',
-      'Somebody above him gave the order.',
+      "Two men are dead,",
+      "one man stands accused,",
+      "and someone with considerable influence is determined to make sure the truth never comes out.",
     ],
     objectives: [
-      'Reach the Commissioner’s command',
-      'Recover the original case documents',
-      'Identify the intermediary on the recording',
-      'Establish who authorised the interference',
-      'Trace the chain beyond his office',
+      'Break into the police evidence facility',
+      'Fight through Jimoh’s men',
+      'Recover the original case file',
+      'Secure the payment records',
+      'Take the evidence linking the Ahmad Akande murder to Jimoh',
     ],
     profile: [
-      ['NAME', 'Masood Jibril'],
-      ['RANK', 'Commissioner of Police'],
-      ['COMMAND', 'Lagos State Command'],
-      ['LINKED TO', 'MC Olodo’s collection network'],
-      ['EVIDENCE', 'Recording, testimony, case documents'],
-      ['STATUS', 'Under investigation'],
-      ['CHARGES', 'None filed'],
-      ['POSITION', 'Unconfirmed — middleman or higher'],
+      ['NAME', 'Moshun Jimoh'],
+      ['RANK', 'AIG — Senior Police Officer'],
+      ['REPUTATION', 'Untouchable'],
+      ['BACKING', 'Politicians, contractors, street enforcers, criminal networks'],
+      ['OPERATION', 'Protection racket disguised as law enforcement'],
+      ['LINKED TO', 'The Ahmad Akande murder case'],
+      ['EVIDENCE', 'Suspicious payments, compromised evidence'],
+      ['LEAD', 'MC Olodo’s phone'],
       ['AFFILIATION', 'The Cabal — unconfirmed'],
       ['THREAT', 'SEVERE', 'alert'],
     ],
     chainCopy: [
-      'Olodo’s evidence names the Commissioner. Whether he gives the orders or takes them is not yet known.',
-      'Beyond his office the trail runs into The Cabal, and stops.',
+      'Olodo’s phone gave up a name, coded payments and a case reference.',
+      'Beyond Jimoh the trail runs into The Cabal, and stops.',
     ],
     chainNote: 'Every name is a door. Open this one.',
     chain: [
       { top: 'MC OLODO', bottom: 'DEFEATED', tone: 'dim' },
-      /* No portrait flag: the graph would otherwise draw Level 01's case photo
-       * in his node. */
-      { top: 'MASOOD JIBRIL', bottom: 'LEVEL 02', tone: 'gold' },
+      /* His own photograph, by key — a bare `portrait: true` is MC Olodo's. */
+      { top: 'MOSHUN JIMOH', bottom: 'LEVEL 02', tone: 'gold', portrait: 'jimoh' },
       { top: 'UNKNOWN', bottom: 'OPERATOR', tone: 'dim', unknown: true },
       { top: 'THE CABAL', bottom: 'IDENTITY UNKNOWN', tone: 'alert' },
     ],
-    stamp: [
-      'THE FIGHT FOR A BETTER NATION CONTINUES.',
-      'NO MORE LOOT.  NO MORE COVER-UPS.  NO MORE SILENCE.',
-    ],
-    file: 'DOSSIER FILE:  RR-LV02-MJB',
+    stamp: null,
+    file: 'DOSSIER FILE:  RR-LV02-AMJ',
   },
 };
 
@@ -472,6 +823,40 @@ const BRIEF_SCRIPT_SHORT = {
   body: [[0.20, 5.40], [5.80, 9.20], [9.60, 14.60]],
   call: [[15.00, 16.20], [16.50, 17.40], [17.70, 18.60]],
 };
+
+/* LEVEL 02's read (request 399): LEVEL 2 debriefing.mp3, 71.043 s decoded. */
+const BRIEF_VO_L2 = { src: '../frontend/audio/level2-debriefing.mp3', dur: 71.043 };
+
+/* …and where it types. Level 01's blocks each type LINEARLY across their window,
+ * which is right for a read that pauses between blocks. This read runs whole
+ * sentences inside a block, so a linear sweep would show a sentence before it
+ * is said or lag behind it. `marks` keeps Level 01's model — a block, a window,
+ * one reveal fraction — and only makes the fraction piecewise: flattened
+ * [time, fraction] pairs, each word typing across its own spoken duration
+ * (Whisper word stamps, refitted to the clip's voiced runs) and holding through
+ * the pause after it. Times are on the clip's clock, so error is bounded per
+ * word and nothing can type a later sentence while an earlier one is spoken.
+ * Regenerate with _chromakey/req399/build.js + emit.js. */
+const BRIEF_SCRIPT_L2 = {
+  body: [[0.2, 9.18], [10.14, 34.44], [35.28, 50.54], [51.38, 60.32]],
+  call: [[60.88, 61.84], [62.4, 63.82], [64.9, 70.74]],
+  marks: {
+  body: [
+    [0.2,0,0.42,0.0349,1.68,0.0465,2.12,0.1163,2.12,0.1279,2.57,0.1977,3.4,0.2093,3.64,0.2791,3.64,0.2907,4.08,0.3605,4.08,0.3721,4.68,0.4651,5.5,0.4767,5.96,0.5698,5.96,0.5814,6.86,0.7209,7.6,0.7326,8.34,0.8605,8.34,0.8721,9.16,1],
+    [10.14,0,10.4,0.0159,10.4,0.0191,10.64,0.035,10.64,0.0382,10.87,0.0478,10.92,0.051,11.32,0.0701,11.32,0.0732,11.7,0.0924,11.7,0.0955,12.14,0.1178,12.14,0.121,12.66,0.1497,12.66,0.1529,13.11,0.172,13.2,0.1752,13.88,0.2038,14.54,0.207,14.86,0.2389,14.86,0.242,15.38,0.2643,15.42,0.2675,16.09,0.2962,16.1,0.2994,16.4,0.3121,16.42,0.3153,16.6,0.3248,16.6,0.328,16.9,0.3408,16.92,0.3439,17.74,0.3822,17.74,0.3854,18.11,0.4013,18.12,0.4045,18.27,0.4108,18.34,0.414,18.72,0.4331,18.72,0.4363,18.95,0.4459,18.98,0.449,19.28,0.4618,19.72,0.465,19.82,0.4745,19.82,0.4777,20.42,0.5159,20.42,0.5191,21.02,0.5446,21.08,0.5478,21.3,0.5573,21.78,0.5605,22.08,0.5732,22.12,0.5764,22.5,0.5924,22.52,0.5955,22.92,0.6178,22.92,0.621,23.18,0.6338,23.18,0.6369,23.42,0.6497,23.42,0.6529,23.64,0.6624,23.64,0.6656,24.09,0.6847,25.1,0.6879,25.14,0.6943,25.1,0.6975,25.42,0.7134,25.42,0.7166,25.72,0.7293,25.78,0.7325,25.96,0.742,25.96,0.7452,26.32,0.7643,26.32,0.7675,26.77,0.7866,26.84,0.7898,27.07,0.7994,28.04,0.8025,28.94,0.8408,29.72,0.8439,30.62,0.8822,31.32,0.8854,31.77,0.9045,31.86,0.9076,32.61,0.9395,33.18,0.9427,33.72,0.9682,33.72,0.9713,34.39,1],
+    [35.28,0,35.62,0.0435,35.62,0.0483,35.77,0.058,35.94,0.0628,36.16,0.0773,36.16,0.0821,36.76,0.1208,37.6,0.1256,37.88,0.1498,37.88,0.1546,38.48,0.1932,38.5,0.1981,38.62,0.2029,38.78,0.2077,39.26,0.256,39.26,0.2609,39.71,0.2899,39.76,0.2947,40.43,0.3382,40.46,0.343,40.61,0.3527,40.88,0.3575,41.11,0.372,41.18,0.3768,41.8,0.4348,42.68,0.4396,42.78,0.4541,42.78,0.4589,42.9,0.4734,42.9,0.4783,43.08,0.5024,43.08,0.5072,43.53,0.5362,44.22,0.5411,44.84,0.6087,44.84,0.6135,45.59,0.6618,46.36,0.6667,46.68,0.7101,46.68,0.715,47.13,0.744,47.2,0.7488,47.5,0.7729,47.5,0.7778,48.1,0.8164,48.66,0.8213,48.8,0.8357,48.8,0.8406,49.22,0.8792,49.22,0.8841,49.58,0.9082,49.58,0.913,49.86,0.9372,49.86,0.942,50.01,0.9517,50.1,0.9565,50.25,0.9662,50.3,0.971,50.54,1],
+    [51.38,0,51.52,0.0224,51.52,0.0299,51.8,0.0597,51.8,0.0672,52.34,0.1269,52.34,0.1343,52.49,0.1493,52.7,0.1567,52.84,0.1791,52.84,0.1866,53.38,0.2537,53.38,0.2612,53.53,0.2761,53.76,0.2836,53.9,0.306,53.9,0.3134,54.24,0.3507,54.24,0.3582,54.69,0.403,54.78,0.4104,55,0.4552,55,0.4627,55.38,0.5,55.92,0.5075,56.52,0.5746,56.52,0.5821,57.12,0.6567,57.12,0.6642,57.72,0.7239,57.8,0.7313,58.02,0.7537,58.42,0.7612,58.54,0.7687,58.58,0.7761,58.8,0.8134,58.8,0.8209,58.95,0.8358,59.12,0.8433,59.62,0.9254,59.62,0.9328,60.29,1],
+  ],
+  call: [
+    [60.88,0,61.06,0.1765,61.06,0.2353,61.28,0.4118,61.28,0.4706,61.51,0.6471,61.52,0.7059,61.84,1],
+    [62.4,0,62.58,0.1304,62.58,0.1739,62.8,0.3043,62.86,0.3478,63.31,0.6087,63.36,0.6522,63.82,1],
+    [64.9,0,65.04,0.0323,65.04,0.043,65.5,0.1183,65.5,0.129,65.8,0.172,65.82,0.1828,66.46,0.3118,66.46,0.3226,67.13,0.4194,67.3,0.4301,67.45,0.4516,67.82,0.4624,68.24,0.5699,68.24,0.5806,68.39,0.6022,68.62,0.6129,68.8,0.6559,68.8,0.6667,69.06,0.7097,69.06,0.7204,69.28,0.7527,69.3,0.7634,69.54,0.8172,69.54,0.828,69.92,0.8817,69.92,0.8925,70.28,0.9462,70.28,0.957,70.58,1],
+  ],
+  },
+};
+/* Seconds the finished read holds on the page before Level 02 moves on by
+ * itself (START MISSION still leaves at any time). */
+const BRIEF_L2_HOLD = 2.0;
 
 /* The target card has its own short read: the threat starts at nothing and
  * climbs to HIGH rather than appearing pre-filled. Kept on the narration clock
@@ -565,6 +950,19 @@ export const HOST = {
  * rather than as a UA test scattered through the file — the splash and intro
  * twins and the voice-over path all hang off it. */
 const IS_ANDROID = /Android/.test(navigator.userAgent);
+const MOBILE_CONTROL_ART = Object.freeze({
+  stick: '../frontend/ui/controls/stick.png',
+  stickThumb: '../frontend/ui/controls/stick-thumb.png',
+  jump: '../frontend/ui/controls/jump.png',
+  jab: '../frontend/ui/controls/jab.png',
+  kick: '../frontend/ui/controls/kick.png',
+  block: '../frontend/ui/controls/block.png',
+  grab: '../frontend/ui/controls/grab.png',
+  pause: '../frontend/ui/controls/pause.png',
+});
+const MOBILE_CONTROL_LABELS = Object.freeze([
+  'MOVE', 'JUMP', 'JAB', 'KICK', 'BLOCK', 'GRAB', 'PAUSE',
+]);
 const lerp = (a, b, t) => a + (b - a) * t;
 const easeOut = (v) => 1 - Math.pow(1 - clamp(v, 0, 1), 3);
 const easeInOut = (v) => (v < 0.5 ? 2 * v * v : 1 - Math.pow(-2 * v + 2, 2) / 2);
@@ -636,7 +1034,7 @@ const TOUCH_ICON = {
  * uses the same gate (coarse pointer + real touch points) to decide whether it
  * is in charge at all. Read live rather than cached so a harness can spoof it
  * before the first frame. */
-const isTouchUI = () => {
+export const isTouchUI = () => {
   try {
     return navigator.maxTouchPoints > 0
       && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
@@ -876,8 +1274,27 @@ export function createFrontEnd({
   worldError = () => null,
 } = {}) {
   const settings = loadSettings();
-  const assets = {};
+  const assets = { mobileControls: {} };
+  /* CASE PHOTOGRAPHS, by key. A dossier or chain node names its man; `true` is
+   * the original flag and means MC Olodo, `false` (or a photo not in yet) gets
+   * the NO IMAGE ON FILE plate. `anchorY` is where a cover-fit crop takes its
+   * slack from (0 = keep the top); `face` is the square the round chain node
+   * shows, in the image's own pixels. Jimoh's is a half-length portrait, so the
+   * panel keeps his beret and the node is cut to his face (measured on the
+   * 768x960 jimoh-dossier.jpg). */
+  const PORTRAITS = {
+    olodo: { asset: 'olodo', anchorY: 0.5,
+      face: (a) => { const side = Math.min(a.width, a.height); return [(a.width - side) / 2, Math.max(0, (a.height - side) * 0.25), side]; } },
+    jimoh: { asset: 'jimoh', anchorY: 0.04,
+      face: (a) => { const k = a.width / 768; return [208 * k, 40 * k, 330 * k]; } },
+  };
+  function portraitLook(key) {
+    if (key === false || key == null) return null;
+    const def = PORTRAITS[key === true ? 'olodo' : key];
+    return def ? { ...def, img: assets[def.asset] || null } : null;
+  }
   const hitboxes = [];
+  let controlsGuideFrame = [];
   /* Per-widget animation state, keyed by a stable id. Kept across frames so
    * focus/press eases instead of snapping, and cheap enough to never clear. */
   const fx = new Map();
@@ -925,6 +1342,9 @@ export function createFrontEnd({
   let handoffT = 0;
 
   let ambience = null;
+  let ambienceWanted = false;          // set only by setAmbiencePlaying
+  const ambienceLife = {};             // keepMediaAlive's state for it
+  const sfxCtxLife = {};               // keepContextAlive's state for sfx.ac
   let voice = null;
   let gameplayStartVo = null;
   let gameplayStartVoStarted = false;
@@ -963,6 +1383,11 @@ export function createFrontEnd({
    * are deliberate presses, not a thumb landing on glass. */
   const INTRO_TAP_SKIP_AT = 3.0;
   const introTapSkippable = () => introSeen && introFallbackT >= INTRO_TAP_SKIP_AT;
+  /* Request 349 replaced that single tap with a DOUBLE tap on every viewing
+   * (SKIP_TAP); `introTapSkippable` is kept only for the keyboard hint's fade. */
+  const videoTap = makeDoubleTap();
+  // Seconds the studio clip has been rolling (0 while the card's lead runs).
+  const splashVideoT = () => Math.max(0, phaseT - SPLASH_CARD_LEAD);
   let introLoadProgress = 0;
   /* Set when the intro video fails or takes too long to produce its first
    * frame: the story screen must never wedge on a media element, so the flow
@@ -991,8 +1416,59 @@ export function createFrontEnd({
    * every other level's case file runs on the dt clock (see update()) and its
    * own faster cue table — Level 01's cues are measured against a 45.9 s clip
    * and would type Level 02's shorter copy over three quarters of a minute. */
-  const briefVoFor = (lvl) => (lvl === 1 ? BRIEF_VO : null);
-  const briefScript = () => (currentLevel === 1 ? BRIEF_SCRIPT : BRIEF_SCRIPT_SHORT);
+  const briefVoFor = (lvl) => (lvl === 1 ? BRIEF_VO : lvl === 2 ? BRIEF_VO_L2 : null);
+  const briefScript = () => (currentLevel === 1 ? BRIEF_SCRIPT : currentLevel === 2 ? BRIEF_SCRIPT_L2 : BRIEF_SCRIPT_SHORT);
+  /* LEVEL 02'S SEQUENCE (request 399) moves between its screens on the shared
+   * cinematic bars (src/bars.js) — one cut object, so two can never run at once
+   * and each callback fires once. `barFrame` is the aftermath frame the first
+   * cut closes over (game.js drew it, so it is captured, not redrawn). */
+  const barCut = createBarCut();
+  let barFrame = null;
+  /* A video or a read held back until the bars have fully opened, so neither
+   * starts — nor puts a subtitle on screen — behind a bar. */
+  let introDeferred = false;
+  let briefDeferred = false;
+  let introClosing = false;     // Level 02's intro is on its way out under the bars
+  let briefDoneT = 0;           // how long Level 02's finished read has held the page
+  const isL2 = () => currentLevel === 2;
+  /* Each level's narration clips. Level 02's are built on first use, not at
+   * boot — a player who never reaches it never decodes them. */
+  const levelClips = {};
+  function clipsFor(lvl) {
+    if (lvl !== 2) return levelClips[1];
+    if (!levelClips[2]) {
+      const brief = makeVoice(new URL(BRIEF_VO_L2.src, import.meta.url));
+      brief.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(brief.duration) && brief.duration > 0) BRIEF_VO_L2.dur = brief.duration;
+      });
+      levelClips[2] = { brief, entry: makeVoice(new URL('../sounds/voices/voice-gameplay-start-level2.mp3', import.meta.url)) };
+    }
+    return levelClips[2];
+  }
+  /* Point the case file's read and the entry's line at this level's clips. The
+   * old level's are stopped first, so a Level 1 clip can never keep talking —
+   * or keep driving a clock — under Level 2. */
+  function selectLevelAudio(lvl) {
+    const c = clipsFor(lvl);
+    if (!c) return;
+    /* Stopped directly, NOT through stopBriefing: its fade reads the shared
+     * `briefVo` pointer, which is about to point at the other level's clip. */
+    if (briefVo && briefVo !== c.brief) {
+      if (briefFade) { clearInterval(briefFade); briefFade = null; }
+      briefVo.pause();
+      try { briefVo.currentTime = 0; } catch {}
+      briefStarted = false;
+    }
+    if (gameplayStartVo && gameplayStartVo !== c.entry) { gameplayStartVo.pause(); try { gameplayStartVo.currentTime = 0; } catch {} }
+    briefVo = c.brief;
+    gameplayStartVo = c.entry;
+    gameplayStartVoStarted = false;
+    applyAudioSettings();
+  }
+  /* The intro's separate narration clip: Level 01's cut is silent picture under
+   * level1-voiceover.mp3; Level 02's video speaks for itself. */
+  const introVoice = () => (isL2() ? null : voice);
+  const introSubs = () => (isL2() ? INTRO_SUBS_L2 : INTRO_SUBS);
 
   /* ------------------------------------------------------------- surfaces */
 
@@ -1548,6 +2024,7 @@ export function createFrontEnd({
      * still ramping down is not yanked back to full by a settings change. */
     if (briefVo && !briefFade) briefVo.volume = clamp(settings.master * settings.voice, 0, 1);
     if (gameplayStartVo) gameplayStartVo.volume = clamp(settings.master * settings.voice, 0, 1);
+    if (introVideo && isL2() && !introClosing) introVideo.volume = clamp(settings.master * settings.voice, 0, 1);
   }
 
   /* ------------------------------------------------------ case-file voice */
@@ -1608,6 +2085,14 @@ export function createFrontEnd({
 
   /* How far through its own window a written block has been typed, 0..1. */
   function briefReveal(block, i) {
+    const m = briefScript().marks?.[block]?.[i];
+    if (m) {
+      if (briefT <= m[0]) return 0;
+      for (let k = 2; k < m.length; k += 2) {
+        if (briefT < m[k]) return m[k - 1] + (m[k + 1] - m[k - 1]) * (briefT - m[k - 2]) / Math.max(0.001, m[k] - m[k - 2]);
+      }
+      return 1;
+    }
     const cue = briefScript()[block]?.[i];
     if (!cue) return 1;
     return clamp((briefT - cue[0]) / Math.max(0.001, cue[1] - cue[0]), 0, 1);
@@ -1626,13 +2111,16 @@ export function createFrontEnd({
   function unlockAudio() {
     audioUnlocked = true;
     if (sfx.ac && sfx.ac.state === 'suspended') sfx.ac.resume().catch(() => {});
-    if (!ambience || phase === 'splash') return;
+    // Only where the bed belongs: a press during the story intro must not
+    // start the menu music under the narration (request 347).
+    if (!ambience || phase === 'splash' || !ambienceWanted) return;
     const p = ambience.play();
     if (p?.catch) p.catch(() => {});
   }
 
   function setAmbiencePlaying(wanted = true) {
     if (!ambience) return;
+    ambienceWanted = wanted;           // what keepMediaAlive holds it to every frame
     applyAudioSettings();
     if (wanted) {
       /* Attempt from the title itself. Hosts that treat LAUNCH as the user
@@ -1855,6 +2343,20 @@ export function createFrontEnd({
     if (p?.catch) p.catch(() => { gameplayStartVoStarted = false; });
   }
 
+  /* The skip's end of the line (request 349): a short fade, not a cut, so the
+   * last word does not click off. Leaves `gameplayStartVoStarted` set: the
+   * entry has had its line and must not start it again. */
+  function endGameplayStartVoice() {
+    if (!gameplayStartVo || gameplayStartVo.paused) return;
+    const v = gameplayStartVo, start = v.volume;
+    let n = 0;
+    const fade = setInterval(() => {
+      n++;
+      v.volume = start * Math.max(0, 1 - n / 6);
+      if (n >= 6) { clearInterval(fade); v.pause(); applyAudioSettings(); }
+    }, 30);
+  }
+
   /* ---------------------------------------------------------------- state */
 
   function go(next, opts = {}) {
@@ -1893,24 +2395,39 @@ export function createFrontEnd({
       gameplayStartVoStarted = false;
       onMainMenu?.();
     }
-    if (next === 'loading') { introLoadProgress = 0; preloadIntro(); }
+    /* A run that has already shown the cinematic only passes through here (the
+     * case file's Back -> Forward), and its video has been released: no reload. */
+    if (next === 'loading') {
+      if (introPlayed) introLoadProgress = 1;
+      else { introLoadProgress = 0; preloadIntro(); }
+    }
     if (next === 'intro') beginIntro();
     /* The case file's read starts with the screen and stops with it. Written as
      * enter/leave rather than hung off the destination, because the ways OUT are
      * not one place: Cross goes to gameplay, O goes back to the briefing, and a
      * harness can force the screen from anywhere. */
-    if (next === 'levelTitle') { setAmbiencePlaying(true); beginBriefing(); }
+    if (next === 'levelTitle') {
+      setAmbiencePlaying(true);
+      briefDoneT = 0;
+      /* Level 02's read starts when the bars have fully opened (update). */
+      if (isL2() && barCut.active) { briefDeferred = true; briefT = 0; briefStarted = false; }
+      else { briefDeferred = false; beginBriefing(); }
+    }
     else if (prevPhase === 'levelTitle') stopBriefing();
     if (next === 'gameplay') {
+      /* Whatever cut brought the player here is over: the fight owns the frame,
+       * and a bar left mid-move must not reappear over a later menu. */
+      barCut.reset();
+      barFrame = null;
       const transitionFrame = captureTransitionFrame();
       setAmbiencePlaying(false);
       if (voice) { voice.pause(); voice.currentTime = 0; }
       bgVideo.pause();                 // pause, never reset — resumes where it left off
       const gameplayStartDuration = Number.isFinite(gameplayStartVo?.duration) && gameplayStartVo.duration > 0
-        ? gameplayStartVo.duration : 18.779;
+        ? gameplayStartVo.duration : (isL2() ? 26.457 : 18.779);   // decoded lengths of the two lines
       releaseCanvas();
       onGameplayStart?.({
-        difficulty, settings: { ...settings }, transitionFrame, gameplayStartDuration,
+        difficulty, settings: { ...settings }, transitionFrame, gameplayStartDuration, level: currentLevel,
         /* HANDED OVER, NOT PLAYED. The line used to start on the Cross press,
          * which now lands 1.45 s before there is anything to look at — the
          * screen is black and then a gate opens, and the brief puts the
@@ -1919,6 +2436,16 @@ export function createFrontEnd({
          * has been activated since the title screen and the menu has been
          * playing audio ever since. */
         playIntroVoice: beginGameplayStartVoice,
+        stopIntroVoice: endGameplayStartVoice,   // a double-tap skip of the entry (request 349)
+        /* The line's own clock for its subtitles (request 357), or null when it is
+         * not really sounding — the same gate the story intro's subtitles use
+         * (voiceSounding): a VoiceClip on a suspended context reports a frozen time. */
+        introVoiceTime: () => {
+          const v = gameplayStartVo;
+          if (!v || !gameplayStartVoStarted || v.paused) return null;
+          if (v instanceof VoiceClip && sfx.ac?.state !== 'running') return null;
+          return v.currentTime;
+        },
       });
     }
   }
@@ -1928,6 +2455,25 @@ export function createFrontEnd({
    * so a slow connection costs a short hold at the handover instead of a wait
    * in front of the studio card. */
   function enterGameplay() {
+    /* LEVEL 02 (request 399): the bars close over the case file — its read
+     * fading under them — and the fight's entry begins on the black they leave,
+     * which is exactly where game.js's own entry starts (full black, then its
+     * half gate). START MISSION and the end of the read both come here; the
+     * cut's latch makes the second a no-op. */
+    if (isL2() && phase === 'levelTitle' && !pendingGameplay) {
+      if (barCut.active) return;
+      stopBriefing();
+      briefDeferred = false;
+      barCut.start(() => {
+        enterGameplayNow();
+        if (phase === 'gameplay') barCut.reset();   // game.js owns the frame now
+      }, { waitFor: () => isWorldReady(), maxHold: 1.5 });
+      return;
+    }
+    enterGameplayNow();
+  }
+
+  function enterGameplayNow() {
     /* Before the branch, not inside it: on the slow path this latches the
      * handover and draws the hold card WITHOUT going through go(), so a stop
      * hung off the phase change would leave the briefing talking over it. */
@@ -1992,6 +2538,7 @@ export function createFrontEnd({
     if (phase === 'menu') return MAIN_ITEMS;
     if (phase === 'difficulty') return ['EASY', 'NORMAL', 'HARD', 'ARCADE'].map((label) => ({ label }));
     if (phase === 'levelTitle') return BRIEF_ACTIONS.map((item) => ({ label: item.label }));
+    if (phase === 'levelSelect') return levelSelectItems();
     if (phase === 'options' && !optionPage) {
       return ['VIDEO', 'AUDIO', 'CONTROLS', 'GAMEPLAY', 'ACCESSIBILITY', 'LANGUAGE', 'RESET SETTINGS']
         .map((label) => ({ label }));
@@ -2118,12 +2665,23 @@ export function createFrontEnd({
     if (phase === 'difficulty') {
       navForward();
       difficulty = ['EASY', 'NORMAL', 'HARD', 'ARCADE'][selection];
+      if (currentLevel !== 1) selectLevel(1);       // START GAME is Level 01
       go('character');
       return;
     }
     if (phase === 'character') { navForward(); go('briefing'); return; }
     if (phase === 'briefing') { navForward(); go('loading'); return; }
-    if (phase === 'levelSelect') { navForward(); go('briefing'); return; }
+    if (phase === 'levelSelect') {
+      const lvl = levelSelectItems()[selection]?.level ?? 1;
+      pressPulse(`lvl:${selection}`);
+      navForward();
+      /* 02 goes through the same door the post-mission "PLAY LEVEL 02" does:
+       * its cinematic, its debriefing, its entry. 01 keeps its setup trail. */
+      if (lvl === 2) { startLevel(2); return; }
+      if (currentLevel !== 1) selectLevel(1);
+      go('briefing');
+      return;
+    }
     if (phase === 'characters') { navForward(); go('character'); return; }
     if (phase === 'options') {
       if (optionPage) { adjustOption(1); return; }
@@ -2320,7 +2878,7 @@ export function createFrontEnd({
      *
      * Pad edges are advanced rather than held for the same reason: a button
      * already down when the gate opens must not read as a fresh press. */
-    if (phase === 'title' && !titleReady()) {
+    if ((phase === 'title' && !titleReady()) || barCut.active || introDeferred) {
       dropLatches();
       for (const k of Object.keys(padPrev)) padPrev[k] = pad[k];
       repeatV.dir = 0; repeatH.dir = 0;
@@ -2411,13 +2969,21 @@ export function createFrontEnd({
      * under a gizmo you are dragging — is how a positioning session ends up
      * launching a level. */
     if (darkiTool.on) { darkiToolPointerDown(pointerPos(e)); return; }
+    if (barCut.active || introDeferred) return;      // a Level 02 cut is moving (request 399)
     /* THE CINEMATIC HAS NO BUTTONS, so a tap on it would otherwise hit-test
      * against nothing and be swallowed. The gesture layer is deliberately off
      * during `intro` (a stray swipe there used to skip the clip), which means
      * real touches land here on the canvas — so this is where the tap is
      * answered. See introTapSkippable for why it is not simply always on. */
+    /* …and A SINGLE TAP NEVER SKIPS (request 349): it is usually a thumb waking
+     * a dimmed screen. Two taps do, from the moment the hint says so. The studio
+     * clip is answered the same way; it used to have no tap skip at all. */
     if (phase === 'intro') {
-      if (introTapSkippable()) { navForward(); finishIntro(); }
+      if (introFallbackT >= SKIP_TAP.hintAt && videoTap.tap()) { navForward(); finishIntro(); }
+      return;
+    }
+    if (phase === 'splash') {
+      if (splashVideoT() >= SKIP_TAP.hintAt && videoTap.tap()) { navForward(); go('title'); }
       return;
     }
     if (inputLock > 0 || pressGate.action) return;
@@ -3922,6 +4488,11 @@ export function createFrontEnd({
      * rings something real rather than firing into empty space. The box is the
      * whole screen now: with a full-bleed clip there is no wordmark to ring. */
     hitboxes.push({ x: 0, y: 0, w: W, h: H, index: 0, id: 'splash:skip' });
+    // Request 349: taps are answered in onPointerDown as a DOUBLE tap; say so 3 s into the clip.
+    if (live && isTouchUI()) {
+      drawSkipHint(ctx, W, splashVideoT(), 34, true);
+      drawTapCue(ctx, W, H, splashVideoT(), { inset: 40 });   // request 353: lower-centre
+    }
   }
 
   /* --------------------------------------------------------- title screen
@@ -4134,7 +4705,15 @@ export function createFrontEnd({
      * This reads `titlePromptAt()`; it does not work it out a second time. */
     const promptFrom = titlePromptAt();
     const pK = easeOut((phaseT - promptFrom) / TITLE.promptIn);
-    if (pK > 0) {
+    /* ON A PHONE, THE ANIMATED TAP CUE (request 357) — the same code-drawn element
+     * the skippable sections carry, on the prompt's row, beating ONCE per cycle
+     * because one tap enters. A controller glyph means nothing under a thumb. */
+    if (isTouchUI()) {
+      // 10 px above the text prompt's row: the 58 px plate would otherwise sit on the loading rule
+      drawTapCue(ctx, W, H, phaseT, { hintAt: promptFrom, text: 'TAP TO ENTER', taps: 1, cy: TITLE.promptY - 10 });
+      if (tapCueState.drawn)
+        hitboxes.push({ x: tapCueState.x, y: tapCueState.y, w: tapCueState.w, h: tapCueState.h, index: 0, id: 'title:enter' });
+    } else if (pK > 0) {
       const breathe = 0.80 + Math.sin(clock * 2.0) * 0.20;
       const py = TITLE.promptY;
       ctx.save();
@@ -4194,6 +4773,194 @@ export function createFrontEnd({
     drawGrain(0.7);
   }
 
+  /* ---------------------------------------------------- the gesture guide --
+   * A NEW PLAYER'S FIRST LOOK AT THE MENU ON A PHONE (request 366): the supplied
+   * Lottie (frontend/ui/lottie/gesture-control.json, 83 f @ 30 fps) of a thumb
+   * landing, swiping down, tapping, swiping back up, then a tap burst — i.e.
+   * "swipe to browse, tap to select", the menu's two touch gestures.
+   *
+   * WHERE: in the open street in front of Darki, on the RIGHT half — which is
+   * where the gesture layer (touch.js) actually scrolls on a vertical swipe and
+   * selects on a tap. Shown on the left it would teach a swipe that does nothing.
+   * WHEN: touch screens only, once per session, 0.9 s after the menu settles
+   * (after its own entrance). Two loops, then it dissolves. Any touch or key
+   * while it plays dismisses it at once: the player has found the controls.
+   *
+   * The player is lottie-web's canvas-only "light" build, vendored next to the
+   * file and loaded on demand — never by the boot (see the boot-must-not-await
+   * rule): a guide that cannot load simply never appears. It is driven by the
+   * menu's own clock (goToAndStop per frame), so it pauses and tests like
+   * everything else here. */
+  const GESTURE_GUIDE = {
+    src: '../frontend/ui/lottie/gesture-control.json',
+    lib: '../frontend/ui/lottie/lottie_light_canvas.min.js',
+    fps: 30, frames: 83,
+    speed: 0.85,                             // a touch slower than authored (request 367)
+    startDelay: 0.9, loops: 3,
+    fadeIn: 0.35, fadeOut: 0.6, dismiss: 0.3,
+    h: 360,                                  // drawn size of the square 1080 comp (pill ~4.5 mm on a 6.5" phone)
+    /* The comp's ink, measured over every frame (_chromakey/req366/_preview.js):
+     * x 138-612, y 24-1054 of 1080. Placed by its ink centre, not the comp's. */
+    inkCx: 375 / 1080, inkCy: 539 / 1080,
+    cy: 400,                                 // under the profile card, above the hint bar
+    seen: 'ror.gestureGuide',                // sessionStorage: once per session
+    /* The caption follows the motion: the swipes, then the closing tap. */
+    captions: [
+      { text: 'SWIPE TO BROWSE', from: 3, to: 60 },
+      { text: 'TAP TO SELECT', from: 64, to: 83 },
+    ],
+    /* DRESSED LIKE THE MENU'S FOCUSED BUTTON BORDER (request 367): its 1.35 px
+     * outline width and its breathing glow (see button()) — in PURE WHITE at full
+     * opacity (request 368), the glow white with it so it cannot tint the strokes.
+     * The fat stroke that IS the pressed fingertip keeps its size. Comp units ->
+     * drawn px: layer scale 0.686 x (h / 1080), so 1.35 px = 5.9 units at h 360. */
+    ink: '255,255,255', inkAlpha: 1, line: 1.35, glow: '255,255,255',
+  };
+  const guideLoopDur = () => GESTURE_GUIDE.frames / (GESTURE_GUIDE.fps * GESTURE_GUIDE.speed);
+  function restyleGestureGuide(data) {
+    const G = GESTURE_GUIDE, [r, g, b] = G.ink.split(',').map((v) => +v / 255);
+    const width = G.line / (0.686 * G.h / 1080);
+    const walk = (items) => {
+      for (const it of items || []) {
+        if (it.ty === 'gr') walk(it.it);
+        if (it.ty !== 'st') continue;
+        it.c = { a: 0, k: [r, g, b, 1] };
+        it.o = { a: 0, k: G.inkAlpha * 100 };
+        // outline widths only (0 < w < 20 units). The 80-unit press stroke is the
+        // fingertip, and a width of 0 is how the file HIDES a shape — both kept.
+        const thin = (v) => (v > 0 && v < 20 ? width : v);
+        if (it.w.a) for (const k of it.w.k) { if (k.s) k.s = k.s.map(thin); if (k.e) k.e = k.e.map(thin); }
+        else it.w.k = thin(it.w.k);
+      }
+    };
+    for (const l of data.layers || []) walk(l.shapes);
+    return data;
+  }
+  const guide = { st: 'off', t: 0, outT: 0, outDur: 0, outFrom: 1, alpha: 0, frame: 0,
+    anim: null, cnv: null, cctx: null, px: 0, drawnFrame: -1, box: null, caption: '' };
+  try { if (sessionStorage.getItem(GESTURE_GUIDE.seen)) guide.st = 'done'; } catch {}
+
+  function loadGestureGuide() {
+    guide.st = 'loading';
+    const lib = window.lottie ? Promise.resolve() : new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = new URL(GESTURE_GUIDE.lib, import.meta.url).href;
+      s.onload = resolve; s.onerror = () => reject(new Error('lottie player failed to load'));
+      document.head.appendChild(s);
+    });
+    const data = fetch(new URL(GESTURE_GUIDE.src, import.meta.url)).then((r) => {
+      if (!r.ok) throw new Error('gesture guide ' + r.status);
+      return r.json();
+    }).then(restyleGestureGuide);
+    Promise.all([lib, data]).then(([, animationData]) => {
+      guide.cnv = document.createElement('canvas');
+      guide.cctx = guide.cnv.getContext('2d');
+      sizeGuideCanvas();
+      guide.anim = window.lottie.loadAnimation({
+        renderer: 'canvas', loop: false, autoplay: false, animationData,
+        rendererSettings: { context: guide.cctx, clearCanvas: true },
+      });
+      guide.st = 'ready';
+    }).catch((err) => {
+      console.warn('[ror] gesture guide unavailable:', err.message);
+      guide.st = 'done';
+    });
+  }
+  // Backing store at the canvas's own resolution, so the strokes stay sharp on a phone.
+  function sizeGuideCanvas() {
+    const px = Math.round(GESTURE_GUIDE.h * renderScale);
+    if (!guide.cnv || guide.px === px) return;
+    guide.px = guide.cnv.width = guide.cnv.height = px;
+    guide.drawnFrame = -1;
+    guide.anim?.resize?.();
+  }
+  function endGestureGuide() {
+    guide.st = 'done';
+    guide.anim?.destroy?.();
+    guide.anim = null; guide.cnv = null; guide.cctx = null;
+  }
+  function dismissGestureGuide() {
+    if (guide.st !== 'play') return;
+    guide.st = 'out'; guide.outT = 0; guide.outDur = GESTURE_GUIDE.dismiss; guide.outFrom = guide.alpha;
+  }
+  // Any touch or key while it plays: they have found the controls.
+  window.addEventListener('pointerdown', dismissGestureGuide, true);
+  window.addEventListener('keydown', dismissGestureGuide, true);
+
+  function updateGestureGuide(dt) {
+    const G = GESTURE_GUIDE;
+    if (guide.st === 'done') return;
+    if (guide.st === 'off') { if (phase === 'menu' && isTouchUI()) loadGestureGuide(); return; }
+    if (guide.st === 'loading') return;
+    if (guide.st === 'ready') {
+      if (phase === 'menu' && phaseT >= G.startDelay) {
+        guide.st = 'play'; guide.t = 0;
+        try { sessionStorage.setItem(G.seen, '1'); } catch {}
+      }
+      return;
+    }
+    // Playing or dissolving: leaving the menu ends it outright (it has been seen).
+    if (phase !== 'menu') { endGestureGuide(); return; }
+    const total = guideLoopDur() * G.loops;
+    guide.t += dt;
+    if (guide.st === 'play') {
+      guide.alpha = Math.min(1, guide.t / G.fadeIn);
+      if (guide.t >= total) { guide.st = 'out'; guide.outT = 0; guide.outDur = G.fadeOut; guide.outFrom = guide.alpha; }
+    } else {
+      guide.outT += dt;
+      guide.alpha = guide.outFrom * Math.max(0, 1 - guide.outT / guide.outDur);
+      if (guide.outT >= guide.outDur) { endGestureGuide(); return; }
+    }
+    // The second loop ends on the burst having faded: hold that last frame through the dissolve.
+    guide.frame = guide.t >= total ? G.frames - 1 : Math.floor(guide.t * G.fps * G.speed) % G.frames;
+  }
+
+  function drawGestureGuide() {
+    const G = GESTURE_GUIDE;
+    if ((guide.st !== 'play' && guide.st !== 'out') || !guide.anim || guide.alpha <= 0) { guide.box = null; return; }
+    sizeGuideCanvas();
+    if (guide.drawnFrame !== guide.frame) { guide.anim.goToAndStop(guide.frame, true); guide.drawnFrame = guide.frame; }
+    /* In front of him: centred between the bat end of his figure and the right edge. */
+    const front = L.darki.cx + 190, gx = (front + (W - 24)) / 2;
+    const s = G.h, x = Math.round(gx - G.inkCx * s), y = Math.round(G.cy - G.inkCy * s);
+    guide.box = { x, y, w: s, h: s };
+    ctx.save();
+    ctx.globalAlpha = guide.alpha;
+    // A soft pool of shade under the strokes: the shopfronts behind are busy and bright.
+    const g = ctx.createRadialGradient(gx, G.cy + 20, 0, gx, G.cy + 20, 215);
+    g.addColorStop(0, 'rgba(3,5,8,0.70)');
+    g.addColorStop(0.6, 'rgba(3,5,8,0.30)');
+    g.addColorStop(1, 'rgba(3,5,8,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(gx - 220, G.cy - 210, 440, 460);
+    // The focused button's glow, breathing at its rate (button(): 0.86 ± 0.14 at 2.1 rad/s).
+    const breathe = 0.86 + Math.sin(clock * 2.1) * 0.14;
+    ctx.save();
+    ctx.shadowColor = `rgba(${G.glow},${(0.35 * breathe).toFixed(3)})`;   // white blooms harder than orange
+    ctx.shadowBlur = 22;
+    ctx.drawImage(guide.cnv, x, y, s, s);
+    ctx.restore();
+    // The caption under it, crossing with the motion it names.
+    const f = guide.st === 'out' && guide.t >= guideLoopDur() * G.loops ? -1 : guide.frame;
+    guide.caption = '';
+    for (const c of G.captions) {
+      if (f < c.from || f > c.to) continue;
+      const k = Math.min(1, (f - c.from) / 6, (c.to - f) / 6 + 0.001);
+      if (k <= 0) continue;
+      guide.caption = c.text;
+      ctx.globalAlpha = guide.alpha * k;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      setFont(700, 13, 3.2);
+      ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 8;
+      ctx.fillStyle = `rgba(${G.ink},${G.inkAlpha * 0.5 + 0.5})`;
+      ctx.fillText(c.text, gx, y + (1054 / 1080) * s + 24);   // under the ink's measured foot
+    }
+    ctx.restore();
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    ctx.textBaseline = 'alphabetic';
+  }
+
   function drawMenu() {
     /* No defocus here, by request. The main menu is the screen the art is FOR,
      * so the plate stays sharp and the panels earn their legibility the way
@@ -4250,6 +5017,7 @@ export function createFrontEnd({
     drawControlBar(MENU_HINTS);
     ctx.restore();
 
+    drawGestureGuide();
     messagePlate();
     drawGrain();
     transitionVeil();
@@ -4392,25 +5160,42 @@ export function createFrontEnd({
     transitionVeil();
   }
 
-  function keycap(x, y, keyText, label) {
-    const w = 74, h = 34;
-    glass(x, y, w, h, 6, { tint: 'rgba(16,22,33,0.72)', shadow: false });
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    setFont(700, 12, 1.4);
-    ctx.fillStyle = C.gold;
-    ctx.fillText(keyText, x + w / 2, y + h / 2 + 0.5);
+  function mobileControlArt(name, cx, cy, maxW, maxH = maxW) {
+    const img = assets.mobileControls[name];
+    const iw = img?.naturalWidth || img?.width || 0;
+    const ih = img?.naturalHeight || img?.height || 0;
+    if (!iw || !ih) return null;
+    const scale = Math.min(maxW / iw, maxH / ih);
+    const w = iw * scale, h = ih * scale;
+    const x = cx - w / 2, y = cy - h / 2;
+    ctx.drawImage(img, x, y, w, h);
+    const bounds = { asset: name, x, y, w, h };
+    controlsGuideFrame.push(bounds);
+    return bounds;
+  }
+
+  function mobileStick(cx, cy, size) {
+    mobileControlArt('stick', cx, cy, size, size);
+    mobileControlArt('stickThumb', cx, cy, size * 0.5, size * 0.5);
+  }
+
+  function mobileActionCard(x, y, w, h, asset, title, details) {
+    glass(x, y, w, h, 8, { tint: 'rgba(16,22,33,0.68)', shadow: false });
+    mobileControlArt(asset, x + 52, y + h / 2, 70, 84);
     ctx.textAlign = 'left';
-    setFont(600, 12.5, 0.6);
-    ctx.fillStyle = C.text;
-    ctx.fillText(label, x + w + 16, y + h / 2 + 0.5);
-    ctx.textBaseline = 'alphabetic';
+    setFont(800, 13, 1.2);
+    ctx.fillStyle = C.paper;
+    ctx.fillText(title, x + 96, y + 39);
+    setFont(600, 10.5, 0.35);
+    ctx.fillStyle = C.muted;
+    details.forEach((line, i) => ctx.fillText(line, x + 96, y + 65 + i * 20));
   }
 
   function drawControls() {
+    controlsGuideFrame = [];
     stage({ darken: 0.48 });
     beginScreen();
-    screenHead('FIELD MANUAL', 'HOW TO PLAY', 'Final mappings from the current combat build.');
+    screenHead('FIELD MANUAL', 'HOW TO PLAY', 'The same touch controls shown during the fight.');
     glass(56, 172, 556, 424, 10);
     glass(668, 172, 556, 424, 10);
     ctx.fillStyle = C.orange;
@@ -4421,26 +5206,30 @@ export function createFrontEnd({
     setFont(700, 13, 3.4);
     ctx.fillStyle = C.gold;
     ctx.fillText('MOVEMENT', 84, 210);
-    keycap(84, 228, 'A / D', 'MOVE LEFT / RIGHT');
-    keycap(84, 274, 'W / S', 'MOVE THROUGH THE LANE');
-    keycap(84, 320, 'SPACE', 'JUMP');
+    mobileStick(194, 340, 184);
+    setDisplay(800, 21, 1.8);
+    ctx.fillStyle = C.paper;
+    ctx.fillText('MOVE', 330, 270);
+    setFont(600, 12, 0.4);
+    ctx.fillStyle = C.muted;
+    ctx.fillText('DRAG TO WALK', 330, 302);
+    ctx.fillText('MOVE THROUGH THE LANE', 330, 327);
+    ctx.fillText('FLICK SIDEWAYS TO RUSH', 330, 352);
+    mobileActionCard(84, 466, 236, 106, 'jump', 'JUMP', ['TAP TO LEAP']);
+    mobileActionCard(340, 466, 236, 106, 'pause', 'PAUSE', ['TAP TO PAUSE']);
 
     setFont(700, 13, 3.4);
     ctx.fillStyle = C.gold;
     ctx.fillText('COMBAT', 696, 210);
-    keycap(696, 228, 'J / LMB', 'ATTACK / CHAIN');
-    keycap(696, 274, 'K', 'HEAVY UPPERCUT');
-    keycap(696, 320, 'RMB', 'KICK');
-    keycap(696, 366, 'G / MMB', 'GRAB');
-    keycap(696, 412, 'L / SHIFT', 'BLOCK (HOLD)');
-    keycap(696, 458, 'E / L2', 'EXECUTION');
-
-    setFont(500, 12, 0.2);
-    ctx.fillStyle = C.muted;
-    ctx.fillText('Controller: left stick / D-pad moves. Face buttons attack.', 84, 420);
-    ctx.fillText('P or START pauses the fight.', 84, 444);
+    mobileActionCard(696, 228, 242, 154, 'jab', 'JAB / CHAIN',
+      ['TAP TO STRIKE', 'DOUBLE-TAP TO COMBO']);
+    mobileActionCard(954, 228, 242, 154, 'kick', 'KICK',
+      ['TAP TO KICK']);
+    mobileActionCard(696, 398, 242, 174, 'block', 'BLOCK',
+      ['HOLD TO GUARD']);
+    mobileActionCard(954, 398, 242, 174, 'grab', 'GRAB / EXECUTE',
+      ['HOLD TO CARRY', 'RELEASE TO THROW']);
     endScreen();
-    drawControlBar([MENU_HINTS[2]]);
     drawGrain();
     transitionVeil();
   }
@@ -4472,7 +5261,7 @@ export function createFrontEnd({
       const copy = {
         VIDEO: 'Display and motion presentation.',
         AUDIO: 'Independent music, SFX, voice, and ambience.',
-        CONTROLS: 'Review the current keyboard and controller map.',
+        CONTROLS: 'Review the mobile touch controls.',
         GAMEPLAY: 'Difficulty and combat assistance.',
         ACCESSIBILITY: 'Subtitles, contrast, and motion comfort.',
         LANGUAGE: 'Interface language.',
@@ -4525,11 +5314,24 @@ export function createFrontEnd({
     transitionVeil();
   }
 
+  /* The operations the player can open, in order: 01 always, 02 once Level 01
+   * has been completed (levelUnlocked). The list IS the cursor's range, so a
+   * locked level can never be focused or confirmed. */
+  function levelSelectItems() {
+    const out = [{ label: '01', level: 1 }];
+    if (levelUnlocked(2)) out.push({ label: '02', level: 2 });
+    return out;
+  }
+
   function drawLevelSelect() {
     stage({ darken: 0.30, darki: { cx: 1080, feet: 646, alpha: 0.4 } });
     beginScreen();
     screenHead('STREET MAP', 'LEVEL SELECT', 'Only confirmed operations are shown.');
 
+    const items = levelSelectItems();
+    const focused = items[Math.min(selection, items.length - 1)]?.level ?? 1;
+    const D = DOSSIERS[focused] ?? DOSSIERS[1];
+    /* The big card is the FOCUSED operation: what confirming opens. */
     const s = getFx('lvl:0');
     s.target = 1;
     glass(56, 172, 720, 372, 10, {
@@ -4540,31 +5342,60 @@ export function createFrontEnd({
     ctx.textAlign = 'left';
     setDisplay(700, 68, 2);
     ctx.fillStyle = C.gold;
-    ctx.fillText('01', 92, 250);
+    ctx.fillText(`0${focused}`, 92, 250);
     setFont(700, 11, 3.4);
-    ctx.fillText('LAGOS, NIGERIA', 92, 278);
+    ctx.fillText(D.place, 92, 278);
     setDisplay(700, 38, 1.6);
     ctx.fillStyle = C.paper;
-    ctx.fillText('THE STREET TAX', 92, 330);
+    ctx.fillText(D.title, 92, 330);
     setFont(600, 12.5, 1.4);
     ctx.fillStyle = C.muted;
-    ctx.fillText('BOSS  /  MC OLODO', 92, 362);
+    ctx.fillText(`${focused === 1 ? 'BOSS' : 'TARGET'}  /  ${D.target}`, 92, 362);
     setFont(700, 11, 2.4);
     ctx.fillStyle = C.green;
-    ctx.fillText('●  AVAILABLE', 92, 400);
+    ctx.fillText(focused === 1 && levelUnlocked(2) ? '●  COMPLETED  ·  REPLAY' : '●  AVAILABLE', 92, 400);
     icon('skull', 690, 236, 46, 'rgba(224,67,44,0.7)', 0.85);
     hitboxes.push({ x: 56, y: 172, w: 720, h: 372, index: 0, id: 'lvl:0' });
 
+    /* The roster down the right: 02, 03, 04. 02 opens with Level 01's
+     * completion and is then a real, selectable row (index 1). */
     for (let i = 0; i < 3; i++) {
       const y = 172 + i * 126;
-      glass(800, y, 424, 110, 9, { tint: 'rgba(9,13,20,0.56)' });
+      const n = i + 2;
+      const open = items.some((it) => it.level === n);
+      if (!open) {
+        glass(800, y, 424, 110, 9, { tint: 'rgba(9,13,20,0.56)' });
+        ctx.textAlign = 'left';
+        setDisplay(700, 26, 2.4);
+        ctx.fillStyle = C.dim;
+        ctx.fillText(`0${n}`, 826, y + 66);
+        setFont(700, 12, 3);
+        ctx.fillText('LOCKED', 878, y + 62);
+        icon('lock', 1180, y + 55, 22, C.dim, 0.6);
+        continue;
+      }
+      const index = items.findIndex((it) => it.level === n);
+      const on = focused === n;
+      const fx = getFx(`lvl:${index}`);
+      fx.target = on ? 1 : 0;
+      glass(800, y, 424, 110, 9, {
+        tint: on ? 'rgba(28,18,10,0.62)' : 'rgba(9,13,20,0.56)',
+        border: on ? `rgba(255,122,31,${0.42 + Math.sin(clock * 2.1) * 0.12})` : 'rgba(233,182,84,0.28)',
+      });
+      if (on) { ctx.fillStyle = C.orange; ctx.fillRect(800, y, 4, 110); }
+      const Dn = DOSSIERS[n];
       ctx.textAlign = 'left';
       setDisplay(700, 26, 2.4);
-      ctx.fillStyle = C.dim;
-      ctx.fillText(`0${i + 2}`, 826, y + 66);
-      setFont(700, 12, 3);
-      ctx.fillText('LOCKED', 878, y + 62);
-      icon('lock', 1180, y + 55, 22, C.dim, 0.6);
+      ctx.fillStyle = C.gold;
+      ctx.fillText(`0${n}`, 826, y + 50);
+      setFont(700, 12, 1.6);
+      ctx.fillStyle = C.paper;
+      ctx.fillText(Dn.title, 878, y + 46);
+      setFont(700, 10, 2.2);
+      ctx.fillStyle = C.green;
+      ctx.fillText('●  AVAILABLE', 878, y + 72);
+      icon('skull', 1180, y + 55, 22, 'rgba(224,67,44,0.7)', 0.8);
+      hitboxes.push({ x: 800, y, w: 424, h: 110, index, id: `lvl:${index}` });
     }
     endScreen();
     drawControlBar(MENU_HINTS);
@@ -4612,13 +5443,13 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    ctx.fillText('LAGOS  /  01', W / 2, 238);
+    ctx.fillText(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 238);
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
-    ctx.fillText('THE STREET TAX', W / 2, 306);
+    ctx.fillText(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 306);
     setFont(500, 13, 1.4);
     ctx.fillStyle = C.muted;
-    ctx.fillText('LAGOS NEVER SLEEPS.', W / 2, 340);
+    ctx.fillText(isL2() ? 'NPF EVIDENCE & PROPERTY WING' : 'LAGOS NEVER SLEEPS.', W / 2, 340);
     const f = Math.min(introLoadProgress, clamp(phaseT / 1.6, 0, 1));
     /* Centred against the LIVE viewport width: this bar was hardcoded at
      * 390..890 for the old 1280 frame, which put it left of centre the moment
@@ -4665,7 +5496,7 @@ export function createFrontEnd({
     ctx.textBaseline = 'middle';
     setFont(700, 10.5, 3);
     ctx.fillStyle = C.gold;
-    ctx.fillText('LEVEL 01  /  STORY INTRO', 28, 24);
+    ctx.fillText(`${dossier().code ?? 'LEVEL 01'}  /  STORY INTRO`, 28, 24);
     ctx.textAlign = 'right';
     ctx.fillStyle = C.muted;
     /* NAME THE CONTROL THE PLAYER HAS. On a phone there is no X and no Square,
@@ -4673,35 +5504,45 @@ export function createFrontEnd({
      * that offers something the next tap will not do is worse than no prompt.
      * See introTapSkippable: first viewing has no skip, and neither does the
      * first three seconds of any viewing. */
+    /* Request 349: on a phone the control is a DOUBLE tap, on every viewing,
+     * announced 3 s in (drawSkipHint), in the header band's right slot. */
+    if (isTouchUI()) drawSkipHint(ctx, W, introFallbackT, 24);
+    else ctx.fillText('X / SQUARE   SKIP', W - 28, 24);
+    /* Request 353: the tap cue sits LOWER-CENTRE, above whatever the foot of
+     * this screen already holds — the subtitle band, when subtitles are on. Its
+     * height is taken from the band's own geometry (the block below), so the two
+     * cannot drift into each other. */
     if (isTouchUI()) {
-      if (introTapSkippable()) {
-        const fade = clamp((introFallbackT - INTRO_TAP_SKIP_AT) / 0.6, 0, 1);
-        ctx.globalAlpha = fade * 0.85;
-        ctx.fillText('TAP TO SKIP', W - 28, 24);
-        ctx.globalAlpha = 1;
-      }
-    } else ctx.fillText('X / SQUARE   SKIP', W - 28, 24);
+      const bandH = settings.subtitles
+        ? Math.round(Math.round(20 * settings.subtitleSize) * 1.4) * 2 + 10 : 0;
+      drawTapCue(ctx, W, H, introFallbackT, { inset: 32 + bandH });
+    }
     ctx.textBaseline = 'alphabetic';
 
     if (settings.subtitles) {
+      /* The gameplay subtitle style (drawSubtitleScroll): a dark band at the
+       * foot of the video holding a scrolling column — the line being said in
+       * the lower row, the one before it scrolling up and out under the band's
+       * top edge, words lighting as they are spoken. */
       const time = introTime();
-      const sub = SUBTITLES.find((s) => time >= s[0] && time < s[1]);
-      if (sub) {
-        const fs = Math.round(18 * settings.subtitleSize);
-        setFont(600, fs, 0.2);
-        const tw = Math.min(940, ctx.measureText(sub[2]).width + 60);
-        const bx = (W - tw) / 2, by = H - 92;
+      const fs = Math.round(20 * settings.subtitleSize);
+      const lineH = Math.round(fs * 1.4);
+      const bh = lineH * 2 + 10, bw = Math.min(W - 80, 980);
+      const band = { x: (W - bw) / 2, y: H - 20 - bh, w: bw, h: bh };
+      const subs = introSubs();
+      const first = subs[0], last = subs[subs.length - 1];
+      if (time >= first.at - SUB_SCROLL.lead && time < last.end + SUB_SCROLL.linger + SUB_SCROLL.fade) {
         ctx.fillStyle = settings.highContrast ? '#000' : 'rgba(3,5,8,0.62)';
-        roundRectPath(ctx, bx, by, tw, 44 + (fs - 18), 5);
+        roundRectPath(ctx, band.x, band.y, band.w, band.h, 5);
         ctx.fill();
         ctx.strokeStyle = 'rgba(233,182,84,0.22)';
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.fillStyle = '#f4f5f7';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(sub[2], W / 2, by + (44 + (fs - 18)) / 2);
+        // the current line sits in the band's lower row; the row above it is the line before
+        drawSubtitleScroll(ctx, subs, time, band,
+          { font: `600 ${fs}px ${FONT}`, lineH, cy: band.y + band.h - 5 - lineH / 2 });
         ctx.textBaseline = 'alphabetic';
+        ctx.textAlign = 'left';
       }
     }
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
@@ -4852,7 +5693,8 @@ export function createFrontEnd({
      * level with no photograph gets the NO IMAGE ON FILE plate below, which is
      * both honest and the right read for a target the case has only just
      * named. */
-    const art = dossier().portrait === false ? null : assets.olodo;
+    const look = portraitLook(dossier().portrait);
+    const art = look && look.img;
     const ix = p.x + 3, iy = p.y + 3, iw = p.w - 6, ih = p.h - 6;
     if (!art) {
       ctx.save();
@@ -4897,7 +5739,8 @@ export function createFrontEnd({
     const dw = art.width * s, dh = art.height * s;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(art, ix + (iw - dw) / 2, iy + (ih - dh) / 2 + drift, dw, dh);
+    // anchorY: where the slack is taken from — a half-length portrait keeps its head
+    ctx.drawImage(art, ix + (iw - dw) / 2, iy + (ih - dh) * look.anchorY + drift, dw, dh);
     /* Sink the edges so the painting sits IN the panel instead of on it. */
     const v = ctx.createRadialGradient(p.x + p.w / 2, p.y + p.h * 0.44, p.h * 0.30,
       p.x + p.w / 2, p.y + p.h * 0.44, p.h * 0.82);
@@ -5023,15 +5866,14 @@ export function createFrontEnd({
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      if (node.portrait && assets.olodo) {
+      const nodeLook = node.portrait ? portraitLook(node.portrait) : null;
+      if (nodeLook && nodeLook.img) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(px[i], cy, Math.max(0, r - 2), 0, Math.PI * 2);
         ctx.clip();
-        const art = assets.olodo;
-        const side = Math.min(art.width, art.height);
-        const sx = (art.width - side) / 2;
-        const sy = Math.max(0, (art.height - side) * 0.25);
+        const art = nodeLook.img;
+        const [sx, sy, side] = nodeLook.face(art);
         ctx.drawImage(art, sx, sy, side, side, px[i] - r, cy - r, r * 2, r * 2);
         const shade = ctx.createLinearGradient(0, cy - r, 0, cy + r);
         shade.addColorStop(0, 'rgba(0,0,0,0.02)');
@@ -5137,7 +5979,7 @@ export function createFrontEnd({
    * head is what makes it read as playback and not as a bar filling up. */
   function briefProgressRule(x, y, w) {
     hairline(x, y, w);
-    const p = clamp(briefT / BRIEF_VO.dur, 0, 1);
+    const p = clamp(briefT / (briefVoFor(currentLevel) ?? BRIEF_VO).dur, 0, 1);
     if (p <= 0) return;
     ctx.fillStyle = 'rgba(233,182,84,0.55)';
     ctx.fillRect(x, y, w * p, 1);
@@ -5208,16 +6050,18 @@ export function createFrontEnd({
 
     /* Static pledge: it is interface copy, not part of the briefing recording.
      * Nothing here reads briefT or clock, so it cannot type, pulse or drift. */
-    glass(l.x, BRIEF.stampY, l.w, BRIEF.stampH, 6,
-      { tint: 'rgba(34,8,6,0.6)', border: 'rgba(224,67,44,0.5)' });
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    setDisplay(700, 14.5, 0.45);
-    ctx.fillStyle = C.red;
-    ctx.fillText(dossier().stamp[0], l.x + 22, BRIEF.stampY + 26);
-    setFont(650, 9.2, 0.42);
-    ctx.fillStyle = C.cream;
-    ctx.fillText(dossier().stamp[1], l.x + 22, BRIEF.stampY + 47);
+    if (dossier().stamp) {
+      glass(l.x, BRIEF.stampY, l.w, BRIEF.stampH, 6,
+        { tint: 'rgba(34,8,6,0.6)', border: 'rgba(224,67,44,0.5)' });
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      setDisplay(700, 14.5, 0.45);
+      ctx.fillStyle = C.red;
+      ctx.fillText(dossier().stamp[0], l.x + 22, BRIEF.stampY + 26);
+      setFont(650, 9.2, 0.42);
+      ctx.fillStyle = C.cream;
+      ctx.fillText(dossier().stamp[1], l.x + 22, BRIEF.stampY + 47);
+    }
 
     /* The right column arrives as a transition rather than as a page: each panel
      * scales out from its own centre, the MC Olodo photograph FIRST and the three
@@ -5256,10 +6100,10 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    ctx.fillText('LAGOS  /  01', W / 2, 300);
+    ctx.fillText(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 300);
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
-    ctx.fillText('THE STREET TAX', W / 2, 368);
+    ctx.fillText(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 368);
 
     if (err) {
       setFont(600, 13, 1.6);
@@ -5345,6 +6189,7 @@ export function createFrontEnd({
        * 67MB) so the first frame lands quickly even while the world load is
        * hammering the phone. Desktop and the master keep their source. */
       const src = introSrcOverride ?? INTRO_MASTER;
+      introFailed = false;                 // a new element gets its own chance to play
       introVideo = document.createElement('video');
       introVideo.dataset.rorSrc = src;
       introVideo.src = new URL(src, import.meta.url);
@@ -5355,12 +6200,13 @@ export function createFrontEnd({
       introVideo.setAttribute('aria-hidden', 'true');
       introLoadProgress = 0.15;
     }
-    if (introVideo.readyState >= 2) { introLoadProgress = 1; return; }
+    // CAN PLAY, not just a first frame (request 360): the intro starts on a player that can keep going.
+    if (introVideo.readyState >= 3) { introLoadProgress = 1; return; }
     if (!introLoadPromise) {
       introLoadPromise = new Promise((resolve) => {
         let settled = false;
         const cleanup = () => {
-          introVideo.removeEventListener('loadeddata', ready);
+          introVideo.removeEventListener('canplay', ready);
           introVideo.removeEventListener('error', failed);
           clearTimeout(watchdog);
         };
@@ -5382,7 +6228,7 @@ export function createFrontEnd({
         /* Patient: the world load shares the thread and the local server while
          * this runs, so a slow-but-loading intro must NOT be skipped early. */
         const watchdog = setTimeout(failed, 45000);
-        introVideo.addEventListener('loadeddata', ready, { once: true });
+        introVideo.addEventListener('canplay', ready, { once: true });
         introVideo.addEventListener('error', failed, { once: true });
         introVideo.load();
       });
@@ -5390,19 +6236,51 @@ export function createFrontEnd({
     await introLoadPromise;
   }
 
+  /* THE CINEMATIC IS LET GO THE MOMENT IT ENDS (request 360). Kept parked at
+   * 0:00 for the next level run, the element had to SEEK back to the start of a
+   * stream the browser had long since dropped (a whole fight later), and the
+   * second viewing — "PLAY LEVEL 02", which reuses this cut — froze on its first
+   * frame for ~5 s while it re-buffered under a running voice. Released, the
+   * phone gets the decoder and its memory back for the fight, and the next run
+   * builds a fresh element that loads at 0:00 behind the loading screen. */
+  function releaseIntroVideo() {
+    if (!introVideo) return;
+    introVideo.pause();
+    introVideo.removeAttribute('src');
+    try { introVideo.load(); } catch {}     // drops the decoder and the buffered stream
+    introVideo = null;
+    introLoadPromise = null;
+  }
+
   function beginIntro() {
     introFallbackT = 0;
     introStarted = false;
     introDone = false;
+    introClosing = false;
     setAmbiencePlaying(false);
+    /* LEVEL 02: held until the bars that brought this screen in have fully
+     * opened (update() releases it), so the first word and its subtitle are
+     * never under a bar. The first frame is already drawn behind them. */
+    if (isL2() && barCut.active) { introDeferred = true; return; }
+    introDeferred = false;
     if (introVideo && !introFailed) {
       introVideo.pause();
-      introVideo.currentTime = 0;
-      introVideo.muted = true;
+      // A fresh element is already at 0:00, and a seek to where it already is still stalls.
+      if (introVideo.currentTime > 0.05) introVideo.currentTime = 0;
+      /* Level 01's cut is picture only (its voice is level1-voiceover.mp3);
+       * Level 02's video carries its own narration, on the VOICE slider. */
+      introVideo.muted = !isL2();
+      if (isL2()) introVideo.volume = clamp(settings.master * settings.voice, 0, 1);
       const videoPlay = introVideo.play();
-      if (videoPlay?.catch) videoPlay.catch(() => {});
+      /* An unmuted start can still meet the autoplay policy; the picture and
+       * the subtitles must go on regardless, so retry it muted. */
+      if (videoPlay?.catch) videoPlay.catch(() => {
+        if (!isL2() || !introVideo) return;
+        introVideo.muted = true;
+        introVideo.play().catch(() => {});
+      });
     }
-    if (!voice) { introStarted = true; return; }
+    if (!introVoice()) { introStarted = true; return; }
     voice.currentTime = 0;
     applyAudioSettings();
     const p = voice.play();
@@ -5411,6 +6289,24 @@ export function createFrontEnd({
   }
 
   function finishIntro() {
+    if (introDone) return;
+    /* LEVEL 02 closes the bars over the cinematic first (its sound fading with
+     * them, see update) and only then lets the video go and opens on the case
+     * file. Every way out — watched to the end, skipped, failed — comes here,
+     * and the cut's own latch makes a second call (the end-of-clip check runs
+     * every frame) a no-op. */
+    if (isL2() && !introClosing) {
+      if (barCut.active) return;
+      introClosing = true;
+      introDeferred = false;
+      barCut.start(() => { introDone = false; finishIntroNow(); });
+      return;
+    }
+    if (isL2() && barCut.covering && barCut.phase === 'closing') return;
+    finishIntroNow();
+  }
+
+  function finishIntroNow() {
     if (introDone) return;
     introDone = true;
     introPlayed = true;          // this level run has shown the cinematic
@@ -5422,8 +6318,8 @@ export function createFrontEnd({
       introSeen = true;
       try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {}
     }
-    if (introVideo) { introVideo.pause(); introVideo.currentTime = 0; }
-    if (voice) {
+    releaseIntroVideo();
+    if (introVoice()) {
       const start = voice.volume;
       let n = 0;
       const fade = setInterval(() => {
@@ -5435,15 +6331,27 @@ export function createFrontEnd({
     go('levelTitle');
   }
 
+  let introTimeOverride = null;     // test hook: drawIntroAt
+  /* IS THE NARRATION ACTUALLY SOUNDING? (request 346) `introStarted` goes true
+   * the moment play() is CALLED. On Android the voice is a VoiceClip whose clock
+   * is the audio context's, so while that context is still suspended — or the
+   * clip is decoding, or never starts — its currentTime sits at 0 and the
+   * subtitles (and the progress bar) wait on a clock that is not moving while
+   * the picture plays on. Read the voice only while it runs; otherwise the
+   * picture, then the fallback timer, carry the intro. */
+  const voiceSounding = () => !!introVoice() && introStarted && (voice.ended || (!voice.paused
+    && (!(voice instanceof VoiceClip) || sfx.ac?.state === 'running')));   // a finished line still owns the clock
+  const videoRunning = () => !!introVideo && introStarted && !introFailed && introVideo.readyState >= 2;
   function introTime() {
-    if (voice && introStarted) return voice.currentTime;
-    if (introVideo && introStarted) return introVideo.currentTime;
+    if (introTimeOverride != null) return introTimeOverride;
+    if (voiceSounding()) return voice.currentTime;
+    if (videoRunning()) return introVideo.currentTime;
     return introFallbackT;
   }
 
   function introProgress() {
-    if (voice?.duration && Number.isFinite(voice.duration) && introStarted) return clamp(voice.currentTime / voice.duration, 0, 1);
-    if (introVideo?.duration && Number.isFinite(introVideo.duration) && introStarted) return clamp(introVideo.currentTime / introVideo.duration, 0, 1);
+    if (voiceSounding() && Number.isFinite(voice.duration) && voice.duration > 0) return clamp(voice.currentTime / voice.duration, 0, 1);
+    if (videoRunning() && Number.isFinite(introVideo.duration) && introVideo.duration > 0) return clamp(introVideo.currentTime / introVideo.duration, 0, 1);
     return clamp(introFallbackT / 37.2, 0, 1);
   }
 
@@ -5471,25 +6379,80 @@ export function createFrontEnd({
   const INTRO_MASTER = IS_ANDROID
     ? '../frontend/intro/intro-mobile.mp4'
     : '../frontend/intro/Intro.mp4?v=master37-fixed';
+  /* Level 02's own cut (request 399), with the same master/twin split: the
+   * 128 MB master on desktop, a 720p transcode on Android (made without ffmpeg
+   * by _chromakey/req399/tx/transcode.js; the APK build drops the master and the
+   * web build serves the twin under the master's name). */
   const LEVEL_INTRO = {
     1: INTRO_MASTER,
-    2: INTRO_MASTER,
+    2: IS_ANDROID ? '../frontend/intro/level2-intro-mobile.mp4' : '../frontend/intro/level2-intro.mp4',
   };
-  function startLevel(level = 1) {
+  /* WHICH LEVEL THE NEXT RUN IS, without going anywhere: its cinematic, its read,
+   * its entry line, its dossier. startLevel uses it and then navigates; the menu's
+   * own Level 01 routes (START GAME, LEVEL SELECT > 01) call it on its own,
+   * because they walk the setup screens first — and without it, a Level 01 run
+   * started after a Level 02 one in the same session kept Level 02's file. */
+  function selectLevel(level = 1) {
     const id = LEVEL_INTRO[level] ? level : 1;
     currentLevel = id;
     const src = LEVEL_INTRO[id];
     /* Only rebuild the element when the source actually changes: tearing the
      * video down and back up for the same file would throw away a decode the
      * player has already waited for. */
-    if (introVideo && introVideo.dataset.rorSrc !== src) {
-      introVideo.pause();
-      introVideo = null;
-      introLoadPromise = null;
-    }
+    if (introVideo && introVideo.dataset.rorSrc !== src) releaseIntroVideo();
     introSrcOverride = src;
     introPlayed = false;          // a fresh level run plays the cinematic once
     stopBriefing();
+    selectLevelAudio(id);         // this level's read and entry line, the other's silenced
+    briefDoneT = 0;
+    introClosing = false;
+    introDeferred = false;
+    briefDeferred = false;
+    return { id, src };
+  }
+
+  /* LEVEL 02 OPENS FROM LEVEL 01's COMPLETION (request 403). The progress store
+   * counts completions (rrGameEvent 'level_complete', written when the post-
+   * mission sequence starts). The best-score key is the fallback: computeScore
+   * only ever runs on a finished level, and it is the one record a player who
+   * beat Level 01 before the progress store existed (request 378) still has. */
+  function levelUnlocked(n) {
+    if (n <= 1) return true;
+    if (n !== 2) return false;
+    try {
+      const L1 = window.RRProgress?.get()?.levels?.['1'];
+      if (L1 && (L1.completions > 0 || Object.keys(L1.best || {}).length)) return true;
+    } catch {}
+    try {
+      for (const d of ['EASY', 'NORMAL', 'HARD', 'ARCADE']) if (localStorage.getItem(`ror.best.l1.${d}`)) return true;
+    } catch {}
+    return false;
+  }
+
+  function startLevel(level = 1) {
+    const { id, src } = selectLevel(level);
+    /* LEVEL 02 IS ENTERED ON THE BARS (request 399). Coming out of the fight's
+     * aftermath, the frame on screen is game.js's; it is captured and the bars
+     * close over it. Behind them the loading phase starts the video's preload
+     * and the black holds until the cut can open straight onto the cinematic
+     * (or, after 2.5 s, onto the loading screen, which then cuts again). */
+    if (id === 2) {
+      const fromFight = phase === 'gameplay';
+      barCut.reset();
+      barFrame = fromFight ? captureTransitionFrame() : null;
+      releaseCanvas();
+      setAmbiencePlaying(true);
+      clearHeld();
+      pendingGameplay = false;
+      pausedOrigin = false;
+      returnPhase = 'menu';
+      go('loading', { force: true });
+      barCut.start(() => { barFrame = null; }, {
+        waitFor: () => introLoadProgress >= 1, maxHold: 2.5,
+        onOpen: () => { if (introLoadProgress >= 1) go('intro'); },
+      });
+      return { level: id, intro: src };
+    }
     pendingGameplay = false;
     pausedOrigin = false;
     returnPhase = 'menu';
@@ -5503,6 +6466,17 @@ export function createFrontEnd({
   /* ---------------------------------------------------------- lifecycle */
 
   async function load() {
+    /* The guide uses the real touch HUD artwork and has no procedural fallback.
+     * NOT awaited (request 343): awaiting eight loads + decode() here held the
+     * whole boot — studio card included — on the slowest of them, and one bad
+     * file or a decode that never settles left the game on a black screen. Each
+     * lands on its own long before the guide can be reached; a slot whose image
+     * is not in yet draws nothing (mobileControlArt). */
+    for (const [name, src] of Object.entries(MOBILE_CONTROL_ART)) {
+      image(src).then((img) => { assets.mobileControls[name] = img; })
+        .catch((err) => console.warn(err.message));
+    }
+
     /* The grain tile and the logo are drawn here, not fetched, so they cost
      * nothing and the studio card can be on screen this frame. */
     if (GRAIN_ALPHA > 0) buildGrain();     // off by default — see GRAIN_ALPHA
@@ -5539,6 +6513,9 @@ export function createFrontEnd({
     image('../frontend/olodo-dossier.jpg')
       .then((img) => { assets.olodo = img; })
       .catch(() => {});
+    image('../frontend/jimoh-dossier.jpg')                 // Level 02's target (request 403)
+      .then((img) => { assets.jimoh = img; })
+      .catch(() => {});
 
     /* AHEAD OF THE NARRATION, not after it. initSfx builds the AudioContext the
      * voice clips play out of (see VoiceClip), so on Android a clip constructed
@@ -5553,7 +6530,9 @@ export function createFrontEnd({
     ambience.loop = true;
     ambience.preload = 'auto';
     voice = makeVoice(new URL('../frontend/audio/level1-voiceover.mp3', import.meta.url));
-    voice.addEventListener('ended', finishIntro);
+    /* Level 01's narration ending ends Level 01's intro — and only that: the
+     * same handler firing during Level 02 must not advance Level 02's. */
+    voice.addEventListener('ended', () => { if (!isL2()) finishIntro(); });
     gameplayStartVo = makeVoice(new URL('../sounds/voices/voice-gameplay-start.mp3', import.meta.url));
 
     /* The case file's read — 45.9 s, and the clock its whole reveal is animated
@@ -5564,9 +6543,13 @@ export function createFrontEnd({
     briefVo = makeVoice(new URL(BRIEF_VO.src, import.meta.url));
     /* The measured value above makes the first frame deterministic; metadata is
      * still authoritative if production replaces the cut again. */
-    briefVo.addEventListener('loadedmetadata', () => {
-      if (Number.isFinite(briefVo.duration) && briefVo.duration > 0) BRIEF_VO.dur = briefVo.duration;
-    });
+    {
+      const v = briefVo;
+      v.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(v.duration) && v.duration > 0) BRIEF_VO.dur = v.duration;
+      });
+    }
+    levelClips[1] = { brief: briefVo, entry: gameplayStartVo };
     applyAudioSettings();
 
     /* initSfx has already run, above the narration clips — it has to, because it
@@ -5578,6 +6561,18 @@ export function createFrontEnd({
 
     if (sessionStorage.getItem('rorSkipToGameplay')) {
       sessionStorage.removeItem('rorSkipToGameplay');
+      /* RETRY KEEPS THE LEVEL (request 399). The reload forgets everything, so
+       * game.js writes which level the retry was for; Level 02 is restored here
+       * — its dossier, its entry line — and its cinematic and read are NOT
+       * replayed: a retry goes straight back to the fight, as Level 01's does. */
+      let retryLevel = 1;
+      try { retryLevel = Number(sessionStorage.getItem('rorRetryLevel')) || 1; sessionStorage.removeItem('rorRetryLevel'); } catch {}
+      if (retryLevel === 2) {
+        currentLevel = 2;
+        introSrcOverride = LEVEL_INTRO[2];
+        introPlayed = true;
+        selectLevelAudio(2);
+      }
       /* RESTART CHECKPOINT reloads the page and lands here. The world is
        * certainly not in yet on this path, so it holds on the handover card
        * rather than replaying the studio card on the way to the fight. */
@@ -5588,11 +6583,28 @@ export function createFrontEnd({
   function update(dt) {
     clock += dt;
     phaseT += dt;
+    keepMediaAlive(ambience, ambienceLife, dt, ambienceWanted && phase !== 'splash');
+    keepContextAlive(sfx.ac, sfxCtxLife, dt);   // menu sounds + the Android narration (request 348)
+    updateGestureGuide(dt);                     // the once-per-session touch guide (request 366)
+    keepAwake('video', phase === 'splash' || phase === 'intro');   // no dimming under a video (request 349)
     if (inputLock > 0) inputLock = Math.max(0, inputLock - dt);
     if (messageT > 0) messageT = Math.max(0, messageT - dt);
     /* Tied to the prompt, not to its own clock — see requestQuit. */
     if (quitArmedT > 0) quitArmedT = Math.max(0, quitArmedT - dt);
     if (rejectT > 0) rejectT = Math.max(0, rejectT - dt);
+
+    /* LEVEL 02's bars (request 399). Stepped first so the screen behind them
+     * changes on the frame they meet, and the media held back for them starts
+     * on the frame they finish opening. */
+    barCut.update(dt);
+    if (!barCut.active) {
+      if (introDeferred && phase === 'intro') { introDeferred = false; beginIntro(); }
+      if (briefDeferred && phase === 'levelTitle') { briefDeferred = false; beginBriefing(); }
+    }
+    /* The cinematic's sound leaves with the picture as the bars close on it. */
+    if (introClosing && introVideo && isL2()) {
+      introVideo.volume = clamp(settings.master * settings.voice, 0, 1) * (1 - barCut.depth);
+    }
 
     /* Ahead of the pendingGameplay hold below, because the press being answered
      * may BE the one that asks for the handover — the beat has to finish on the
@@ -5667,7 +6679,13 @@ export function createFrontEnd({
     else if (phase === 'loading' && phaseT > 1.6 && introLoadProgress >= 1) {
       /* The cinematic plays ONCE per level run: re-entering the loading phase
        * from the briefing's Back → Forward must not replay it. */
-      go(introPlayed ? 'levelTitle' : 'intro');
+      const nextPhase = introPlayed ? 'levelTitle' : 'intro';
+      if (!isL2()) go(nextPhase);
+      else if (!barCut.active) barCut.start(() => go(nextPhase));   // Level 02 cuts on the bars
+    }
+    else if (phase === 'intro' && (introDeferred || introClosing)) {
+      /* Level 02's cinematic is waiting for its bars, or leaving under them:
+       * no clock, no retry, no end check — the cut owns this screen. */
     }
     else if (phase === 'intro') {
       /* The intro could not produce its first frame: skip the cinematic
@@ -5680,7 +6698,7 @@ export function createFrontEnd({
        * takes, move the narration to where the picture already is so the two
        * stay on the same clock. That catch-up is a buffer offset on Android
        * (VoiceClip) rather than a media seek, so it costs nothing. */
-      if (!introStarted && voice) {
+      if (!introStarted && introVoice()) {
         voiceRetryT += dt;
         if (voiceRetryT > 1) {
           voiceRetryT = 0;
@@ -5711,7 +6729,7 @@ export function createFrontEnd({
        * a few seconds, invisibly, while a seek on a phone costs a re-buffer and
        * a visible jump. So there is no longer a seek in this path at all — only
        * the ±15% rate correction, widened to cover what the resync used to. */
-      if (introVideo && voice && introStarted && !voice.paused && introVideo.readyState >= 2) {
+      if (introVideo && introVoice() && voiceSounding() && !voice.ended && introVideo.readyState >= 2) {
         const drift = introVideo.currentTime - voice.currentTime;   // + = video ahead
         if (Math.abs(drift) > 0.12 && !introVideo.seeking) {
           introVideo.playbackRate = Math.max(0.85, Math.min(1.15, 1 - drift * 0.4));
@@ -5724,7 +6742,7 @@ export function createFrontEnd({
        * in half whenever the media stalled momentarily; it now only fires when
        * no media clock exists at all, with a hard ceiling well past the clip
        * as the final guard. */
-      const mediaAlive = (voice && !voice.paused && voice.currentTime > 0)
+      const mediaAlive = (introVoice() && !voice.paused && voice.currentTime > 0)
         || (introVideo && introVideo.readyState >= 2 && !introVideo.paused);
       if ((mediaAlive && introProgress() >= 0.999)
         || (!mediaAlive && introFallbackT > 40)
@@ -5740,6 +6758,7 @@ export function createFrontEnd({
      * or missing play(). */
     else if (phase === 'levelTitle') {
       if (briefPinned) { /* a harness owns the clock — leave it exactly where it was put */ }
+      else if (briefDeferred) { /* Level 02's read has not started: its bars are still opening */ }
       else if (briefVo && briefStarted && !briefVo.paused && briefVo.currentTime > 0) {
         briefT = briefVo.currentTime;
         briefStallT = 0;
@@ -5751,6 +6770,16 @@ export function createFrontEnd({
         briefStallT += dt;
       }
       else briefT += dt;
+      /* LEVEL 02 MOVES ON WHEN ITS READ IS DONE (request 399): the read and the
+       * typing finished, a short hold to let the last line land, then the same
+       * door START MISSION uses. The read ending is judged on its own clock
+       * (or, if it never played, on the dt fallback reaching its length). */
+      if (isL2() && !briefDeferred && !pendingGameplay && !barCut.active) {
+        const dur = BRIEF_VO_L2.dur;
+        const done = briefT >= dur - 0.05 || (briefVo && briefStarted && briefVo.ended);
+        briefDoneT = done ? briefDoneT + dt : 0;
+        if (briefDoneT >= BRIEF_L2_HOLD) enterGameplay();
+      }
     }
     /* `levelTitle` deliberately has no timeout — it is a case file the player
      * dismisses with Cross, and the read finishing does not dismiss it either.
@@ -5760,6 +6789,22 @@ export function createFrontEnd({
   function draw() {
     const t0 = now();
     drawPhase();
+    /* Level 02's cut (request 399): the fight's last frame while the bars close
+     * over it, then the bars themselves, above every screen. */
+    if (barFrame && barCut.phase === 'closing') {
+      ctx.save();
+      ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.drawImage(barFrame, 0, 0, W, H);
+      ctx.restore();
+    }
+    if (barCut.depth > 0) {
+      ctx.save();
+      ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+      ctx.globalAlpha = 1;
+      barCut.draw(ctx, W, H);
+      ctx.restore();
+    }
     /* The press beat draws nothing — it is answered by the control's own
      * compression and by the haptic. See the note above `hapticTick`. */
     drawDarkiTool();        // …and the placement gizmo over everything, when it is open
@@ -5842,9 +6887,38 @@ export function createFrontEnd({
      * `startLevel` chose a cut rather than just re-entering the default one. */
     get level() { return currentLevel; },
     get introSrc() { return introVideo ? introVideo.dataset.rorSrc : introSrcOverride; },
+    /* Level 02's sequence (request 399), for the harness: the cut's state, the
+     * held-back media, the clips in use and the live clocks. */
+    get l2() {
+      return {
+        cut: { phase: barCut.phase, depth: barCut.depth, cuts: barCut.cuts, frame: !!barFrame },
+        introDeferred, briefDeferred, introClosing, briefDoneT, introStarted, introDone,
+        briefT, briefStarted,
+        briefSrc: briefVo ? String(briefVo.src || briefVo.url || '') : null,
+        entrySrc: gameplayStartVo ? String(gameplayStartVo.src || gameplayStartVo.url || '') : null,
+        video: introVideo ? { t: introVideo.currentTime, muted: introVideo.muted, volume: introVideo.volume,
+          paused: introVideo.paused, ended: introVideo.ended, ready: introVideo.readyState, src: introVideo.dataset.rorSrc } : null,
+        introTime: introTime(),
+        briefY: { ...briefY },
+        reveal: { body: dossier().body.map((_, i) => +briefReveal('body', i).toFixed(4)), call: dossier().call.map((_, i) => +briefReveal('call', i).toFixed(4)) },
+        voT: briefVo ? briefVo.currentTime : null,
+        subs: introSubs().length,
+      };
+    },
+    /* Draw the intro screen as it looks `t` seconds into the narration (the
+     * subtitles read the same clock), for screenshot tests. */
+    drawIntroAt(t) { introTimeOverride = t; try { drawIntro(); } finally { introTimeOverride = null; } },
+    get introSubs() { return INTRO_SUBS.map((l) => l.words.map(([w]) => w).join(' ')); },
     /* The same door the post-mission level choice goes through, so a harness
      * can reach Level 02's case file without playing Level 01 first. */
     startLevel(level) { return startLevel(level); },
+    levelUnlocked(n) { return levelUnlocked(n); },        // request 403: Level Select's gate
+    get levelSelectItems() { return phase === 'levelSelect' ? levelSelectItems().map((it) => it.level) : null; },
+    /* The touch gesture guide (request 366): its state as last drawn, and a
+     * reset so a harness can play it again in the same session. */
+    get gestureGuide() { return { st: guide.st, t: +guide.t.toFixed(2), alpha: +guide.alpha.toFixed(3), frame: guide.frame,
+      caption: guide.caption, box: guide.box, seen: (() => { try { return sessionStorage.getItem(GESTURE_GUIDE.seen); } catch { return null; } })() }; },
+    resetGestureGuide() { endGestureGuide(); try { sessionStorage.removeItem(GESTURE_GUIDE.seen); } catch {} guide.st = 'off'; guide.t = 0; guide.alpha = 0; },
     get dossierTarget() { return dossier().target; },
     get optionPage() { return optionPage; },
     get inputLock() { return inputLock; },
@@ -5908,7 +6982,13 @@ export function createFrontEnd({
     /* Jump straight to a screen. For SHOT harnesses only: walking there with
      * real key presses is the right way to test navigation and the wrong way to
      * frame a picture, because every hop costs an inputLock and a phase ease. */
-    go(name, opts) { go(name, { force: true, ...opts }); },
+    /* A jump is not a transition: any Level 02 bar cut in flight is abandoned
+     * (and the media it was holding back is released by the screen itself), so
+     * the target screen is what is on screen. */
+    go(name, opts) {
+      barCut.reset(); barFrame = null; introDeferred = false; briefDeferred = false;
+      go(name, { force: true, ...opts });
+    },
     /* The phase clock, so a shot can be taken at a chosen moment in a screen's
      * own timeline (the title's prompt, for one, arrives on it). */
     get phaseT() { return +phaseT.toFixed(3); },
@@ -5964,7 +7044,28 @@ export function createFrontEnd({
     get canvas() { return { w: canvas.width, h: canvas.height, scale: +renderScale.toFixed(3) }; },
     /* Which fetched-but-never-awaited images are actually in, so a harness can
      * tell a real layout from one photographed against a placeholder. */
-    get assets() { return { olodo: !!assets.olodo, darkiIdle: !!assets.darkiIdle }; },
+    get assets() {
+      return {
+        olodo: !!assets.olodo,
+        jimoh: !!assets.jimoh,
+        darkiIdle: !!assets.darkiIdle,
+        mobileControls: Object.fromEntries(
+          Object.keys(MOBILE_CONTROL_ART).map((name) => [name, !!assets.mobileControls[name]]),
+        ),
+      };
+    },
+    get controlsGuide() {
+      return {
+        labels: [...MOBILE_CONTROL_LABELS],
+        assetNames: Object.keys(MOBILE_CONTROL_ART),
+        drawn: controlsGuideFrame.map((b) => ({
+          asset: b.asset,
+          x: +b.x.toFixed(1), y: +b.y.toFixed(1),
+          w: +b.w.toFixed(1), h: +b.h.toFixed(1),
+        })),
+        genericFooter: false,
+      };
+    },
     /* 'svg' once the supplied mark is baked, 'text' if it never arrived and the
      * drawn wordmark is standing in. A screenshot cannot tell those apart, and
      * "the logo looks fine" is exactly how a failed fetch ships. */
@@ -6119,6 +7220,7 @@ export function createFrontEnd({
       if (!briefVo) return null;
       return {
         started: briefStarted, pinned: briefPinned, paused: briefVo.paused,
+        src: String(briefVo.src || briefVo.url || ''),   // whose read (request 399: each level has its own)
         t: +briefVo.currentTime.toFixed(2),
         duration: Number.isFinite(briefVo.duration) ? +briefVo.duration.toFixed(3) : null,
         volume: +briefVo.volume.toFixed(3),

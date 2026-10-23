@@ -1,5 +1,171 @@
 # Changelog
 
+## 2026-10-17 — Backgrounds stop competing with the fighters (request 408)
+
+Measured, same fight frame (mean saturation, fighters vs background; _chromakey/req403/gradeshots.js):
+Level 1 shop row 0.49 vs 0.42 → 0.46 vs 0.26; Level 2 0.49 vs **0.62** (the background out-coloured
+the people) → 0.42 vs 0.25. Background value also drops a little; fighter pixels are untouched.
+- Level 1: the gameplay-plane grade (GRADE_PRESETS.subtle.near) desaturate 0.15 → 0.58, tint 0.14 → 0.28.
+- Level 2: a new tier 'l2' (desaturate 0.74, cool-neutral multiply 0.24, vignette 0.11) at the same
+  seam. Its middle and front pillars are drawn in the actor and foreground passes, out of the
+  screen pass's reach, so they are graded ONCE at load into offscreen copies with the same blend
+  ops (gradedArt), alpha preserved, re-baked if the preset changes.
+- The seam now sits after the floor reflections, so they sit in the graded floor.
+- Same blend-mode method as before (saturation/multiply fills, no blur, no ctx.filter); the
+  'strong' preset (F7) was raised to match. Vehicles stay ungraded (gameplay furniture).
+Checks: gradeverify PASS (0% of Darki's pixels changed, background 97-99%); reflverify 11/11;
+req399verify quick 13/13 (pillar sync/parallax). Before/after frames in _chromakey/req403/shots/grade-*.
+
+## 2026-10-17 — Snap out of a combo (request 407)
+
+A fresh LEFT or RIGHT press now pulls Darki out of a combo string on the spot — the
+grab's Cont.Combo circle (and the grab / uppercut either side of it), the 5-hit combo and
+the machete's three-blow string — instead of leaving him locked while someone walks up
+behind him. He turns to face the way he pressed and stays turned for 0.7 s (the idle
+square-up would otherwise turn him back to the man he let go of, usually the nearest);
+the next attack goes out that way, and a second tap inside the rush window is a rush (the
+break-out press is also the first rush tap). The man he was beating is let go through
+endAttack (every hold's one exit) and left reeling — a heavy stagger away from Darki and
+0.9 s before he can swing. The hit streak is untouched. Edge-triggered: a direction held
+from before the string started does not break it. Single jabs/kicks and the rage tornado
+(which steers with the direction keys) are unchanged. game.js: COMBO_BREAKABLE,
+updateComboBreakout, breakOutOfCombo, player.faceHoldT.
+Checks: _chromakey/req403/breakoutverify.js 15/15 (real key events on the stepper);
+grabverify, combatverify, rushverify, macheteverify 32/32, carryverify, execperfverify,
+sprintverify all pass.
+
+## 2026-10-17 — Jimoh in the circles (request 406)
+
+Moshun Jimoh's picture now fills every place the post-mission sequence drew him as a
+silhouette: the next-target reveal (the silhouette resolves into his face, as the beat
+was written), the evidence board node, the Cabal network rung, the case pages and the
+Select Operation card thumbnail. One entry in aftermath.js PORTRAITS (key 'jibril'),
+pointing at frontend/jimoh-face.jpg — a square cut on his face from the supplied
+ASSETS/AIG JIMOH.png, because the circles cover-fit and the half-length picture showed
+his chest. aftermath.js import tag bumped (ratelrage-jimoh-v1).
+Checks: aftermathverify 42/42 (its card-02 checks now assert his photograph instead of
+the old empty frame); req403/jimohshots.js walks the real ending to Level Select and
+screenshots each screen. caseflowverify fails 15/27 both with and without this change
+(stale harness, pre-existing).
+
+## 2026-10-17 — The sign-up window on a phone (request 405)
+
+The keyboard covered the account window's fields on phones. Cause: the game runs
+fullscreen in landscape, and in fullscreen Android does not shrink the page for the
+keyboard — it overlays the bottom ~60% of a ~360 px screen, where the centred window's
+fields sat. Now, on a phone, the account window is VERTICAL: the screen turns to
+portrait while it is open (APK: new `RatelHost.setPortrait` in MainActivity; browser:
+the orientation lock) and back to landscape on close; it is docked to the top and,
+while a field has focus, kept to the room above the keyboard with the field scrolled
+into view. Where the screen cannot turn (an older APK, a browser without the lock) it
+stays landscape, docks to the top and hides the explanation while typing, so the field
+and its button sit above the keyboard. The rotate hint stands down while it is open.
+Desktop unchanged. Checks: `_chromakey/req403/acctphoneverify.js` 17/17 (phone
+emulation: app path, fallback, desktop), accountverify 31/31, Android Java compiles.
+**The APK must be rebuilt for the app path**; the web gets it on the next deploy.
+
+## 2026-10-17 — Street smarts, Level 2 in Level Select, Jimoh's photo (request 403)
+
+**The mob learns a repeated technique** (`STREET_SMARTS` in game.js). Before this a
+player could plant and swing the bat: the token holder closed to 110-175 px and wound
+up for ~0.6 s inside a 16-230 px arc that comes round every 0.67 s, so the mob walked
+into it one at a time (measured: 38 men fed, 6 kills, 0 damage taken in 70 s).
+- Every blow Darki lands is a lesson in a memory shared by the whole street, keyed by
+  his attack and the side it landed on; knockdowns taken while walking in count most,
+  kills more. Lessons fade (20 s half-life), so changing technique is re-learned.
+  Difficulty sets how fast (`DIFFICULTY.*.learn`: 0.7 / 1 / 1.2 / 1.35).
+- Once a move is hot the mob: holds just outside its reach on the side it lands on;
+  will not walk in while he can still swing (his recovery between chained swings is
+  NOT treated as an opening — nobody can cover the gap in time); goes ROUND him through
+  depth he cannot hit (the residents' strip on Level 1, the far edge of the floor on
+  Level 2), never through the arc; sends a PINCER — the man in his arc steps to its
+  edge showing a wind-up as the distraction while the other goes in from behind, and
+  commits only if Darki turns to the man behind; and brings reinforcements in from the
+  edge at his back. No damage or HP buffs; the same tells.
+- Measured (`_chromakey/req403/smartverify.js`, 70 s bat camping, same fight):
+  auto-facing camper fed 39 → 15, damage taken 0 → 114 (all from behind); facing held
+  right fed 38 → 7, kills 6 → 0, damage 0 → 132 (final code, re-run). Adapts ~10 s in. `rearverify.js`: an
+  untaught street still enters from the right; a taught one sends 5 of 9 in from behind,
+  none stuck. Before learning, behaviour (and the combat RNG stream) is unchanged.
+- Test hooks: `__ror.streetMind`, `streetSmarts`, `resetStreetMind()`, `teachStreet()`.
+
+**Level 02 in LEVEL SELECT.** It unlocks from Level 01's completion (the progress
+store's completion count, or the old best-score key for players who finished before
+that store existed). The big card shows the focused operation; 02 starts through the
+same door as the post-mission PLAY LEVEL 02. Choosing 01 (or START GAME) after a Level
+02 run now resets the level, which used to keep Level 02's file. `computeScore` keeps a
+best per level (`ror.best.l2.*`) instead of writing Level 2 scores into Level 1's.
+
+**Moshun Jimoh's photograph** (`ASSETS/AIG JIMOH.png` → `frontend/jimoh-dossier.jpg`)
+on Level 02's case file and in its chain node, framed to keep his beret; portraits are
+keyed per dossier (`PORTRAITS` in frontend.js) so a level can never show another's.
+
+## 2026-10-16 — Floor reflections on wet surfaces (request 400)
+
+Bodies standing on a wet or polished floor now show in it — Darki, every Agbero
+class, MC_Olodo, a carried man, an execution pair and Level 1's parked vehicles.
+
+- **Only where the art is wet.** Each level has a wet map generated from its own
+  floor art by `_chromakey/req400/wetmap.js`: `layers/level2/wet.png` (the whole
+  facility floor, weighted by the painted floor's gloss, the painted crates cut
+  out) and `layers/level-wet.png` (Level 1's road is dry asphalt: only the
+  kerb-side sheen, the puddle at the Baba Tyre front and the grey sheen patches in
+  the forecourt). On the dry road nothing is drawn.
+- **How** (`drawReflections` in game.js, between the floor and the actor pass):
+  every body in the depth list is drawn again by its own draw function, mirrored
+  about the row its feet stand on and foreshortened, into a half-resolution
+  buffer; faded from the feet down, masked by the wet map, tinted toward the
+  floor and composited row by row with a slow ripple. Shadows, aura, prompts and
+  HP bars are skipped in that pass (`reflecting`). The GPB already paints the
+  middle pillars' own reflections, so they are not mirrored again.
+- `actorList()` now builds the depth-sorted list that `drawActors()` draws, so
+  both passes use one list. `ctx` became `let` so the pass can point it at the
+  mirror buffer for the length of one body's draw.
+- Darki's own sprite is unchanged and stays at full opacity; the reflection is a
+  separate image in the floor.
+- Checks: `_chromakey/req400/reflverify.js` 11/11 (on/off diff in the same frame:
+  appears on wet floor, absent on dry asphalt, never above the feet, stays off the
+  painted crates); `req399verify.js quick` 13/13; `carryverify` 39/39,
+  `execperfverify`, `grabverify` pass. Extra frame cost in headless software GL:
+  ~4 ms (15.2 vs 10.6 ms).
+
+## 2026-10-16 — Level 2: Operation Clean Sweep (request 399)
+
+Built on Level 1's own pipeline, not beside it: the aftermath's PLAY LEVEL 02 ->
+`frontEnd.startLevel(2)` -> intro video -> the case file (the debriefing window)
+-> game.js's narrated entry gate -> the fight. Level 2 is reachable only from the
+Level 1 aftermath.
+
+- **Media** (supplied files, never substituted): `frontend/intro/level2-intro.mp4`
+  (the video carries its own narration; no burned-in subtitles, so a timed track
+  `INTRO_SUBS_L2` is drawn in the game's subtitle style on the VIDEO's clock),
+  `frontend/audio/level2-debriefing.mp3`, `sounds/voices/voice-gameplay-start-level2.mp3`
+  (+ `ENTRY_SUBS_L2`). All three transcribed with Whisper-small and refitted to the
+  clips' own voiced runs (`_chromakey/req399`). The recorded gameplay voice-over
+  differs from the drafted script (no title line) — the recording is used.
+- **Debriefing**: Level 02's dossier IS the debriefing transcript (4 paragraphs + 3
+  gold beats, Level 01's layout), typed word by word on the read's own clock
+  (`BRIEF_SCRIPT_L2.marks`). It moves on 2 s after the read ends; START MISSION
+  still leaves at any time. The static pledge plate is dropped on Level 02 only, to
+  give the longer read its column.
+- **Bars**: the letterbox primitives moved unchanged into `src/bars.js` (game.js
+  imports them); `createBarCut()` runs Level 2's three cuts (aftermath -> intro,
+  intro -> debriefing, debriefing -> the entry's black). Media start only once the
+  bars are fully open; every callback is latched.
+- **World** (`LEVEL 2.psd`, 7 layers): GPB + MP at one uniform scale (9259/6700),
+  offset so the floor sits on Level 01's road band; MP pillars use the parked-
+  vehicle solid/depth-sort code (foot is solid, behind is walkable); FP at its own
+  parallax (x1.32). Crates painted into the GPB get nearer-stop regions. Level 2 has
+  its own sections (no boss delivered), and clearing the last one shows an AREA
+  CLEARED screen (REPLAY LEVEL / MAIN MENU). RETRY keeps Level 2 and skips its
+  cinematics.
+- **Story**: the next-target record (key `jibril`) is now AIG Moshun Jimoh, as the
+  supplied media name him; LEVELS[2] is OPERATION CLEAN SWEEP.
+- **Builds**: a 720p twin of the intro (16.8 MB, made with WebCodecs — no ffmpeg) at
+  `mobile/assets-mobile/frontend/intro/level2-intro-mobile.mp4`; build-web and
+  build-demo handle it as they handle Level 1's. Cache tags v59 -> v60.
+- Harness: `_chromakey/req399verify.js` (full / `quick` / `failvideo`).
+
 ## 2026-09-27 — the world plates draw their VISIBLE SLICE, and what the lag hunt actually found
 
 Reported as "significant unacceptable lag on PC". **It is not reproducible in the

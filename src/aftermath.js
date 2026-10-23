@@ -376,11 +376,12 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     img.src = new URL('../frontend/ui/analysis-bg.png', import.meta.url);
   }
 
-  /* Portraits are optional per character. Olodo has a dossier photograph;
-   * Masood Jibril has no art yet, so his node resolves to a SILHOUETTE — which
-   * is the right read for him anyway at this point in the story. Drop a file in
-   * PORTRAITS and the reveal picks it up with no other change. */
-  const PORTRAITS = { olodo: '../frontend/olodo-dossier.jpg' };
+  /* Portraits are optional per character; a key with no file draws a
+   * SILHOUETTE. Olodo has his dossier photograph. Moshun Jimoh (key 'jibril')
+   * uses the supplied full dossier photograph. Each view crops that shared art
+   * for its own frame, so the operation card and evidence screens cannot drift
+   * onto different or missing portrait assets. */
+  const PORTRAITS = { olodo: '../frontend/olodo-dossier.jpg', jibril: '../frontend/jimoh-dossier.jpg' };
   const portraits = {};
   function portrait(key) {
     if (!key || !PORTRAITS[key]) return null;
@@ -1226,10 +1227,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       pulse: B.done,
       img: B.portrait > 0 && img ? img : null,
       imgAlpha: B.portrait,
-      /* No photograph has been supplied for him, so the silhouette IS the
-       * portrait beat — which is the truthful read for a man the case has only
-       * just named. */
-      silhouette: img ? 0 : Math.max(B.silhouette, B.portrait),
+      /* With his photograph the reveal plays as written: the shape resolves,
+       * then the face fades in OVER it. Without one the silhouette is the
+       * portrait beat. */
+      silhouette: img ? B.silhouette * (1 - B.portrait) : Math.max(B.silhouette, B.portrait),
       glyph: B.silhouette <= 0 ? '?' : null,
       glyphColor: C.dim,
     });
@@ -1538,6 +1539,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * painted nameplate at row ~493. */
   const CARD_ART = {
     olodo: { focusX: 0.45, focusY: 0.27, zoom: 1.62 },
+    jibril: { focusX: 0.50, focusY: 0.22, zoom: 1.45 },
   };
   const THUMB = { w: 168, h: 226, right: 26, top: 30 };
 

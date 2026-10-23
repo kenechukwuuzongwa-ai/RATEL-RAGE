@@ -1,6 +1,9 @@
 package com.ratelrage.demo;
 
+
+import android.content.pm.ActivityInfo;
 import android.os.Bundle;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
@@ -38,6 +41,33 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void quit() {
             runOnUiThread(() -> finishAndRemoveTask());
+        }
+
+        /* KEEP THE SCREEN ON while a video intro or the narrated level entry
+         * plays (request 349). Nobody touches the glass during them, so the
+         * phone's timeout dimmed the screen, and the tap that woke it used to
+         * skip the video. Toggled by the web build (keepAwake in frontend.js),
+         * never left on for the menus or the fight. Window flags belong to the
+         * UI thread. */
+        @JavascriptInterface
+        public void keepScreenOn(boolean on) {
+            runOnUiThread(() -> {
+                if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            });
+        }
+
+        /* THE ACCOUNT WINDOW IS VERTICAL (request 405). In immersive fullscreen
+         * the keyboard does not resize the WebView, it covers the bottom ~60% of
+         * a landscape screen -- right where the sign-up fields were. account.js
+         * asks for portrait while its window is open and gives landscape back
+         * (the manifest's sensorLandscape) when it closes. configChanges includes
+         * orientation, so the WebView is not recreated by the turn. */
+        @JavascriptInterface
+        public void setPortrait(boolean on) {
+            runOnUiThread(() -> setRequestedOrientation(on
+                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
         }
     }
 

@@ -1,0 +1,21 @@
+# rr-stats: receives the game's analytics and serves the private dashboard.
+# Deploy from this folder: npx wrangler deploy      (see docs/STATS.md)
+name = "rr-stats"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rr-stats"
+database_id = "50a229a9-9f9f-41c0-9cac-d0fce5c4c226"
+
+# daily clean-up of old rows (03:17 UTC)
+[triggers]
+crons = ["17 3 * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://ratel-rage.pages.dev,https://*.ratel-rage.pages.dev,https://localhost"
+RETAIN_EVENTS_DAYS = "180"
+RETAIN_SESSIONS_DAYS = "400"
+# DASH_PASSWORD is a secret: npx wrangler secret put DASH_PASSWORD

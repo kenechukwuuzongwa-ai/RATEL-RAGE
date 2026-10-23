@@ -17,3 +17,12 @@ mobile/android/app/src/main/assets/
 mobile/build-log.txt
 # agent scratch space
 .wizardgenie/scratch/
+# Supabase CLI link cache (project ref, pooler URL)
+supabase/.temp/
+# web build output (node deploy/build-web.js) and tool caches
+deploy/dist/
+.wrangler/
+**/.wrangler/
+.claude/
+# front-end harness screenshots
+/menu_[0-9][0-9]_*.png

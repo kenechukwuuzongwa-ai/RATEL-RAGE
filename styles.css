@@ -56,6 +56,18 @@ html, body {
     radial-gradient(circle at 50% 20%, #1c2438 0%, #080b12 48%, #030407 100%);
 }
 
+/* A GAME PAGE, NOT A DOCUMENT: no scrolling, rubber-band or pull-to-refresh,
+   no pinch-zoom, no text selection or long-press callout anywhere on it (the
+   canvas already had these; the touch HUD sits outside it). */
+html, body {
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   display: grid;
   place-items: center;
@@ -107,3 +119,37 @@ canvas {
 }
 
 .loading.hidden { display: none; }
+
+/* A failed load (game.js showLoadFailure): the message and a reload button. */
+.loading .load-fail { display: grid; gap: 14px; justify-items: center; padding: 24px; }
+.loading .load-fail small { color: #9fb2d8; letter-spacing: .04em; font-size: 12px; max-width: 80vw; word-break: break-all; }
+.loading .load-fail button {
+  font: inherit; font-size: 14px; letter-spacing: .14em; color: #080b12; background: #ffe45e;
+  border: 0; border-radius: 6px; padding: 10px 22px; cursor: pointer;
+}
+
+/* MOBILE BROWSERS: 100vh is the viewport WITHOUT the address bar, so a shell
+   sized off it runs under the bar. The dynamic unit is the visible height. */
+@supports (height: 100dvh) {
+  html, body { height: 100dvh; }
+  .game-shell { width: min(100vw, calc(100dvh * 16 / 9)); }
+}
+
+/* Held upright, a phone gets a prompt instead of a postage-stamp game. (The
+   Android app is locked to landscape and never shows it.) */
+.rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: #ffe45e;
+  background: #080b12;
+  font: 700 18px/1.6 Montserrat, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: .14em;
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-hint { display: grid; }
+}

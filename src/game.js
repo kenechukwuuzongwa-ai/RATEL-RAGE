@@ -1,6 +1,6 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT } from './frontend.js?v=ratelrage-mobile-v37';
-import { createAftermath } from './aftermath.js?v=ratelrage-montserrat-v1';
-import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-montserrat-v1';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v75';
+import { createAftermath } from './aftermath.js?v=ratelrage-jimoh-v1';
+import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-level2-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
  * the measured play area those answers are built from. Enforced once per frame in
@@ -15,6 +15,8 @@ import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference 
  * same space the play area was measured in, so the two are one contract. */
 import { clampToPlayarea, canOccupy, clampDepthBand } from './playarea.js?v=ratelrage-playarea-v2';
 import { PLAYAREA, WORLD } from './worldConfig.js';
+// The cinematic bars, shared with the front end's Level 2 sequence (request 399).
+import { BAR_EASE, BAR_DUR, easeBars, easeRest, rampBars, setBars, drawBarsPx, BAR_CUT } from './bars.js';
 
 /* The HUD sets ctx.font directly rather than going through the front end's
  * setFont — it draws inside the gameplay loop and has no `ui` in scope at most
@@ -64,6 +66,15 @@ function fitText(text, x, y, maxW, weight = 400, px = 13, min = 10) {
  * copy. Desktop measured no difference either way, so this is Android-only:
  * the validated desktop renderer stays exactly as it is. */
 const IS_ANDROID = /Android/.test(navigator.userAgent);
+/* AUTHORING TOOLS (the ASSETS mover, the F2 region editor, F3, the F7 grade
+ * cycle) are for building the game, not playing it. A public web build
+ * (deploy/build-web.js sets RR_WEB.production) hides them unless the URL asks
+ * for ?debug; everywhere else — the editor's Play, the APK — nothing changes. */
+const DEV_TOOLS = (() => {
+  try {
+    return !(window.RR_WEB && window.RR_WEB.production) || /[?&]debug\b/.test(location.search);
+  } catch { return true; }
+})();
 /* TOUCH-SHAPED UI, not merely a touch-capable screen — the same gate src/touch.js
  * uses to decide whether its HUD is in charge, so an on-screen prompt can never
  * name a control the player has not been given. A laptop with a touchscreen and
@@ -166,7 +177,7 @@ const CAM_NEAR_GUTTER = WORLD.HEIGHT - PLAYAREA.walkBottom;
 /* Where the camera's top row may live — 110 .. 524 at tune.zoom 1.2. */
 const camYRange = () => {
   const lo = PLAYAREA.ceilingY - CAM_SKY_STRIP;                 // the roofline and its sky
-  const hi = PLAYAREA.walkBottom + CAM_NEAR_GUTTER - viewH();   // ...down to the last authored row
+  const hi = (activeLevel === 2 ? L2_ART_BOTTOM : PLAYAREA.walkBottom + CAM_NEAR_GUTTER) - viewH();   // ...down to the last authored row
   return { lo, hi: Math.max(lo, hi) };
 };
 
@@ -243,6 +254,105 @@ const VEHICLE_ART = [
   { id: 'keke-c', sx: 5361, sy: 452, w: 255, h: 158, x: 5361, y: 610, clearH: JUMPABLE_CLEAR_H },
   { id: 'bus',    sx: 6172, sy: 302, w: 762, h: 308, x: 6172, y: 610 },
 ];
+/* ====================================================== LEVEL 02 (request 399)
+ *
+ * OPERATION CLEAN SWEEP — the Nigeria Police Force evidence & property wing,
+ * from LEVEL 2.psd (6700 x 724 canvas, 7 layers, read by _chromakey/_psd.js):
+ *
+ *   GPB  Gameplay Background  7239 x 724 at (0,0) — the facility, floor included
+ *   MP   Middle Pillar  x3    223 x 665 — identical smart objects, standing ON
+ *                             the floor (open floor under each in the GPB)
+ *   FP   Front Pillar   x3    nearer than the floor: their feet are below the
+ *                             canvas (rows 729..822), so nothing walks in front
+ *
+ * ONE UNIFORM SCALE, NO STRETCH. The PSD canvas's width maps onto the world's
+ * (9259 / 6700 = 1.3819), so the whole authored composition — both ends — is
+ * the level, at the same world width the camera, gates and clamps already use.
+ * The GPB's 539 columns past the canvas edge are art outside the composition and
+ * are simply never reached.
+ *
+ * AND ONE VERTICAL OFFSET, chosen so the floor sits on Level 01's road band. The
+ * GPB's floor meets the back wall/cages at art rows ~475..520; art row 490 lands
+ * on world 645 — Darki's back edge on the street (PLAYER_LANE_TOP). Every depth
+ * rule the mob, the grab, the throw and the entry already use is in that band,
+ * so they work here unchanged; the art bottom (row 724) is world 968, which is
+ * this level's camera floor (camYRange).
+ *
+ * GPB and MP are drawn at the gameplay plane's rate (1:1 with the camera, from
+ * the same snapped origin, so the pillars can never drift against the floor).
+ * FP has its own, faster parallax (L2.fpParallax), anchored so each pillar is
+ * exactly where the PSD puts it when it crosses the middle of the screen. */
+const L2 = Object.freeze({
+  artW: 6700,
+  scale: WORLD_W / 6700,
+  artY: 645 - 490 * (WORLD_W / 6700),          // ≈ -32.15
+  fpParallax: 1.32,
+  gpb: { src: 'layers/level2/gpb.png', w: 7239, h: 724 },
+  /* MP: one image, three placements (left/top in PSD pixels). The solid FOOT is
+   * the base flange measured off the layer's alpha (cols 43..179 of 223 on its
+   * last rows), pulled in 10 px a side so a shoulder can brush the steel. */
+  mp: { src: 'layers/level2/mp.png', w: 223, h: 665, footL: 53, footR: 169, base: 664,
+    at: [{ left: 966, top: -79 }, { left: 3751, top: -54 }, { left: 4762, top: -64 }] },
+  fp: [
+    { src: 'layers/level2/fp-1.png', left: 1593, top: -140, w: 588, h: 882 },
+    { src: 'layers/level2/fp-2.png', left: 2618, top: -2, w: 557, h: 837 },
+    { src: 'layers/level2/fp-3.png', left: 5241, top: -111, w: 616, h: 946 },
+  ],
+});
+const l2X = (ax) => ax * L2.scale;
+const l2Y = (ay) => L2.artY + ay * L2.scale;
+/* The camera's floor here: the GPB's last row. */
+const L2_ART_BOTTOM = l2Y(724);
+/* THE MIDDLE PILLARS ARE SOLID AT THEIR FOOT, AND ONLY THERE. Same contract as a
+ * parked vehicle (vehicleBlocks / resolveVehicleCollision): a body cannot pass
+ * through the foot, but steps BEHIND it a few px past the base row, and the
+ * depth sort draws him behind the shaft. Never "cleared" by a jump. */
+const L2_PILLARS = L2.mp.at.map((p, i) => ({
+  id: `mp-${i + 1}`, pillar: true,
+  x: l2X(p.left + L2.mp.footL), w: l2X(L2.mp.footR - L2.mp.footL),
+  y: l2Y(p.top + L2.mp.base), h: l2X(L2.mp.h), clearH: 1e6,
+  drawX: l2X(p.left), drawY: l2Y(p.top),
+}));
+/* Darki's band on the facility floor. The back edge is the street's (645 —
+ * the offset above puts the floor's back edge there); the near edge keeps the
+ * street's own gutter under it: Level 01 stops his feet 63 world rows above the
+ * art's last row (walkBottom 1061 of 1124), so here it is 968 - 63 = 905.
+ *
+ * HARD CASES ARE PAINTED INTO THE GPB along its bottom edge in two places (read
+ * off the floor band, _chromakey/_l2bottom.js): the bay at the west end (art
+ * cols 0..450 with tops at row ~530, cols 450..910 at ~645) and a stack of
+ * cases and drums at cols ~1290..1935 (tops ~570..620). Those stretches are
+ * regions with a nearer stop, so nobody walks over crates drawn in front of
+ * them. East of col 1935 the floor runs clear to the edge. */
+const L2_PLAY = {
+  laneTop: 645, laneBottom: 905, playerTop: 645,
+  regions: [
+    { name: 'bay cases (west)', x: 0, w: l2X(450), laneTop: 645, laneBottom: l2Y(522), playerTop: 645 },
+    { name: 'bay cases', x: l2X(450), w: l2X(460), laneTop: 645, laneBottom: l2Y(636), playerTop: 645 },
+    { name: 'cases and drums', x: l2X(1290), w: l2X(645), laneTop: 645, laneBottom: l2Y(560), playerTop: 645 },
+  ],
+};
+/* Where Darki walks in: out of the open bay at the west end, the facility's
+ * entrance (the NPF EVIDENCE & PROPERTY WING sign), along the back of the floor
+ * behind the bay's cases, to his mark — clear of the first middle pillar (its
+ * foot spans x ~1408..1569). */
+const L2_ENTRY_SPOT = Object.freeze({ startX: -230, markX: 420, walkY: 664 });
+/* Level 02's arenas. No boss has been delivered for this level, so the last
+ * section is a fight like the others and clearing it ends the level (final).
+ * Every route is the camera edge: there is no wall opening in this building. */
+const SECTIONS_L2 = [
+  { gateX: 2900, quota: 5, seniors: 0, entryRoute: 'edge' },
+  { gateX: 5300, quota: 7, seniors: 1, shaved: 2, entryRoute: 'edge' },
+  { gateX: 7500, quota: 8, seniors: 1, shaved: 2, sars: 3, entryRoute: 'edge' },
+  { gateX: WORLD_W, quota: 10, seniors: 0, shaved: 5, sars: 5, entryRoute: 'edge', final: true },
+];
+/* WHICH LEVEL IS BEING FOUGHT. Written once per entry by onGameplayStart (from
+ * the front end, which owns the level choice) and read by the handful of places
+ * Level 02 differs: the art, the band, the solids, the sections, the entry. */
+let activeLevel = 1;
+/* The things a body can collide with on this level. */
+const solidBodies = () => (activeLevel === 2 ? L2_PILLARS : VEHICLE_ART);
+
 /* The authored spots, captured here so the mover's R (reset) always returns to
  * these numbers no matter how far a play session has dragged things. */
 const VEHICLE_AUTHORED = Object.freeze(Object.fromEntries(
@@ -317,6 +427,25 @@ function vehicleBlocks(v, x, y, half) {
     && x > v.x - 22 && x < v.x + v.w + 22;
 }
 
+/* NO BLOWS THROUGH A PARKED BODY (request 344). The lane tests (|dy| < 48 and
+ * friends) were wider than the gap between a vehicle's wheel row and the strip
+ * behind it, so a man standing behind the danfo and Darki standing in front of
+ * it could beat each other through the van. A vehicle is BETWEEN two bodies when
+ * they stand on opposite sides of its wheel row (the same line the collision and
+ * the depth sort use) and its x-span lies across the gap between them. Anyone
+ * genuinely over its roof (vehicleClearedBy) is not blocked by it. Returns the
+ * vehicle, or null. */
+function vehicleBetween(a, b) {
+  for (const v of solidBodies()) {
+    const back = v.y - VEHICLE_BEHIND_GAP;
+    if ((a.y < back) === (b.y < back)) continue;           // same side of it
+    if (Math.max(a.x, b.x) < v.x || Math.min(a.x, b.x) > v.x + v.w) continue;
+    if (vehicleClearedBy(a, v) || vehicleClearedBy(b, v)) continue;
+    return v;
+  }
+  return null;
+}
+
 function resolveVehicleCollision(body, halfW) {
   /* AIRBORNE IS NEGATIVE here: the arc's height runs jumpY < 0, and the
    * touchdown reset pins a grounded body back to 0 AFTER the integration, so
@@ -333,7 +462,7 @@ function resolveVehicleCollision(body, halfW) {
   if (body.grabbed || body.carried) return;
   const s = body.state;
   if (s === 'ko' || s === 'down' || s === 'hit' || s === 'deathAir' || s === 'deathDown') return;
-  for (const v of VEHICLE_ART) {
+  for (const v of solidBodies()) {
     if (!vehicleBlocks(v, body.x, body.y, halfW)) continue;
     if (vehicleClearedBy(body, v)) continue;        // genuinely over this one
     const cx = v.x + v.w / 2;
@@ -710,6 +839,48 @@ const WEAPONTHROW_SHEET = {
   faces: 1,
   drawH: capMatched(230, 37),       // on the opening and closing stances (0, 84-88)
 };
+/* THE MACHETE'S OWN THROW (request 343). The generic sheet above paints a BAT in
+ * his hand, so a machete throw showed a bat until the release; this one is the
+ * same throw with the blade. Supplied 5120x3750 (1024x750 cells), shipped at 50%
+ * like the other armed sheets. One section, "machete throw" (0-20): wind-up with
+ * the blade back (0-9), the blade leaves on 10, his hand is empty from 11. */
+const MACHETETHROW_SHEET = {
+  src: 'sprites/darki-machete-throw.png',
+  metaSrc: 'sprites/darki-machete-throw.json',
+  cols: 5, rows: 5,            // 21 frames
+  faces: 1,
+  drawH: capMatched(240, 37.5),     // on the wind-up (0-6), head still square to us
+};
+/* DARKI + BAT IN THE AIR (request 343; the file is named "machete jump", the art
+ * is the bat). Supplied 7168x7014, shipped at 50%. No sections; measured ink
+ * (_chromakey/_req343measure.js): guard 0-8, crouch 9-16, push 17-19, feet off
+ * the deck on 20, apex 23-28, down through 29-31, touch on 32, the landing crouch
+ * 32-37, back up to guard 38-44. The leap is painted in, as on the machete's. */
+const BATJUMP_SHEET = {
+  src: 'sprites/darki-bat-jump.png',
+  metaSrc: 'sprites/darki-bat-jump.json',
+  cols: 7, rows: 7,            // 45 frames
+  faces: 1,
+  drawH: capMatched(260, 38),       // on its guard (0-8) and settle (40-44)
+  feetOnGround: true,
+};
+/* DARKI + BAT: THE JUMP KICK (request 356). Supplied 8192x6368 (1024x796
+ * cells), shipped at 50%. One section, "Darki_bat_jumpkick": the tuck (0-2), the
+ * flying kick with the bat trailing low behind (3-26), the leg coming back
+ * under him with the bat across his chest (27-38), then — past the section's gap
+ * at 39-46 — the landing crouch and the settle into his bat guard (47-59).
+ * Measured in _chromakey/req357: the body drifts back across the cell through
+ * the kick, and the per-frame foot anchor follows it (no anchorFrame). */
+const BATSTRIKE_SHEET = {
+  src: 'sprites/darki-bat-airstrike.png',
+  metaSrc: 'sprites/darki-bat-airstrike.json',
+  cols: 8, rows: 8,            // 60 frames; cells 60-63 empty
+  faces: 1,
+  // the cap, measured directly (req357/_capdirect.js; the NCC head search loses his
+  // turned head here): 53-55 cell px on the tuck, kick and settle = 39.5 at drawH 238
+  drawH: capMatched(238, 39.5),
+  feetOnGround: true,          // the leap is painted in (lowest ink up to 65 px off the cell floor)
+};
 /* THE MACHETE IN THE AIR (request 326): two sheets, replacing the one
  * darki-machete-air sheet. Supplied as 10240² / 8192² (1024 cells), which
  * Chrome will not even decode and which would cost ~690 MB of RAM; shipped at
@@ -742,6 +913,30 @@ const MACHETERUSH_SHEET = {
   cols: 4, rows: 4,            // 15 frames in 1024x792 cells (the stride is wide)
   faces: 1,
   drawH: capMatched(270, 37.5),     // on the stride (4-12)
+};
+/* THE MACHETE TORNADO (request 370, "angerissues"). Supplied 14336x8866 (1024x682
+ * cells, 171 drawn frames of 182), shipped at 50% by _chromakey/req370/_clean.js,
+ * which also took the green-screen floor blobs out from under the back-facing spin
+ * (87-132) and neutralised the trails' mint spill. Measured (req370/_loop.js): the
+ * crouched wind-up spins (0-74), the main cycle 90-112 (frame 113 matches 90 to
+ * 9.6 against ~200 for unrelated poses), the spin-out (113-126) and the settle into
+ * his fight stance (127-170). See ATTACKS.macheteTornado. */
+const MACHETETORNADO_SHEET = {
+  src: 'sprites/darki-machete-tornado.png',
+  metaSrc: 'sprites/darki-machete-tornado.json',
+  cols: 14, rows: 13,          // 182 cells; 171-181 empty
+  faces: 1,
+  // the cap on the stance (140-170, head square to us), req370/_capwidth_tornado.js
+  drawH: capMatched(235, 35),
+  workH: 341,                  // the cell's own height: 182 cells, nothing to gain upscaling
+  /* The slash trails sweep round below his feet, so a per-frame foot anchor would
+   * lock onto the trail and hop; the stance's anchor is the one the art was
+   * composed on, and it is the frame he hands over to the machete idle from. */
+  anchorFrame: 170,
+  /* …and for the same reason his feet are not the union's bottom: the trails and
+   * the low blade reach the cell floor (y 340) while he stands on ~312 — the
+   * stance's soles. Without this the whole move floated 22 px over his shadow. */
+  groundRow: 312 / 341,
 };
 
 const HIGHKICK_SHEET = {       // High Kick (RMB) â€” 4x4, 13 frames
@@ -1368,8 +1563,61 @@ const AYEUATTACK_SHEET = {
   workH: 300,
 };
 // His stance <-> stride filter (see enemyAnimRaw): how long a reading must hold.
+/* THE SARS OFFICER'S FOUR SHEETS, and the two things about them that were wrong
+ * on sight (request 433).
+ *
+ * HIS ART FACES RIGHT. All four exports do — helmet brim, face and knife hand
+ * all point the same way on frame 0 of every one of them — and all four were
+ * wired `faces: -1`. The flip is computed as `enemy.facing !== config.faces`,
+ * so the lie did not make him face the wrong way at random: it made him face
+ * the wrong way ALWAYS, turning his back on Darki for the whole fight.
+ *
+ * HIS SIZE IS MATCHED ON HIS HELMET, not on his ink height (the same discipline
+ * `capMatched` applies to Darki). Ink height compares POSES: these four sheets
+ * open on a hunched walk stance, an upright guard, a wide planted throw and a
+ * wide standing recoil, which measure 180, 160, 186 and 158 cell px for the
+ * same man. The helmet is the same object in all four — 30, 27, 32 and 26 cell
+ * px across (_chromakey/req433/headrows.js) — so `drawH = T * cellInk0 /
+ * helmetW` puts one man on all four sheets. The four solve to 6.000, 5.926,
+ * 5.813 and 6.077 x T, agreeing inside 2.3%, which is the check that they ARE
+ * one man rather than four exports that happen to be nearby.
+ *
+ * T = 36.7 drawn px of helmet. The street classes' heads measure ~30 drawn
+ * (ginger 29-34, senior 31, Aye 28), and at parity he read as the weed of the
+ * group: his art is in a realistic proportion — small head, long legs — next to
+ * the Agberos' big-headed brawler build, so a man the same TOTAL height still
+ * looks like a smaller man. T is set above their head so he draws ~174 screen
+ * px against the senior Agbero's 169 and the Aye's 158, under Darki's ~205:
+ * the biggest body on the floor bar the boss, which is what a tactical officer
+ * should be. This is a draw-time number only — reach, hitboxes and lanes are
+ * world px and are untouched by it.
+ *
+ * `workH` IS THE RESOLUTION CEILING, not just a load-time dial: pass 2 crops
+ * from the pass-1 work canvas, so a workH under the cell height throws away
+ * detail the atlas has. It tracks the atlas's own 440 px cells
+ * (_chromakey/req440/rebuild-sars-assets.js), the Aye walk's own working
+ * height. At 192 his ~180 px of ink was UPSCALED to his ~220 draw and read
+ * soft beside Aye, who is downsampled from 440. Prep resamples every frame to
+ * drawH, so this costs download and load time, not resident memory. */
+const SARS_WALK_SHEET = { src: 'sprites/sars-walk.png', metaSrc: 'sprites/sars-walk.json', cols: 8, rows: 8, faces: 1, drawH: 220, bodyFrame: 0, workH: 440 };
+const SARS_ATTACK_SHEET = { src: 'sprites/sars-attack.png', metaSrc: 'sprites/sars-attack.json', cols: 9, rows: 9, faces: 1, drawH: 217, bodyFrame: 0, workH: 440 };
+const SARS_THROW_SHEET = { src: 'sprites/sars-throw.png', metaSrc: 'sprites/sars-throw.json', cols: 9, rows: 8, faces: 1, drawH: 213, bodyFrame: 0, workH: 440 };
+const SARS_REACT_SHEET = { src: 'sprites/sars-react.png', metaSrc: 'sprites/sars-react.json', cols: 9, rows: 9, faces: 1, drawH: 223, bodyFrame: 0, workH: 440 };
+const SARS_KNIFE_SHEET = { src: 'sprites/sars-knife.png', metaSrc: 'sprites/sars-knife.json', cols: 1, rows: 1, faces: -1, drawH: 24, bodyFrame: 0, workH: 109 };
+
+const SARS = {
+  speed: 112, baseHp: 42, hpMul: 9,
+  get maxHp() { return this.baseHp * this.hpMul; },
+  aggroX: 920, leashX: 1200, attackRangeY: 58, laneCommitY: 38, approachTimeout: 3.2,
+  cooldownMin: 0.9, cooldownVar: 0.8, standoff: 230, standoffVar: 45, strikeChance: 1,
+  maxKnives: 5, throwMin: 260, throwMax: 700, rearmSafe: 320,
+};
+const SARS_FALLDOWN_DUR = 12 / 30;
+const SARS_GETUP_DUR = 24 / 30;
+
 const AYE_POSE_TO_WALK = 0.08;    // ~5 frames of real movement before he strides
 const AYE_POSE_TO_READY = 0.15;   // ~9 frames of standing before he squares up
+const POSE_MIN_HOLD = 0.15;       // every class (request 369): a pose stays up >= 9 frames once shown
 const AYE_FALLDOWN_DUR = 6 / 24;
 const AYE_GETUP_DUR = 13 / 30;
 
@@ -1608,7 +1856,10 @@ const PLAYER = {
   maxSpeed: 340,
   accel: 2600,
   friction: 2200,
-  jumpVel: 780,
+  /* 900 (request 330: more elevation; was 780). Stepped apex ~196 px at 60 fps
+   * against 145.6 — still clears every vehicle on JUMPABLE_CLEAR_H (a floor, not
+   * a ceiling), and still nowhere near the 308 px bus, which stays unjumpable. */
+  jumpVel: 900,
   gravity: 2000,
   coyoteTime: 0.1,
   jumpBuffer: 0.12,
@@ -1709,7 +1960,10 @@ const tune = {
 };
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+/* `let`, not `const`, for ONE reason: the reflection pass (drawReflections)
+ * points it at its mirror buffer for the length of a body's draw, so the very
+ * same drawPlayer/drawEnemy paint the reflection. Nothing else reassigns it. */
+let ctx = canvas.getContext('2d');
 /* THE BACKING STORE FOLLOWS THE DISPLAY. The canvas element ships at
  * 1280x720 and CSS stretches it to the window — at 1.5x that was the
  * pixelation the user could see in gameplay (the front end's own screens
@@ -1738,6 +1992,7 @@ let frontEnd = null;
  * Held as a bare function rather than reached through `frontEnd` so the entry
  * has no opinion about who owns the audio element. */
 let startIntroVoice = null;
+let stopIntroVoice = null;             // the front end's end of that line (request 349)
 
 /* The world â€” 29 sprite sheets and the four authored level layers â€” no longer gates
  * the first frame. Boot brings the front end up on its own (one idle sheet) and
@@ -1758,7 +2013,7 @@ let worldLoaded = 0;
 /* 46, COUNTED: 42 sheets + 4 layers. It read 40 while the array already held
  * 43 (the armed-hit, attack and machete sheets landed without it), and Aye's
  * sharpen, unarmed fall sheet and carry struggle are the other three. */
-const WORLD_STEPS = 58;   // +6 (request 305): Darki's machete idle/walk/combo/rush/air + the weapon throw.   // +3 (request 303): Darki's bat walk, idle and swing.   // +2 (request 300) Aye's unarmed walk/attack, +1 (request 303) the bat pickup
+const WORLD_STEPS = 63;   // +6 (request 305): Darki's machete idle/walk/combo/rush/air + the weapon throw.   // +3 (request 303): Darki's bat walk, idle and swing.   // +2 (request 300) Aye's unarmed walk/attack, +1 (request 303) the bat pickup
 
 /* ---------------------------------------------------------------- utils */
 
@@ -1772,14 +2027,75 @@ function mulberry32(seed) {
   };
 }
 
-function loadImage(src) {
+/* THE PHONE'S ART ON THE WEB. The Android app ships downscaled plates and
+ * sheets in place of the originals (mobile/gen-mobile-assets.js), and this
+ * file's IS_ANDROID branches assume them (half-res sky/background drawn at 2x).
+ * A web deploy serves ONE tree to every browser, so deploy/build-web.js puts
+ * the phone copies under lowres/ and lists them in window.RR_WEB.lowres; an
+ * Android browser is pointed there. Anywhere else the list is absent: no-op. */
+const LOWRES = (() => {
+  try {
+    const list = IS_ANDROID && window.RR_WEB && window.RR_WEB.lowres;
+    return Array.isArray(list) && list.length ? new Set(list) : null;
+  } catch { return null; }
+})();
+const assetPath = (src) => (LOWRES && LOWRES.has(src) ? 'lowres/' + src : src);
+
+/* Three tries, spaced out: on a phone network one dropped request used to be
+ * the end of the whole load (the world waits on every sheet). */
+function loadImage(src, tries = 3) {
+  // resolve against this module so test pages in /tests load the same asset
+  const url = new URL('../' + encodeURI(assetPath(src)), import.meta.url);
   return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Failed to load ${src}`));
-    // resolve against this module so test pages in /tests load the same asset
-    img.src = new URL('../' + encodeURI(src), import.meta.url);
+    let attempt = 0;
+    const go = () => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => {
+        if (++attempt < tries) setTimeout(go, 700 * attempt);
+        else reject(new Error(`Failed to load ${src}`));
+      };
+      img.src = url;
+    };
+    go();
   });
+}
+
+// Game events for the optional analytics (src/analytics.js); a no-op when it is off.
+function rrTrack(name, props) {
+  try { window.RRAnalytics?.track(name, props); } catch {}
+}
+/* …and the moments that are also PROGRESS (src/progress.js: saved locally,
+ * synced by src/account.js when signed in). Called only at level start, a
+ * section gate, game over, retry and level complete — never per frame. */
+function rrGameEvent(name, props) {
+  rrTrack(name, props);
+  try { window.RRProgress?.record(name, props); } catch {}
+}
+
+/* A load that cannot complete says so and offers a reload, instead of leaving
+ * the player on a frozen screen. Also reported to analytics (if enabled). */
+function showLoadFailure(err, stage) {
+  const msg = String(err?.message || err || 'unknown error');
+  try { window.RRAnalytics?.track('load_error', { stage, msg }); window.RRAnalytics?.flush(); } catch {}
+  try {
+    const el = document.getElementById('loading');
+    if (!el) return;
+    el.textContent = '';
+    const box = document.createElement('div');
+    box.className = 'load-fail';
+    const head = document.createElement('div');
+    head.textContent = 'THE STREETS DID NOT LOAD';
+    const why = document.createElement('small');
+    why.textContent = `${msg}. Check your connection and try again.`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'TRY AGAIN';
+    btn.addEventListener('click', () => location.reload());
+    box.append(head, why, btn);
+    el.appendChild(box);
+    el.classList.remove('hidden');
+  } catch {}
 }
 
 function makeCanvas(w, h) {
@@ -2010,6 +2326,12 @@ function resolveAnims(meta, frameCount) {
 }
 
 async function loadSpriteFrames(config, animationName = 'walk') {
+  if (window.__rorFastSpritePrep) {
+    const manifest = await fetch(new URL('../' + encodeURI(config.metaSrc), import.meta.url))
+      .then((response) => response.ok ? response.json() : null)
+      .catch(() => null);
+    return prepStubSpriteFrames(config, animationName, manifest);
+  }
   const [img, manifest] = await Promise.all([
     loadImage(config.src),
     fetch(new URL('../' + encodeURI(config.metaSrc), import.meta.url))
@@ -2020,6 +2342,17 @@ async function loadSpriteFrames(config, animationName = 'walk') {
    * sheet at a time, breathing between slices, so the front end keeps drawing
    * and taking input while the level arrives behind it. */
   return inPrepLane(() => prepSpriteFrames(config, animationName, img, manifest));
+}
+
+function prepStubSpriteFrames(config, animationName, manifest) {
+  const meta = config.manifest ? (manifest?.sprites?.[0] ?? manifest) : manifest;
+  const cols = meta?.sheet?.cols ?? config.cols;
+  const rows = meta?.sheet?.rows ?? config.rows;
+  const count = cols * rows;
+  const frames = Array.from({ length: count }, () => makeCanvas(2, 2));
+  const anims = resolveAnims(meta, count);
+  if (animationName !== 'walk') anims[animationName] = anims.walk;
+  return { frames, anchors: Array(count).fill(1), footAnchors: null, drawW: 2, drawH: 2, anims, hits: null, faces: config.faces ?? 1, sink: 0, lifts: null };
 }
 
 async function prepSpriteFrames(config, animationName, img, manifest) {
@@ -2188,6 +2521,10 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
     const yieldNow = breathe();
     if (yieldNow) await yieldNow;
   }
+  // Each frame's OWN foot anchor survives the freeze as `footAnchors`, for a
+  // caller that draws a STANDING frame off a fall sheet (MC_Olodo held in the
+  // grab, OLODO_HELD) — the frozen lying anchor would shove him sideways.
+  const footAnchors = config.anchorFrame != null ? anchors.slice() : null;
   if (config.anchorFrame != null && anchors[config.anchorFrame] != null)
     anchors.fill(anchors[config.anchorFrame]);
   /* WHERE THE GROUND IS, for a sheet whose lowest ink is not its feet.
@@ -2209,6 +2546,7 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
    * Absent, nothing moves. */
   if (config.nudge) {
     for (let i = 0; i < anchors.length; i++) if (anchors[i] != null) anchors[i] -= config.nudge.x || 0;
+    if (footAnchors) for (let i = 0; i < footAnchors.length; i++) if (footAnchors[i] != null) footAnchors[i] -= config.nudge.x || 0;
     sink += config.nudge.y || 0;
   }
   /* `faces` travels WITH the sprite. Enemies already flip against their own
@@ -2223,7 +2561,7 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
    * is each frame's gap below its lowest ink, in drawn px; the draw adds it
    * back, so that lowest point always sits on his physical height. */
   const lifts = config.feetOnGround ? frames.map((f) => lowestInkGap(f)) : null;
-  return { frames, anchors, drawW, drawH, anims, hits, faces: config.faces ?? 1, sink, lifts };
+  return { frames, anchors, footAnchors, drawW, drawH, anims, hits, faces: config.faces ?? 1, sink, lifts };
 }
 function lowestInkGap(frame) {
   const { width, height } = frame;
@@ -2625,6 +2963,7 @@ const input = {
   grabPressed: false, executePressed: false,
   lmbRaw: false, rmbRaw: false,     // raw button edges for the manual grab-combo
   leftJabHeld: false, upperHeld: false, grabHeld: false,
+  lmbHeld: false, padHitHeld: false,   // HIT held on the mouse/touch button and the pad (hitHeld)
   blockHeld: false,                 // the guard is a HELD state, not an edge
   // L2 is now BOTH an edge and a hold: the press still offers the execution, and
   // if there is no execution to offer it becomes a pickup â€” which is carried for
@@ -2668,7 +3007,7 @@ window.addEventListener('keydown', (e) => {
    * region editor, F3 the asset mover, and while one is open its bindings
    * (arrows nudge, E exports, R resets) never reach the sim — E is otherwise
    * the execution and the arrows are Darki's depth walk. */
-  if (!frontEnd?.active && (e.code === 'F2' || e.code === 'F3')) {
+  if (DEV_TOOLS && !frontEnd?.active && (e.code === 'F2' || e.code === 'F3')) {
     e.preventDefault(); resumeAudio();
     reKey(e.code); amKey(e.code);
     return;
@@ -2773,6 +3112,60 @@ if (typeof window !== 'undefined') {
   } catch { /* no host: the row simply is not offered */ }
 }
 const PAUSE_ITEMS = PAUSE_MENU.map((it) => it.label);   // labels, for the dev hooks
+/* THE GAME-OVER SCREEN (request 338) is the pause machinery with its own two
+ * rows: the fight freezes under it exactly as it does under PAUSED, and the
+ * keyboard, pad, mouse and touch paths all reach it without a second copy.
+ * Only the rows, the look and the missing "resume" differ. */
+const GAMEOVER_MENU = [
+  { label: 'RETRY', icon: 'restore' },
+  { label: 'GIVE UP', icon: 'power' },
+];
+/* …and its other face (request 399): Level 02 has no boss and no story after it
+ * yet, so clearing it lands here — the same frozen-fight panel, the same input
+ * paths, with REPLAY (the retry door, so no cinematic replays) and MAIN MENU. */
+const CLEARED_MENU = [
+  { label: 'REPLAY LEVEL', icon: 'restore' },
+  { label: 'MAIN MENU', icon: 'power' },
+];
+const gameOver = { active: false, t: 0, stats: null, art: null, cleared: false };
+const menuItems = () => (gameOver.active ? (gameOver.cleared ? CLEARED_MENU : GAMEOVER_MENU) : PAUSE_MENU);
+// MC_Olodo has taken the killing blow and the ending is coming (request 338).
+const bossBeaten = () => !!(boss && boss.dying && !gameOver.active);
+
+function startLevelClear() {
+  if (gameOver.active) return;
+  run.final = computeScore();
+  rrGameEvent('level_complete', { level: activeLevel, difficulty: chosenDifficulty, time: run.final?.time ?? run.time,
+    score: run.final?.total ?? 0, rank: run.final?.rank ?? null, kos: levelKills, hp: Math.ceil(Math.max(0, player.hp)),
+    maxCombo: run.maxCombo, topHit: run.topHit, parts: run.final?.parts ?? null });
+  gameOver.active = true;
+  gameOver.cleared = true;
+  gameOver.t = 0;
+  gameOver.stats = { time: run.time, kos: levelKills, maxCombo: run.maxCombo, topHit: run.topHit };
+  stopDarkiVoice(); queuedVoice = null;
+  paused = true;
+  pauseChoice = 0;
+  pauseT = 0;
+  clearPauseInput();
+  stopControllerRumble();
+}
+
+function startGameOver() {
+  if (gameOver.active) return;
+  gameOver.active = true;
+  gameOver.cleared = false;
+  gameOver.t = 0;
+  gameOver.stats = { time: run.time, kos: levelKills, maxCombo: run.maxCombo, topHit: run.topHit };
+  rrGameEvent('game_over', { level: frontEnd?.level ?? 1, section, time: run.time, kos: levelKills,
+    maxCombo: run.maxCombo, boss: waveState === 'boss', difficulty: chosenDifficulty });
+  breakCombo();
+  stopDarkiVoice(); queuedVoice = null;
+  paused = true;
+  pauseChoice = 0;
+  pauseT = 0;
+  clearPauseInput();
+  stopControllerRumble();
+}
 let pauseChoice = 0;
 
 /* Pause navigation, deliberately built to the same shape as the front end's
@@ -2816,7 +3209,9 @@ function clearPauseInput() {
 function togglePause() {
   if (levelEntry.active) return;                // the narrated walk-in owns control
   if (cutscene.active) { skipCutscene(); return; }
-  if (outro.active) { skipOutro(); return; }
+  // Request 338: the ending can no longer be skipped, and the game-over screen
+  // owns the pause until a choice is made.
+  if (outro.active || bossBeaten() || gameOver.active) return;
   paused = !paused;
   if (paused) { stopControllerRumble(); pauseChoice = 0; }
   clearPauseInput();
@@ -2835,7 +3230,7 @@ function togglePause() {
 /* Both directions play the move cue, matching the front end's lists. The back
  * cue belongs to leaving a screen, not to travelling up one. */
 function movePauseChoice(delta) {
-  const n = PAUSE_MENU.length;
+  const n = menuItems().length;
   const next = (pauseChoice + delta + n) % n;
   if (next === pauseChoice) return;          // no state change => no sound
   pauseChoice = next;
@@ -2843,11 +3238,18 @@ function movePauseChoice(delta) {
 }
 
 function activatePauseChoice() {
-  const item = PAUSE_ITEMS[pauseChoice];
+  const item = menuItems()[pauseChoice]?.label;
   frontEnd?.ui.pressPulse(`pause:${pauseChoice}`);
   if (item === 'RESUME') { frontEnd?.ui.navForward(); togglePause(); return; }
   frontEnd?.ui.navForward();
-  if (item === 'RESTART CHECKPOINT') {
+  if (item === 'RESTART CHECKPOINT' || item === 'RETRY' || item === 'REPLAY LEVEL') {
+    rrGameEvent('retry', { level: frontEnd?.level ?? 1, from: gameOver.active ? 'game_over' : 'pause' });
+    try { sessionStorage.setItem('rr.retry', '1'); window.RRAnalytics?.flush(); } catch {}   // the reload below ends this page
+    // …and WHICH level: the reload forgets it, and the front end restores it (request 399).
+    try { sessionStorage.setItem('rorRetryLevel', String(activeLevel)); } catch {}
+    // …and WHERE in it (request 442): REPLAY LEVEL is a fresh run of a cleared level, so it keeps none.
+    if (item === 'REPLAY LEVEL') { try { sessionStorage.removeItem(RETRY_CHECKPOINT_KEY); } catch {} }
+    else saveRetryCheckpoint();
     sessionStorage.setItem('rorSkipToGameplay', '1');
     location.reload();
   } else if (item === 'CUSTOMIZE CONTROLS') {
@@ -2859,7 +3261,9 @@ function activatePauseChoice() {
     // The fight stays paused underneath; onPauseReturn brings us back to it.
     clearPauseInput();
     frontEnd?.openFromPause(item);
-  } else if (item === 'QUIT TO MENU') {
+  } else if (item === 'QUIT TO MENU' || item === 'GIVE UP' || item === 'MAIN MENU') {
+    rrTrack('quit', { level: frontEnd?.level ?? 1, from: gameOver.active ? 'game_over' : 'pause' });
+    try { window.RRAnalytics?.flush(); } catch {}
     sessionStorage.setItem('rorSkipSplash', '1');
     location.reload();
   } else if (item === 'QUIT TO DESKTOP') {
@@ -2876,6 +3280,7 @@ function updatePauseInput(dt) {
    * clock — and the QUIT arming that rides on it — has to be aged from here or
    * the prompt would hang on screen and the arming would never lapse. */
   frontEnd?.ui.tickMessage?.(dt);
+  if (gameOver.active) gameOver.t += dt;
   /* While the mobile HUD editor (src/touch.js) is open the pause menu is
    * hidden — and must stay deaf too, or an Enter press would resume the fight
    * behind the editor. */
@@ -2905,7 +3310,8 @@ function updatePauseInput(dt) {
   /* Dismissing the menu with O / Escape / START is a RETURN, so it gets the back
    * cue â€” the one place in the pause menu that cue belongs. Choosing RESUME with
    * Cross is a confirmation and keeps the forward cue, in activatePauseChoice. */
-  if (pauseTakeLatch('back')) { frontEnd?.ui.navBack(); togglePause(); }
+  // There is no resuming a death: back does nothing on the game-over screen.
+  if (pauseTakeLatch('back') && !gameOver.active) { frontEnd?.ui.navBack(); togglePause(); }
 }
 
 /* Accept is Enter ALONE, deliberately narrower than the front end's
@@ -2982,7 +3388,7 @@ window.addEventListener('keydown', (e) => {
   /* F7 — cycle the environment grade off / subtle / strong, in play. A colour
    * decision can only be judged against the thing it is for, so this switches
    * on the SAME frame of combat rather than needing a reload between looks. */
-  if (e.code === 'F7') {
+  if (DEV_TOOLS && e.code === 'F7') {
     e.preventDefault();
     const order = Object.keys(GRADE_PRESETS);
     GRADE.preset = order[(order.indexOf(GRADE.preset) + 1) % order.length];
@@ -3043,6 +3449,27 @@ canvas.addEventListener('mousemove', (e) => {
   pauseChoice = i;                                       // jump straight there, cue already played
 });
 
+/* A tap on the screen during Level 1's narrated entry: the second of two within
+ * SKIP_TAP.window skips the line and starts the fight (request 349).
+ *
+ * Listen at the window capture phase. During gameplay the mobile movement
+ * region covers the whole left half and the action buttons own parts of the
+ * right; those overlays correctly stop their events before they reach the
+ * canvas. The narrated entry has swallowed combat input, so every touch is
+ * unambiguously an entry tap and must be seen before an overlay claims it. */
+let entryPhysicalTapAt = -Infinity;
+function onLevelEntryTap() {
+  if (!levelEntry.active) return;
+  const now = performance.now() / 1000;
+  /* A modern touch emits pointerdown and touchstart for the same finger. Keep
+   * the fallback for embedded/older WebViews, but count that pair only once. */
+  if (now - entryPhysicalTapAt < 0.06) return;
+  entryPhysicalTapAt = now;
+  if (entryVoT() >= SKIP_TAP.hintAt && entryTap.tap(now)) skipLevelEntryVoice();
+}
+window.addEventListener('pointerdown', onLevelEntryTap, true);
+window.addEventListener('touchstart', onLevelEntryTap, { capture: true, passive: true });
+
 canvas.addEventListener('mousedown', (e) => {
   if (frontEnd?.active) return;
   e.preventDefault();
@@ -3075,6 +3502,7 @@ canvas.addEventListener('mousedown', (e) => {
   // grab-combo reads these so its alternation can't be confused by the chord.
   if (e.button === 0) input.lmbRaw = true;
   else if (e.button === 2) input.rmbRaw = true;
+  if (e.button === 0) input.lmbHeld = true;             // HIT held (the tornado's hold)
   if (e.button === 0) {                                 // LMB
     if (rmbDown) { input.upperPressed = true; return; } // hold RMB + click LMB â†’ Uppercut (not a combo click)
     const now = performance.now();
@@ -3094,8 +3522,9 @@ canvas.addEventListener('mousedown', (e) => {
 // Middle-click also opens Chrome's autoscroll widget; `mousedown` preventDefault
 // stops that, and this stops the click that follows it from doing anything else.
 canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
-const clearRmb = () => { rmbDown = false; };
+const clearRmb = () => { rmbDown = false; input.lmbHeld = false; };
 canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 0) input.lmbHeld = false;
   if (paused) {
     // Commit only if the release lands on the item the press started on.
     if (e.button === 0 && pausePointerDown >= 0 && pauseHitIndex(e) === pausePointerDown) {
@@ -3310,9 +3739,10 @@ function pollGamepad() {
   // clear it. Above the `!gp` return, so keyboard-only play still gets it.
   input.executeHeld = kbHeld.execute || !!(gp && gp.buttons[6] && gp.buttons[6].pressed);
 
-  if (!gp) return;                    // no controller: buttons below don't apply
+  if (!gp) { input.padHitHeld = false; return; }   // no controller: buttons below don't apply
 
   const btn = (i) => gp.buttons[i] && gp.buttons[i].pressed;
+  input.padHitHeld = !!btn(2);        // square held (the tornado's hold)
   const jumpNow = btn(0);
   if (jumpNow && !gpPrev.jump) input.jumpPressed = true;
   input.jumpHeld = input.jumpHeld || jumpNow;
@@ -3397,7 +3827,8 @@ const player = {
   anim: 'idle', frame: 0, animTime: 0,
   // combat
   state: 'normal',             // 'normal' | 'hurt' | 'ko'
-  hp: 100, maxHp: 100, hpShown: 100, hpFlash: 0,
+  // Request 338: he can die now, so he is built to last — three times the old pool.
+  hp: 300, maxHp: 300, hpShown: 300, hpFlash: 0,
   stepClock: null,             // last walk-cycle step his boots were checked at
   rage: 0, rageActive: false, rageTimer: 0,
   attack: null,                // active attack move name, or null
@@ -3506,6 +3937,11 @@ let ayeFallSprite = null;      // UNARMED: stance, hit, fall, get-up, death
 let ayeStruggleSprite = null;  // UNARMED: kicking while carried overhead
 let ayeUWalkSprite = null;     // UNARMED: his guarded step
 let ayeUAttackSprite = null;   // UNARMED: his side kick
+let sarsWalkSprite = null;
+let sarsAttackSprite = null;
+let sarsThrowSprite = null;
+let sarsReactSprite = null;
+let sarsKnifeSprite = null;
 let batPickupSprite = null;    // the floating bat Darki collects
 let batWalkSprite = null;      // Darki carrying the bat: walk
 let batIdleSprite = null;      // …idle (the better-grip armed idle)
@@ -3515,9 +3951,13 @@ let macheteWalkSprite = null;  // …walk
 let macheteComboSprite = null; // …the single chop and the double-tap combo
 let batRushSprite = null;      // Darki's bat rush
 let macheteRushSprite = null;  // …the rush slash
+let macheteTornadoSprite = null; // …the rage tornado (MACHETETORNADO_SHEET)
 let macheteAirSprite = null;   // …jump and its landings (MACHETEJUMP_SHEET)
 let macheteStrikeSprite = null; // …the air strike (MACHETESTRIKE_SHEET)
-let weaponThrowSprite = null;  // the throw, whichever weapon he holds
+let weaponThrowSprite = null;  // the throw with the bat in his hand
+let macheteThrowSprite = null; // …and with the machete (MACHETETHROW_SHEET)
+let batJumpSprite = null;      // Darki + bat: jump and landing (BATJUMP_SHEET)
+let batStrikeSprite = null;    // …his jump kick and its landing (BATSTRIKE_SHEET)
 let macheteSprite = null;     // the weapon itself — drawn only once it is on the ground
 let olodoFallSprite = null;    // BOSS: MC_Olodo knocked down and getting up
 let olodoStanceSprite = null;  // BOSS: MC_Olodo's emote/combat stance
@@ -3577,6 +4017,9 @@ const weapons = [];
  * field, so assigning a new one releases the old by construction. That is the
  * reason the owner lives on the WEAPON and not on the man — "give it to B" is a
  * single write that cannot leave A still holding it. */
+// The weapon Darki last held, so the boss intro can hand it back if it is lying
+// somewhere on the road when he crosses the last gate (a throw, a spill).
+let lastPlayerWeapon = null;
 function setWeaponOwner(m, next, at = null) {
   if (!m) return null;
   const prev = m.owner;
@@ -3593,6 +4036,7 @@ function setWeaponOwner(m, next, at = null) {
     if (prev && prev !== player) m.from = prev;
   } else {
     m.from = null;             // in a hand again: nobody's dropped blade
+    if (m.owner === player) lastPlayerWeapon = m;
   }
   return m;
 }
@@ -3657,6 +4101,28 @@ Object.defineProperty(player, 'weapon', {
  * facing (his attacker, in every caller), so it is on the road between them:
  * close enough for him to go back for it, never snapped back into his hand.
  * A dead man's blade stays where it fell. */
+function dropSarsKnife(e) {
+  if (e.kind !== 'sars' || e.knives <= 0 || e.knifeDroppedThisFall) return null;
+  e.knives--;
+  e.knifeDroppedThisFall = true;
+  const knife = createWeapon('knife', e);
+  setWeaponOwner(knife, null, { x: e.x + (e.facing || -1) * 24, y: clampLane(e.y + 4), facing: e.facing || -1 });
+  emitWeaponEvent('knife_drop', knife, e);
+  return knife;
+}
+
+function throwSarsKnife(e) {
+  if (e.kind !== 'sars' || e.knives <= 0) return false;
+  e.knives--;
+  const knife = createWeapon('knife', e);
+  const dir = e.facing >= 0 ? 1 : -1;
+  launchWeapon(knife, { x: e.x + dir * 68, y: e.y, h: 126, vx: dir * WEAPONS.knife.throw.speed, vh: 70, spin: dir * WEAPONS.knife.throw.spin, rot: -dir * 0.4 });
+  knife.enemyThrown = true;
+  knife.from = e;
+  emitWeaponEvent('knife_throw', knife, e);
+  return true;
+}
+
 function dropMachete(e) {
   const m = macheteOf(e);
   if (!m) return null;
@@ -3686,10 +4152,14 @@ function dropMachete(e) {
  * hitEnemy already plays the impact, and two sounds on one blow is mud). */
 const WEAPON_EVENT_CUES = {
   machete_drop: 'macheteDrop', machete_pickup: 'machetePickup',
+  knife_drop: { cue: 'macheteDrop', weight: 0.55, rate: 1.35 }, knife_pickup: 'machetePickup',
+  knife_throw: { cue: 'bladeWhip', weight: 0.65 }, knife_ground_impact: { cue: 'macheteDrop', weight: 0.45, rate: 1.45 },
+  knife_bounce: { cue: 'macheteDrop', weight: 0.28, rate: 1.55 }, knife_wall: { cue: 'macheteDrop', weight: 0.35, rate: 1.6 },
   bat_drop: { thud: 0.55 }, bat_pickup: 'grabSuccess',
   // …and his grab effort with it (request 322): the whole-body heave the jump
   // already borrows, on the release frame, whichever weapon leaves his hand.
-  weapon_throw: { cue: 'whiffKickP', weight: 1.25, rate: 0.82, also: 'grabSuccess' },
+  // The release's whoosh is now the weapon's own first whip (request 331, see stepThrownWeapon).
+  weapon_throw: 'grabSuccess',
   machete_ground_impact: { cue: 'macheteDrop', weight: 1.25 },
   machete_bounce: { cue: 'macheteDrop', weight: 0.6, rate: 1.15 },
   machete_wall: { cue: 'macheteDrop', weight: 0.8, rate: 1.25 },
@@ -3698,9 +4168,14 @@ const WEAPON_EVENT_CUES = {
   bat_wall: { thud: 0.6 },
 };
 const weaponEvents = {};
+const weaponCueAt = {};
+const WEAPON_CUE_GAP = 0.075;
 function emitWeaponEvent(name, m, who) {
   weaponEvents[name] = (weaponEvents[name] || 0) + 1;
   const cue = WEAPON_EVENT_CUES[name];
+  const now = audioCtx?.currentTime ?? performance.now() / 1000;
+  if (cue && now - (weaponCueAt[name] ?? -Infinity) < WEAPON_CUE_GAP) return;
+  if (cue) weaponCueAt[name] = now;
   const at = m?.x ?? who?.x ?? player.x;
   if (typeof cue === 'string') playCue(cue, at);
   else if (cue?.thud) playThud(at, cue.thud);
@@ -3713,12 +4188,13 @@ function emitWeaponEvent(name, m, who) {
  * After a knockdown an Aye asks ONE question — is MY blade still lying where I
  * can reach it? — and the answer decides his next state:
  *
- *   GET UP -> CHECK -> available -> 'recoverWeapon' (walk to it, never attack)
+ *   GET UP -> CHECK -> a blade   -> 'recoverWeapon' (walk to it, never attack)
  *                                    -> 'pickupWeapon' (crouch, take, rise armed)
  *                   -> gone        -> unarmed combat ('menace', jab/kick)
  *
- * "His" is `m.from === e`: the man it fell from. Aye #1 never goes for Aye #2's
- * blade, and a blade Darki has picked up has no `from` at all.
+ * "His" is `m.from === e`: the man it fell from. His own comes first; once it is
+ * lost or out of reach, any free machete on the road will do (canClaimMachete —
+ * request 337), but never one its own man is nearer to and still wants.
  *
  * Interruption rules, so he never chases it while being beaten on:
  *  - ANY hit ends it. A stagger hands him back to 'menace' and a knockdown
@@ -3747,21 +4223,40 @@ const WEAPON_RECOVERY = {
   rise: 16 / 30,         // …and back up ARMED (sharpen sheet pickupRise)
 };
 
-/* HIS blade, if he can go for it right now. Every condition the spec lists:
- * exists, on the road, nobody's, not already being taken, his, and near. */
+/* ANY BLADE WILL DO, once his own is lost (request 337 — the generic nearby
+ * recovery request 280 allowed for). His own blade still comes first; if it is
+ * gone (Darki has it, it expired) or too far, he goes for the NEAREST free
+ * machete on the road instead. Fair claims only: a blade that fell from another
+ * man is his to take only when that man cannot want it — dead, benched or armed
+ * again — or stands further from it than this one does. */
+const reachOf = (e, m) => Math.hypot(m.x - e.x, (m.y - e.y) * 2);
+function canClaimMachete(e, m) {
+  if (m.type !== 'machete' || !weaponOnGround(m)) return false;
+  if (!m.from || m.from === e) return true;
+  const o = m.from;
+  if (o.benched || o.dying || o.hp <= 0 || isArmed(o)) return true;
+  return reachOf(e, m) < reachOf(o, m);
+}
+
+/* The blade he can go for right now, if any. Every condition the spec lists:
+ * exists, on the road, nobody's, not already being taken, a fair claim, near,
+ * and not lying at Darki's feet. His own wins whenever it qualifies. */
 function recoverableMachete(e) {
   if (e.kind !== 'shaved' || isArmed(e) || e.dying || e.hp <= 0 || e.benched) return null;
+  let best = null, bestD = Infinity;
   for (const m of weapons) {
-    if (!weaponOnGround(m) || m.from !== e) continue;
+    if (!canClaimMachete(e, m)) continue;
     const taken = enemies.some((o) => o !== e && o.recoverTarget === m
       && (o.mode === 'recoverWeapon' || o.mode === 'pickupWeapon'));
     if (taken) continue;
-    if (Math.hypot(m.x - e.x, (m.y - e.y) * 2) > WEAPON_RECOVERY.range) continue;
+    const d = reachOf(e, m);
+    if (d > WEAPON_RECOVERY.range) continue;
     if (Math.abs(player.x - m.x) < WEAPON_RECOVERY.danger
         && Math.abs(player.y - m.y) < 40) continue;
-    return m;
+    if (m.from === e) return m;                 // his own, in reach: no contest
+    if (d < bestD) { bestD = d; best = m; }
   }
-  return null;
+  return best;
 }
 
 /* CHECK_WEAPON. Called the frame he is back on his feet, and periodically while
@@ -3789,9 +4284,9 @@ function abandonRecovery(e) {
  * the attack-token branch lives in 'menace', so nothing here can start a swing. */
 function stepWeaponRecovery(enemy, dt) {
   const R = WEAPON_RECOVERY, m = enemy.recoverTarget;
-  // Still his, still on the road, still in reach — or give up.
-  const valid = m && weapons.includes(m) && weaponOnGround(m) && m.from === enemy
-    && Math.hypot(m.x - enemy.x, (m.y - enemy.y) * 2) <= R.abortDistance;
+  // Still a fair claim, still on the road, still in reach — or give up.
+  const valid = m && weapons.includes(m) && canClaimMachete(enemy, m)
+    && reachOf(enemy, m) <= R.abortDistance;
   if (enemy.mode === 'recoverWeapon') {
     enemy.recoverT += dt;
     const darkiOnIt = valid && Math.abs(player.x - m.x) < R.danger && Math.abs(player.y - m.y) < 40;
@@ -3863,7 +4358,7 @@ function stepWeaponRecovery(enemy, dt) {
  * up again; one that is left lying long enough expires (THROWN.restLife). Only
  * when no bat exists anywhere — not in his hands, not on the road — does the
  * spawn point re-arm after `respawn` seconds, so there is never a second bat and
- * the point never becomes unusable. Never in the boss room (weaponsAllowed). */
+ * the point never becomes unusable. */
 const BAT_PICKUP = {
   x: 2760, y: 655,             // its spawn point: just past gate 1, clear of keke-a (2416-2671)
   reachX: 52, reachY: 32,      // walk into it
@@ -3873,6 +4368,7 @@ const BAT_PICKUP = {
 };
 const batPickup = { taken: false, t: 0, flash: 0, respawnT: 0 };
 function updateBatPickup(dt) {
+  if (activeLevel === 2) { batPickup.taken = true; batPickup.respawnT = 0; return; }   // Level 01's prop
   batPickup.t += dt;
   batPickup.flash = Math.max(0, batPickup.flash - dt);
   if (batPickup.taken) {
@@ -3963,11 +4459,15 @@ function clearMachetesOf(owner) {
  *            and a diving air strike — and a throw that CUTS THROUGH the first
  *            man and carries on, slower and higher, into the next.
  *
- * Throwing is weapon-agnostic: one throw motion (WEAPONTHROW_SHEET) and the
- * projectile is whatever `weaponOf(player)` is on the release frame. */
-// Darki meets MC_Olodo with his hands (request 305): no weapon is taken in the
-// boss room, and the one he walks in with is thrown aside at the entrance.
-const weaponsAllowed = () => section !== BOSS_SECTION;
+ * Throwing is weapon-agnostic: one throw mechanic (`move.release`) and the
+ * projectile is whatever `weaponOf(player)` is on the release frame. Each weapon
+ * names the move that plays it (`moves.throw`) only because each has its own
+ * art: the bat's on WEAPONTHROW_SHEET, the machete's on MACHETETHROW_SHEET. */
+// Weapons are allowed everywhere. Request 305 kept them out of the boss room;
+// request 335 reversed that: he walks in with whatever he last fought with
+// (startBossIntro) and can pick weapons up and use them in the arena. Kept as a
+// predicate so the rule stays in one place if it changes again.
+const weaponsAllowed = () => true;
 
 /* THE THROW, 3x (request 325): same arc, three times as fast — so every rate is
  * scaled by the pace and gravity by its square (the weapon lands where it did,
@@ -3983,7 +4483,7 @@ const paced = (t, p = THROW_PACE, i = THROW_IMPACT) => ({
 
 const WEAPONS = {
   bat: {
-    moves: { hit: 'batSwing', double: 'batSwing', rush: 'batRush', air: null },
+    moves: { hit: 'batSwing', double: 'batSwing', rush: 'batRush', air: 'batAir', throw: 'weaponThrow' },
     throw: paced({
       speed: 820, lift: 330, gravity: 1500, drag: 0.30,  // px/s, px/s up, px/s², per-second bleed
       spin: 14,                // rad/s: end over end, about two turns in a full throw
@@ -3997,10 +4497,40 @@ const WEAPONS = {
     // Wood on a man (request 323): every bat impact — swing, rush, thrown — plays
     // this instead of the fist bag. See CUE_BAGS.batHit.
     hitCue: 'batHit',
-    crib: 'BAT: LMB / LMBx2 Swing · fwd,fwd Bat Rush · E / L2 Throw it · knocked down, you drop it',
+    whip: 'batWhip',           // request 331: wooden swish per turn in flight
+    crib: 'BAT: LMB / LMBx2 Swing · fwd,fwd Bat Rush · Jump+LMB Jump Kick · E / L2 Throw it · knocked down, you drop it',
+  },
+  knife: {
+    /* HIS BARE-HANDED KIT, PLUS A THROW — which is the honest description of what
+     * has been drawn. There is no Darki-with-a-knife art, so every slot here is a
+     * name off the unarmed table and the blade is simply in his hand.
+     *
+     * `rush` IS NULL ON PURPOSE, and the null is load-bearing. The bat and the
+     * machete name their own lunge here, and `tryStartRush` reads this field
+     * FIRST: anything truthy makes forward,forward that attack instead of the
+     * ordinary charge. 'rush' was written in as if it were an attack — it is the
+     * sprint's ANIMATION name, not an ATTACKS entry — so the first sprint after
+     * picking a knife up took `ATTACKS['rush'].anim` on an undefined and killed
+     * the frame loop mid-update. Null is what routes him back to the normal
+     * charge-or-sprint, which is the behaviour the crib below already promises.
+     *
+     * `air` is the unarmed jump kick for the same reason the others are unarmed
+     * moves — and it must be an `air: true` entry. A grounded move started off
+     * the floor is zeroed by `startAttack`'s plant rule and drops him out of his
+     * own arc; 'backKick' is a grounded spin and did exactly that. */
+    moves: { hit: 'jabLeft', double: 'combo5', rush: null, air: 'airKick', throw: 'weaponThrow' },
+    throw: paced({ speed: 1080, lift: 120, gravity: 980, drag: 0.08, spin: 22,
+      damage: 20, falloff: 1, maxHits: 1, launchMin: 99,
+      kb: { x: 190, y: -120 }, hitstop: 0.08, shake: 6, rage: 5,
+      onHit: { vx: -0.18, vh: 120 }, bounce: 0.22, friction: 0.38, spinLoss: 0.45,
+      maxBounces: 1, minBounceV: 100, radius: 18 }),
+    look: { sprite: () => sarsKnifeSprite, frame: 0, scale: 0.72, faces: -1, lieRot: 0.08, thick: (w, h) => h },
+    whip: 'bladeWhip',
+    crib: 'KNIFE: E / L2 Throw it · knocked down, you drop it',
   },
   machete: {
-    moves: { hit: 'macheteSlash', double: 'macheteCombo', rush: 'macheteRush', air: 'macheteAir' },
+    // `rage`: HIT, HIT and hold, with the rage bar full or burning (request 370)
+    moves: { hit: 'macheteSlash', double: 'macheteCombo', rush: 'macheteRush', air: 'macheteAir', throw: 'macheteThrow', rage: 'macheteTornado' },
     throw: paced({
       speed: 1050, lift: 210, gravity: 1250, drag: 0.12,
       spin: 26,                // a blade turns fast: ~four turns across the screen
@@ -4011,7 +4541,8 @@ const WEAPONS = {
       radius: 30,
     }),
     look: { sprite: () => macheteSprite, frame: 0, scale: 1, faces: MACHETE_SHEET.faces, lieRot: 0, thick: (w, h) => h },
-    crib: 'MACHETE: LMB Chop · LMB,LMB Machete Combo · fwd,fwd Rush Slash · Jump+LMB Air Strike · E / L2 Throw it',
+    whip: 'bladeWhip',         // request 331: thin steel swish per turn in flight
+    crib: 'MACHETE: LMB Chop · LMB,LMB Machete Combo · RAGE: LMB,LMB+hold Tornado · fwd,fwd Rush Slash · Jump+LMB Air Strike · E / L2 Throw it',
   },
 };
 
@@ -4021,7 +4552,10 @@ const WEAPONS = {
  * one while that weapon is held; MOVES are the weapon moves' own sheets. A pose
  * a weapon has no art for falls through to the unarmed sheet. */
 const WEAPON_POSE_SHEETS = {
-  bat: { idle: 'BatIdle', combatidle: 'BatIdle', walk: 'BatWalk', combatwalk: 'BatWalk' },
+  bat: {
+    idle: 'BatIdle', combatidle: 'BatIdle', walk: 'BatWalk', combatwalk: 'BatWalk',
+    jumpRise: 'BatJump', jumpFall: 'BatJump', land: 'BatJump', airKickFall: 'BatStrike',
+  },
   machete: {
     idle: 'MacheteIdle', combatidle: 'MacheteIdle', walk: 'MacheteWalk', combatwalk: 'MacheteWalk',
     jumpRise: 'MacheteJump', jumpFall: 'MacheteJump', land: 'MacheteJump', airKickFall: 'MacheteStrike',
@@ -4029,8 +4563,8 @@ const WEAPON_POSE_SHEETS = {
 };
 const WEAPON_MOVE_SHEETS = {
   batSwing: 'BatSwing', batRush: 'BatRush', macheteSlash: 'MacheteCombo', macheteCombo: 'MacheteCombo',
-  macheteRush: 'MacheteRush', macheteAir: 'MacheteStrike', macheteAirLand: 'MacheteJump',
-  weaponThrow: 'WeaponThrow',
+  macheteRush: 'MacheteRush', macheteAir: 'MacheteStrike', macheteAirLand: 'MacheteJump', macheteTornado: 'MacheteTornado',
+  weaponThrow: 'WeaponThrow', macheteThrow: 'MacheteThrow', batAir: 'BatStrike', batAirLand: 'BatStrike',
 };
 function darkiWeaponSprite(key) {
   switch (key) {
@@ -4042,9 +4576,13 @@ function darkiWeaponSprite(key) {
     case 'MacheteWalk': return macheteWalkSprite;
     case 'MacheteCombo': return macheteComboSprite;
     case 'MacheteRush': return macheteRushSprite;
+    case 'MacheteTornado': return macheteTornadoSprite;
     case 'MacheteJump': return macheteAirSprite;
     case 'MacheteStrike': return macheteStrikeSprite;
     case 'WeaponThrow': return weaponThrowSprite;
+    case 'MacheteThrow': return macheteThrowSprite;
+    case 'BatJump': return batJumpSprite;
+    case 'BatStrike': return batStrikeSprite;
     default: return null;
   }
 }
@@ -4088,7 +4626,8 @@ function launchWeapon(m, { x, y, h, vx, vh, spin, rot = 0, harmless = false }) {
   setWeaponOwner(m, null);               // out of every hand first: one owner, or none
   m.x = x; m.y = y;
   m.facing = Math.sign(vx) || m.facing;
-  m.flight = { h, vx, vh, rot, spin, harmless, hits: new Set(), hitCount: 0, bounces: 0, t: 0 };
+  // whipAcc starts a full turn up so the FIRST whip is the release itself (see stepThrownWeapon)
+  m.flight = { h, vx, vh, rot, spin, harmless, hits: new Set(), hitCount: 0, bounces: 0, t: 0, whipAcc: Math.PI * 2 };
 }
 
 /* THE RELEASE. Called once, on the frame the throw sheet's hand is empty — so the
@@ -4142,6 +4681,18 @@ function stepThrownWeapon(m, dt) {
   f.vh -= T.gravity * dt;
   f.h += f.vh * dt;
   f.rot += f.spin * dt;
+  /* THE AIR IT CUTS (request 331): one whip per full turn while it is flying,
+   * in the weapon's own material (WEAPONS[type].whip — wood for the bat, thin
+   * steel for the machete), fading as it slows. Stops at the first touch of the
+   * road: a weapon tumbling along the ground is not whipping air. */
+  if (f.bounces === 0 && !f.harmless && WEAPONS[m.type].whip) {   // a weapon knocked loose is not thrown
+    f.whipAcc += Math.abs(f.spin) * dt;
+    if (f.whipAcc >= Math.PI * 2) {
+      f.whipAcc -= Math.PI * 2;
+      const pace = Math.min(1, Math.abs(f.vx) / T.speed);
+      if (pace > 0.15) playCue(CUE_BAGS[WEAPONS[m.type].whip](), m.x, 0.35 + 0.65 * pace);
+    }
+  }
   // Walls: the edge of the world, a wave gate still shut, the boss arena.
   const B = thrownBounds();
   if (m.x < B.left || m.x > B.right) {
@@ -4149,13 +4700,26 @@ function stepThrownWeapon(m, dt) {
     knockBack(m, f, T, m.type + '_wall');
   }
   // The parked line is solid below its roof, for a blade as for a body.
-  for (const v of VEHICLE_ART) {
+  for (const v of solidBodies()) {
     if (!vehicleBlocks(v, m.x, m.y, 0) || f.h >= (v.clearH || v.h) - VEHICLE_CLEAR_EASE) continue;
     m.x = px < v.x + v.w / 2 ? v.x - 24 : v.x + v.w + 24;
     knockBack(m, f, T, m.type + '_wall');
     break;
   }
-  if (!f.harmless && f.hitCount < T.maxHits) strikeWithThrown(m, px, T);
+  if (!f.harmless && f.hitCount < T.maxHits) {
+    /* A SARS KNIFE HITS WHOEVER IS IN ITS LINE (request 435), not only Darki:
+     * an Agbero or an Aye standing between the thrower and his mark takes it.
+     * Other SARS are left out — they throw together and the squad does not knife
+     * itself. Nearest along the path wins, and maxHits 1 means the blade is
+     * spent on whichever it meets first. */
+    if (m.enemyThrown) {
+      const mate = thrownEnemyTarget(m, px, T, (e) => e.kind === 'sars' || e === m.from);
+      const hitsDarki = thrownCrossesPlayer(m, px, T);
+      if (mate && (!hitsDarki || Math.abs(mate.x - px) < Math.abs(player.x - px))) strikeWithThrown(m, px, T, mate);
+      else if (hitsDarki) strikePlayerWithThrown(m, px, T);
+    }
+    else strikeWithThrown(m, px, T);
+  }
   if (f.h > 0) return;
   // The road.
   f.h = 0;
@@ -4181,19 +4745,44 @@ function knockBack(m, f, T, event) {
   emitWeaponEvent(event, m);
 }
 
-function strikeWithThrown(m, px, T) {
+// Does this frame's path cross Darki? (Kept apart from the strike so an enemy
+// knife can choose between him and a man standing in its way — see below.)
+function thrownCrossesPlayer(m, px, T) {
+  const f = m.flight;
+  if (!playerHittable() || f.hits.has('player') || Math.abs(player.y - m.y) > THROWN.laneTol) return false;
+  const x0 = Math.min(px, m.x) - T.radius, x1 = Math.max(px, m.x) + T.radius;
+  const bodyLeft = player.x - 34, bodyRight = player.x + 34;
+  const bladeY = m.y - f.h;
+  if (bodyRight < x0 || bodyLeft > x1 || bladeY < player.y - 178 || bladeY > player.y + 8) return false;
+  return !vehicleBetween({ x: m.x, y: m.y, jumpY: -f.h }, player);
+}
+function strikePlayerWithThrown(m, px, T) {
+  const f = m.flight;
+  if (!thrownCrossesPlayer(m, px, T)) return;
+  f.hits.add('player'); f.hitCount++;
+  damagePlayer(T.damage, m.from || { x: m.x }, false, false);
+  emitWeaponEvent('knife_enemy_impact', m, player);
+  f.vx *= T.onHit.vx; f.vh = Math.max(f.vh, 0) + T.onHit.vh; f.spin *= -0.5;
+}
+
+// The first body this frame's path crosses, or null. `skip` leaves a class out.
+function thrownEnemyTarget(m, px, T, skip = null) {
   const f = m.flight;
   const x0 = Math.min(px, m.x) - T.radius, x1 = Math.max(px, m.x) + T.radius;
   const hy = m.y - f.h, top = hy - T.radius, bot = hy + T.radius;
   let best = null, bestD = Infinity;
   for (const e of enemies) {
-    if (e.benched || f.hits.has(e.id) || !isEnemyHittable(e)) continue;
-    if (Math.abs(e.y - m.y) > THROWN.laneTol) continue;
+    if (e.benched || f.hits.has(e.id) || !isEnemyHittable(e) || (skip && skip(e))) continue;
+    if (Math.abs(e.y - m.y) > THROWN.laneTol || vehicleBetween({ x: m.x, y: m.y, jumpY: -f.h }, e)) continue;
     const b = enemyBodyBox(e);
     if (b.x > x1 || b.x + b.w < x0 || b.y > bot || b.y + b.h < top) continue;
     const d = Math.abs(e.x - px);          // first along the path it travelled
     if (d < bestD) { bestD = d; best = e; }
   }
+  return best;
+}
+function strikeWithThrown(m, px, T, best = thrownEnemyTarget(m, px, T)) {
+  const f = m.flight;
   if (!best) return;
   const k = Math.pow(T.falloff, f.hitCount);
   const dmg = T.damage * k;
@@ -4202,7 +4791,8 @@ function strikeWithThrown(m, px, T) {
   hitEnemy(best, {
     group: 'thrown', cue: WEAPONS[m.type].hitCue, damage: dmg, kb: { x: T.kb.x * k, y: T.kb.y * (0.6 + 0.4 * k) },
     launch: dmg >= T.launchMin, heavyReact: true, big: f.hitCount === 1,
-    hitstop: T.hitstop * (0.6 + 0.4 * k), shake: T.shake * k, rage: T.rage * k,
+    hitstop: T.hitstop * (0.6 + 0.4 * k), shake: T.shake * k, rage: m.enemyThrown ? 0 : T.rage * k,
+    foul: !!m.enemyThrown,              // not Darki's blow: no rage, no score, no rage multiplier
   }, { x: m.x - (Math.sign(f.vx) || 1) * 60 });   // struck FROM its side: knocked the way it flies
   emitWeaponEvent(m.type + '_enemy_impact', m, best);
   f.vx *= T.onHit.vx;
@@ -4306,6 +4896,7 @@ let hitBag = [], hitBagIdx = 0, lastHit = -1;
 // full second, which is why it read as too much.
 const ENEMY_IMPACT_BOOST = 8;
 let impactBus = null;
+let sfxProbe = null;                  // test hook only (audioProbe)
 
 function initAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -4405,8 +4996,22 @@ function acceptSfx(buf, name) {
 // Browsers keep the context suspended until a user gesture â€” resume on input and
 // kick off the level music (both are gated by the same autoplay policy).
 function resumeAudio() {
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  if (audioCtx && audioCtx.state !== 'running' && audioCtx.state !== 'closed') audioCtx.resume().catch(() => {});
   startMusic();
+}
+
+/* THE SFX CONTEXT IS HELD RUNNING (request 348). Every sound effect is Web Audio
+ * on this one context; the music is a separate <audio> element. When the phone
+ * suspends or interrupts the context (audio focus, memory pressure, an output
+ * glitch) EVERY effect goes silent while the music plays on, which is the "all
+ * the sounds cut off" the player hears. The old recovery only answered
+ * 'suspended', and only on the next press; an 'interrupted' context was never
+ * resumed. Checked every frame, retried at most twice a second, left alone
+ * while the page is hidden. */
+const ctxLife = {};
+let ctxResumes = 0;
+function keepAudioContextAlive(dt) {
+  if (keepContextAlive(audioCtx, ctxLife, dt)) ctxResumes++;
 }
 
 // Next sample from a reshuffled bag: even distribution, never the same clip twice
@@ -4654,6 +5259,11 @@ function playThud(worldX, weight = 1) {
 // the same place. Levels were chosen against Darki's own fist the same way the
 // impact boost was (see _chromakey/impactloudness.js).
 const CUES = {
+  /* REQUEST 410: the "juicy" damage hit, cut from the supplied tutorial video's
+   * plain-vs-juicy demo (46.21-46.58 s, the cleanest of its three identical hits;
+   * _chromakey/req410/audio.js). Transient 30 ms into the clip; onset 0.015 is the
+   * standing "-15 ms" rule. Plays on every blow Darki takes (damagePlayer). */
+  hpHit:       { src: 'sounds/hp-hit-juicy.wav',      onset: 0.015,            gain: 0.38 },
   darkiStep1:  { src: 'sounds/darki-step1.mp3',      onset: 0.072, dur: 0.26, gain: 1.60 },
   darkiStep2:  { src: 'sounds/darki-step2.mp3',      onset: 0.072, dur: 0.26, gain: 1.60 },
   whiffFistP:  { src: 'sounds/whiff-fist-darki.mp3', onset: 0.265, dur: 0.34, gain: 0.60 },
@@ -4788,6 +5398,17 @@ const CUES = {
    * Trimmed to the transient and peak-normalised by _chromakey/_batsfxbuild.js,
    * so onset is 0. Gain 0.55 lands them ~1.3x a heavy fist in the loudest 40 ms
    * (bat 0.59 raw vs fist 0.26): heavier than a punch, not a different mix. */
+  /* THE AIR A THROWN WEAPON CUTS (request 331). CC0, "Swishes Sound Pack" by
+   * artisticdude (OpenGameArt): its wooden-stick takes for the bat, its thin
+   * metal (clothes-hanger) takes for the machete. Trimmed and normalised by
+   * _chromakey/_whipsfxbuild.js, so onset 0. Gain puts a full-speed whip at
+   * about the weight of the machete's own swing. */
+  batWhip1: { src: 'sounds/bat-whip1.wav', onset: 0, gain: 0.32 },
+  batWhip2: { src: 'sounds/bat-whip2.wav', onset: 0, gain: 0.32 },
+  batWhip3: { src: 'sounds/bat-whip3.wav', onset: 0, gain: 0.32 },
+  bladeWhip1: { src: 'sounds/blade-whip1.wav', onset: 0, gain: 0.28 },
+  bladeWhip2: { src: 'sounds/blade-whip2.wav', onset: 0, gain: 0.28 },
+  bladeWhip3: { src: 'sounds/blade-whip3.wav', onset: 0, gain: 0.28 },
   batHit1: { src: 'sounds/bat-hit1.wav', onset: 0, gain: 0.55 },
   batHit2: { src: 'sounds/bat-hit2.wav', onset: 0, gain: 0.55 },
   batHit3: { src: 'sounds/bat-hit3.wav', onset: 0, gain: 0.55 },
@@ -4930,7 +5551,11 @@ const nextDarkiStep = makeBag(['darkiStep1', 'darkiStep2']);
 const nextAgberoHit = makeBag(['agberoHit1', 'agberoHit2', 'agberoHit3']);
 const nextDarkiHit = makeBag(['darkiHit1', 'darkiHit2', 'darkiHit3']);
 // Impact cues a hit window can name by bag (`win.cue`, read in hitEnemy).
-const CUE_BAGS = { batHit: makeBag(['batHit1', 'batHit2', 'batHit3']) };
+const CUE_BAGS = {
+  batHit: makeBag(['batHit1', 'batHit2', 'batHit3']),
+  batWhip: makeBag(['batWhip1', 'batWhip2', 'batWhip3']),
+  bladeWhip: makeBag(['bladeWhip1', 'bladeWhip2', 'bladeWhip3']),
+};
 
 /* An Agbero wears one. Called from every place a mob member takes a blow he
  * stays standing for — the ordinary hit windows and the execution's non-final
@@ -5003,9 +5628,11 @@ const DARKI_VOICE = Object.freeze({
   grab:       { src: 'sounds/voices/voice-grab.mp3', dur: 1.428, gain: 1.08 },
   hardway:    { src: 'sounds/voices/voice-hardway.mp3', dur: 3.506, gain: 1.04 },
   reachOlodo: { src: 'sounds/voices/voice-reach-olodo.mp3', dur: 21.690, gain: 1.00 },
+  // over MC_Olodo's body (request 338) — ASSETS/SOUNDCUES/voiceovers/Dont Play.mp3
+  dontPlay:   { src: 'sounds/voices/voice-dont-play.mp3', dur: 1.435, gain: 1.08 },
 });
 const voiceBuffers = Object.create(null);
-const voicePlays = { combo5: 0, grab: 0, hardway: 0, reachOlodo: 0 };
+const voicePlays = { combo5: 0, grab: 0, hardway: 0, reachOlodo: 0, dontPlay: 0 };
 let voicePlaying = false, voiceSource = null, queuedVoice = null, comboVoPlays = 0;
 let comboVoiceSection = -1;    // keep the five-hit taunt special: once per street section
 
@@ -5109,10 +5736,11 @@ let chosenDifficulty = 'NORMAL';
  * that does not exist; flagged for the user rather than invented here.
  */
 const DIFFICULTY = {
-  EASY:   { dmgTaken: 0.65, enemyHp: 0.75, pressure: 0.85 },
-  NORMAL: { dmgTaken: 1.00, enemyHp: 1.00, pressure: 1.00 },
-  HARD:   { dmgTaken: 1.40, enemyHp: 1.25, pressure: 1.30 },
-  ARCADE: { dmgTaken: 1.75, enemyHp: 1.45, pressure: 1.55 },
+  // learn: how fast the street reads a repeated technique (STREET_SMARTS, request 403)
+  EASY:   { dmgTaken: 0.65, enemyHp: 0.75, pressure: 0.85, learn: 0.7 },
+  NORMAL: { dmgTaken: 1.00, enemyHp: 1.00, pressure: 1.00, learn: 1.0 },
+  HARD:   { dmgTaken: 1.40, enemyHp: 1.25, pressure: 1.30, learn: 1.2 },
+  ARCADE: { dmgTaken: 1.75, enemyHp: 1.45, pressure: 1.55, learn: 1.35 },
 };
 /* Falls back to NORMAL rather than to nothing, so an unknown label out of the
  * front end plays the intended game instead of a division by undefined. */
@@ -5192,10 +5820,13 @@ function setMusicTrack(index, playNow = false) {
   musicEl.load();
   musicEl.volume = Math.max(0, Math.min(1, musicVol));
   if (playNow) {
+    // A refused play() leaves `musicStarted` (the intent) standing: updateMusic's
+    // keepMediaAlive retries it, instead of the level going silent for good.
     const pr = musicEl.play();
-    if (pr?.catch) pr.catch(() => { musicStarted = false; });
+    if (pr?.catch) pr.catch(() => {});
   }
 }
+const musicLife = {};                  // keepMediaAlive's state for the level music
 
 function resetMusicPlaylist() {
   if (!musicEl) return;
@@ -5224,10 +5855,12 @@ function startMusic() {
   musicVol = 0.03;
   musicEl.volume = musicVol;
   const pr = musicEl.play();
-  if (pr?.catch) pr.catch(() => { musicStarted = false; });
+  if (pr?.catch) pr.catch(() => {});   // retried by updateMusic (request 347)
 }
 function updateMusic(dt) {
   if (!musicEl || !musicStarted) return;
+  // Android can pause or stall the element at any moment; put it back (request 347).
+  keepMediaAlive(musicEl, musicLife, dt, true);
   const target = audioMuted ? 0 : MUSIC_VOL * musicSetting;
   const rate = MUSIC_VOL / MUSIC_FADE;
   if (musicVol < target) musicVol = Math.min(target, musicVol + rate * dt);
@@ -5244,6 +5877,16 @@ function triggerHitFx(x, y, hitStop = tune.hitStop, shake = tune.shakeMag, big =
   sparks.push({ x, y, age: 0, dur: big ? 0.3 : 0.22, big });
   rings.push({ x, y, age: 0, dur: big ? 0.4 : 0.26, r0: big ? 20 : 10, r1: big ? 120 : 64 });
   rumbleImpact(hitStop, shake, big);
+}
+
+/* A BODY MEETING THE ROAD (request 330): a short shake, a gamepad bump and grit
+ * thrown off the asphalt, scaled by how hard he came down (bounceScale 0.45-1.35).
+ * No sparks and no freeze — this is the fall, not a blow. */
+function groundSlam(x, y, weight = 1) {
+  shakeDur = 0.16; shakeTimer = shakeDur;
+  shakeMag = Math.max(shakeMag, 3 + 6 * weight);
+  rumbleImpact(0, 3 + 6 * weight, weight > 1);
+  spawnEmbers(x, y - 4, Math.round(4 + 8 * weight), '#c9c2b0', 30 + 40 * weight);
 }
 
 function triggerFlash(color, dur = 0.28) {
@@ -5440,6 +6083,10 @@ function buildEnemies() {
     // so the pool carries 5. Appended, so every id above keeps its lane.
     { x: 3560, y: 640, direction: -1, speed: 96, kind: 'shaved', ...base },
     { x: 3760, y: 668, direction: -1, speed: 90, kind: 'shaved', ...base },
+    ...Array.from({ length: 6 }, (_, index) => ({ x: 4000 + index * 180, y: 650 + (index % 3) * 12,
+      direction: -1, speed: SARS.speed + (index % 3) * 4 - 4, kind: 'sars', ...base,
+      hp: scaledHp(SARS.maxHp), maxHp: scaledHp(SARS.maxHp), hpShown: scaledHp(SARS.maxHp),
+      knives: SARS.maxKnives, knifeDroppedThisFall: false, throwEvents: new Set(), rearmDone: false })),
   ];
   // per-enemy quirks so nobody moves in lockstep
   for (const [id, e] of spawns.entries()) {
@@ -5508,13 +6155,24 @@ function buildEnemies() {
  * BOTH later waves — wave 2 is now 2 seniors / 4 Ayes / 1 Agbero, wave 3 is
  * 2 seniors / 5 Ayes / 2 Agberos. Quotas unchanged, so neither wave is longer;
  * the street is simply more armed. */
-const SECTIONS = [
+const SECTIONS_L1 = [
   { gateX: 2480, quota: 5, seniors: 0, entryRoute: 'edge' },
   { gateX: 5043, quota: 7, seniors: 2, shaved: 4, entryRoute: 'wall' },
   { gateX: 7605, quota: 9, seniors: 2, shaved: 5, entryRoute: 'edge' },
   { gateX: WORLD_W, quota: 0, boss: true, seniors: 0 },
 ];
-const BOSS_SECTION = SECTIONS.length - 1;
+/* The live table: Level 01's street or Level 02's facility (applyLevel). */
+let SECTIONS = SECTIONS_L1;
+let BOSS_SECTION = SECTIONS.length - 1;
+/* Switch the handful of per-level tables. Called on every entry into a fight. */
+function applyLevel(level) {
+  activeLevel = level === 2 ? 2 : 1;
+  SECTIONS = activeLevel === 2 ? SECTIONS_L2 : SECTIONS_L1;
+  BOSS_SECTION = SECTIONS.length - 1;
+  l2ClearT = 0;
+  if (activeLevel === 2) loadLevel2Art();
+}
+let l2ClearT = 0;              // how long Level 02's last arena has been clear
 let section = 0;               // active section index
 let waveKills = 0;             // enemies defeated so far in this section
 let levelKills = 0;            // â€¦and across the whole street (never reset â€” the
@@ -5578,8 +6236,8 @@ const LEVEL_ENTRY = Object.freeze({
 
   /* ---- the prologue, in order ---- */
   fadeOut: 0.40,      // the captured UI screen fading out, revealing the closed gate
-  blackHold: 0.55,    // ...and full black until here
-  gateOpen: 0.90,     // black -> half gate
+  blackHold: BAR_CUT.hold,   // 0.55 ...and full black until here (src/bars.js)
+  gateOpen: BAR_CUT.close,   // 0.90 black -> half gate
   gateBarH: 180,      // = VIEW_H/4, so exactly half the frame is picture
   /* −75, not +160: the camera's rest position moved down with the deep play
    * band. The gate window's centre sits at cameraY + 360/zoom = cameraY+300;
@@ -5597,9 +6255,12 @@ const LEVEL_ENTRY = Object.freeze({
 /* blackHold + gateOpen: the dialogue is held until the gate has finished
  * opening, and the entry runs this much longer than the line it carries. */
 const ENTRY_LEAD = LEVEL_ENTRY.blackHold + LEVEL_ENTRY.gateOpen;
+/* Where the entry walk starts, ends and on which row: Level 01's street spot or
+ * Level 02's bay door. Timing is LEVEL_ENTRY's for both. */
+const entrySpot = () => (activeLevel === 2 ? L2_ENTRY_SPOT : LEVEL_ENTRY);
 
 const levelEntry = { active: false, t: 0, duration: LEVEL_ENTRY.fallbackDur, frame: null,
-  letterbox: 0, blackout: 0, lead: 0, voiceStarted: false };
+  letterbox: 0, blackout: 0, lead: 0, voiceStarted: false, skipped: false };
 
 const currentGate = () => SECTIONS[section].gateX;
 const sectionLeft = () => (section === 0 ? 500 : SECTIONS[section - 1].gateX + 160);
@@ -5635,7 +6296,12 @@ function placeEnemy(e, x) {
   const rng = combatRng;
   const lo = sectionLeft() + 60, hi = currentGate() - 70;
   e.x = Math.max(lo, Math.min(hi, x));
-  e.y = clampLaneBody(560 + rng() * 120, e.x);
+  /* Level 02's band starts where the street's residents' lane would be, so the
+   * street's 560..680 spread would put every man on its back row. */
+  if (activeLevel === 2) {
+    const b = laneBandAt(e.x);
+    e.y = clampLaneBody(b.laneTop + 20 + rng() * Math.max(0, b.laneBottom - b.laneTop - 60), e.x);
+  } else e.y = clampLaneBody(560 + rng() * 120, e.x);
   e.hp = e.maxHp; e.hpShown = e.maxHp; e.hpFlash = 0; e.alpha = 1;
   e.state = 'walk'; e.mode = 'patrol'; e.jumpY = 0; e.vx = 0; e.vy = 0;
   e.spawnEntry = false; e.spawnDelay = 0;
@@ -5655,6 +6321,7 @@ function placeEnemy(e, x) {
   // around as a corpse.
   e.dying = false; e.dead = false; e.diedVo = false;
   e.fallHold = 0; e.fallRate = 1; e.execVictim = false;
+  if (e.kind === 'sars') { e.knives = SARS.maxKnives; e.knifeDroppedThisFall = false; e.throwEvents = new Set(); e.rearmDone = false; }
   e.atkCooldown = 1 + rng() * 2.5;
   attackTokens.delete(e);
 }
@@ -5683,6 +6350,8 @@ function stageEnemyEntrance(e, targetX, delay = 0, route = 'auto') {
   e.spawnTargetY = e.y;
   e.spawnDelay = Math.max(0, delay);
   e.spawnEntry = true;
+  // Off-road staging is intentional: wall-route enemies remain on the tinted
+  // residential plane until the curb crossing hands them to the gameplay road.
   const chosenRoute = route === 'auto'
     ? (SECTIONS[section].entryRoute || 'edge')
     : route;
@@ -5691,6 +6360,7 @@ function stageEnemyEntrance(e, targetX, delay = 0, route = 'auto') {
   e.entryPlane = e.entryRoute === 'wall' ? 'background' : 'main';
   e.entryProgress = 0;
   e.entryScale = e.entryRoute === 'wall' ? WALL_ENTRY.backgroundScale : 1;
+  e.entryFrom = 1;                         // a recycled slot never inherits the last man's edge
 
   if (e.entryRoute === 'wall') {
     const lane = (e.id % 3) - 1;
@@ -5718,6 +6388,10 @@ function stageEnemyEntrance(e, targetX, delay = 0, route = 'auto') {
     e.x = backgroundEntryWorldX(e);
     e.y = e.entryStartY;
   } else {
+    // Preserve the authored residential-street boundary: ordinary road
+    // reinforcements enter from the established right edge. Adaptive flanking
+    // starts only after they have completed that entrance inside the arena.
+    e.entryFrom = 1;
     e.x = Math.max(cameraX + VIEW_W + ENEMY.entryOffscreen + delay * 80, e.spawnTargetX + 260);
     e.y = e.spawnTargetY;
   }
@@ -5854,12 +6528,15 @@ function updateEnemyEntrance(e, dt) {
     e.spawnDelay = Math.max(0, e.spawnDelay - dt);
     e.mode = 'guard';
     e.vx = 0;
-    e.x = Math.max(e.x, cameraX + VIEW_W + ENEMY.entryOffscreen);
+    e.x = e.entryFrom < 0                      // …off whichever edge he is coming in from
+      ? Math.min(e.x, cameraX - ENEMY.entryOffscreen)
+      : Math.max(e.x, cameraX + VIEW_W + ENEMY.entryOffscreen);
     e.prevX = e.x;                  // a park is a teleport, not travel: no footstep
     return;
   }
 
   e.mode = 'arrival';
+  if (e.entryFrom < 0) { updateRearEntrance(e, dt); return; }
 
   /* The target was picked from where the player STOOD when the wave was staged,
    * and he has been walking ever since. Left alone the Agbero marches to a spot
@@ -5903,6 +6580,33 @@ function updateEnemyEntrance(e, dt) {
   }
 }
 
+/* The mirror of the road arrival above, for a man coming in from the edge at
+ * Darki's back (request 403): his mark is kept BEHIND Darki rather than pulled
+ * ahead, and he notices him once he is on camera at the left. Ends holding the
+ * left side, so the AI does not walk him straight back round. */
+function updateRearEntrance(e, dt) {
+  const behind = Math.max(arenaBounds().left + 40, player.x - ENEMY.entryAheadX);
+  if (e.spawnTargetX > behind) e.spawnTargetX = behind;
+  const dx = e.spawnTargetX - e.x;
+  const dy = e.spawnTargetY - e.y;
+  const speed = e.speed * 0.86;
+  const sx = Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
+  const sy = Math.sign(dy) * Math.min(Math.abs(dy), speed * 0.55 * dt);
+  e.x += sx;
+  e.y += sy;
+  e.vx = dt > 0 ? sx / dt : 0;
+  e.facing = Math.sign(dx) || 1;
+  const done = Math.abs(dx) <= 4 && Math.abs(dy) <= 3;
+  const onCamera = e.x > cameraX + 24;
+  if (done || (onCamera && Math.abs(player.x - e.x) < ENEMY.noticeX)) {
+    if (done) { e.x = e.spawnTargetX; e.y = e.spawnTargetY; }
+    e.facing = Math.sign(player.x - e.x) || e.facing;
+    e.side = -1;
+    e.entryFrom = 1;
+    endEnemyEntrance(e, done ? 0.8 : ENEMY.entryGrace);
+  }
+}
+
 // Park a spent slot off-screen until the next wave needs it.
 function benchEnemy(e) {
   // Never bench a body the execution is still driving â€” that is the failure that
@@ -5912,6 +6616,7 @@ function benchEnemy(e) {
   if (e.carried) dropCarry({ drop: true });     // â€¦of either kind
   e.benched = true; e.state = 'ko'; e.hp = 0; e.alpha = 0; e.x = -9999;
   e.spawnEntry = false; e.spawnDelay = 0;
+  e.taking = false; e.takeAt = null;     // the defeat beat's hold never follows a pooled body into the next fight
   attackTokens.delete(e);
   /* HIS WEAPON LEAVES WITH HIM. Benching is a pooled slot going off-screen to be
    * reused, not a man being disarmed — so the machete is REMOVED rather than
@@ -5953,7 +6658,11 @@ function carrySurvivorForward(e) {
 function spawnWave({ keepAlive = false } = {}) {
   releaseGrab({ drop: true });        // scene transition: drop any hold first
   const pool = mobs();
-  const carried = keepAlive ? pool.filter(isWaveAlive) : [];
+  let carried = keepAlive ? pool.filter(isWaveAlive) : [];
+  if (activeLevel === 2 && SECTIONS[section].final) {
+    for (const enemy of carried.filter((entry) => entry.kind !== 'sars' && entry.kind !== 'shaved')) benchEnemy(enemy);
+    carried = carried.filter((entry) => entry.kind === 'sars' || entry.kind === 'shaved');
+  }
   carried.forEach(carrySurvivorForward);
   /* WHO IS ELIGIBLE, before how many. The senior is in the pool at all times but
    * only fields in a section that asks for him; every other section benches him
@@ -5974,17 +6683,18 @@ function spawnWave({ keepAlive = false } = {}) {
   };
   const seniorSlots = rationed('senior');
   const shavedSlots = rationed('shaved');
+  const sarsSlots = rationed('sars');
   /* The juniors are the REMAINDER, and the test has to be "not one of the
    * rationed classes" rather than "not a senior" — the moment a third class
    * existed, `kind !== 'senior'` put every armed man in the junior list as well
    * as in his own, so he was staged twice and the second staging benched him. */
-  const gingerSlots = free.filter((e) => e.kind !== 'senior' && e.kind !== 'shaved');
+  const gingerSlots = free.filter((e) => e.kind !== 'senior' && e.kind !== 'shaved' && e.kind !== 'sars');
   /* Rationed classes FIRST, so when the quota is tighter than the pool it is an
    * Agbero that gets benched rather than the man the section is about — and any
    * senior this section did not ask for is not in the list at all. Leaving him
    * on the tail and trusting the quota to run out would have fielded him in
    * section 1 the moment its quota (5) matched the pool size (5). */
-  const slots = [...seniorSlots, ...shavedSlots, ...gingerSlots];
+  const slots = [...sarsSlots, ...shavedSlots, ...seniorSlots, ...gingerSlots];
   for (const e of free) if (!slots.includes(e)) benchEnemy(e);
   const n = Math.min(SECTIONS[section].quota, slots.length + carried.length) - carried.length;
   const lo = Math.max(sectionLeft() + 100, player.x + 270);
@@ -6017,6 +6727,7 @@ function startLevelEntry(transitionFrame = null, duration = LEVEL_ENTRY.fallback
   boss = null;
   mobs().forEach(benchEnemy);
   attackTokens.clear();
+  streetMindReset();                       // a new attempt starts with a street that has learned nothing
   /* EVERY ROUTE INTO A LEVEL COMES THROUGH HERE, which is why the weapon world
    * is emptied here rather than at the level-select door. `benchEnemy` above
    * already clears each mob's own, so this catches the one case it cannot: a
@@ -6025,11 +6736,12 @@ function startLevelEntry(transitionFrame = null, duration = LEVEL_ENTRY.fallback
    * (`player.weapon` reads the list), so emptying it is also what starts him
    * every level empty-handed — and it takes any weapon still in flight with it. */
   weapons.length = 0;
-  // The bat is back on its spawn point.
-  batPickup.taken = false; batPickup.t = 0; batPickup.flash = 0; batPickup.respawnT = 0;
+  resetRun();                      // the clock, the streak, the score and the medpacks (request 338)
+  // The bat is back on its spawn point — a Level 01 street prop, so not in the facility.
+  batPickup.taken = activeLevel === 2; batPickup.t = 0; batPickup.flash = 0; batPickup.respawnT = 0;
 
   Object.assign(player, {
-    x: LEVEL_ENTRY.startX, y: GROUND_Y, vx: 0, depthV: 0, jumpY: 0, vy: 0,
+    x: entrySpot().startX, y: GROUND_Y, vx: 0, depthV: 0, jumpY: 0, vy: 0,
     facing: 1, grounded: true, state: 'normal',
     hp: player.maxHp, hpShown: player.maxHp, hpFlash: 0,
     rage: 0, rageActive: false, rageTimer: 0,
@@ -6048,6 +6760,9 @@ function startLevelEntry(transitionFrame = null, duration = LEVEL_ENTRY.fallback
   fightBanner = 0;
   levelEntry.active = true;
   levelEntry.t = 0;
+  entryTap.reset();                  // no half-double-tap can leak in from a previous run
+  levelEntry.skipped = false;
+  entryPhysicalTapAt = -Infinity;
   const spoken = Number.isFinite(duration) && duration > 0 ? duration : LEVEL_ENTRY.fallbackDur;
   /* The prologue is added ON TOP of the line, not carved out of it: the bars
    * pull back `barsOut` before `duration` ends, so folding the lead into the
@@ -6081,13 +6796,143 @@ function finishLevelEntry() {
    * framing for nineteen seconds and the hand-back threw it away. The entry now
    * holds the follow camera's own resting value, so leaving it alone IS the
    * hand-over — see followCamY. */
-  player.x = LEVEL_ENTRY.markX;
+  player.x = entrySpot().markX;
   player.vx = 0;
   player.anim = 'idle';
   player.animTime = 0;
   waveState = 'fighting';
   spawnWave();
   fightBanner = 1.1;
+}
+
+/* RESTART PICKS UP AT THE LAST CHECKPOINT (request 442): the arena he was
+ * fighting in, or MC_Olodo's room. The checkpoints are the gates, the same ones
+ * advanceSection reports. RESTART CHECKPOINT and RETRY still reload the page
+ * (that is what makes the restart clean), so the arena is written to
+ * sessionStorage on the way out and read back here, after startLevelEntry has
+ * reset the run.
+ *
+ * The opening walk-in and its line are NOT replayed. Neither is the boss
+ * entrance: it is staged and skipped in the same call, which is the
+ * Start-press skip and lands everything where the scene would have left it.
+ * Arena 0 has no checkpoint to restore, so it keeps the ordinary entry. */
+const RETRY_CHECKPOINT_KEY = 'rorRetryCheckpoint';
+function saveRetryCheckpoint() {
+  const atBoss = !!(boss && (waveState === 'boss' || waveState === 'bossIntro'));
+  const cp = atBoss ? { level: activeLevel, section: BOSS_SECTION, boss: true }
+    : waveState === 'entry' || section <= 0 ? null
+    : { level: activeLevel, section, boss: false };
+  try {
+    if (cp) sessionStorage.setItem(RETRY_CHECKPOINT_KEY, JSON.stringify(cp));
+    else sessionStorage.removeItem(RETRY_CHECKPOINT_KEY);
+  } catch {}
+  return cp;
+}
+function takeRetryCheckpoint() {
+  let cp = null;
+  try {
+    cp = JSON.parse(sessionStorage.getItem(RETRY_CHECKPOINT_KEY) || 'null');
+    sessionStorage.removeItem(RETRY_CHECKPOINT_KEY);
+  } catch { return null; }
+  if (!cp || cp.level !== activeLevel) return null;
+  if (cp.boss) return SECTIONS[BOSS_SECTION]?.boss ? cp : null;
+  const last = SECTIONS[SECTIONS.length - 1]?.boss ? SECTIONS.length - 2 : SECTIONS.length - 1;
+  return Number.isInteger(cp.section) && cp.section > 0 && cp.section <= last ? cp : null;
+}
+function resumeAtCheckpoint(cp) {
+  levelEntry.active = false;
+  levelEntry.frame = null;
+  levelEntry.voiceStarted = true;          // the opening line belongs to the first attempt
+  setBars(levelEntry, 0);
+  levelEntry.blackout = 0;
+  if (cp.boss) {
+    section = BOSS_SECTION;
+    waveKills = 0;
+    startBossIntro();
+    skipCutscene();
+  } else {
+    section = cp.section;
+    waveKills = 0;
+    waveState = 'fighting';
+    player.x = sectionLeft() + 200;
+    player.y = clampLane(GROUND_Y + 20);
+    player.anim = 'idle';
+    player.animTime = 0;
+    spawnWave();
+    fightBanner = 1.1;
+  }
+  cameraX = clampCamX(player.x - viewW() * 0.42, PLAYAREA.maxX + 1);
+  cameraY = bandFramingY(player.y);
+  rrTrack('checkpoint_restart', { level: activeLevel, section, boss: !!cp.boss, difficulty: chosenDifficulty });
+}
+
+/* DOUBLE TAP SKIPS THE OPENING LINE (request 349), from 3 s into it (SKIP_TAP),
+ * like the video intros. The line fades out and the clock jumps to where the
+ * bars start to open, so the gate eases into the fight rather than cutting. */
+const entryTap = makeDoubleTap();
+/* …and the tap cue's confirm (request 353): the wall clock of that skip, so the
+ * cue can play its burst and cross its caption while the gate opens. Reads null
+ * once the animation is spent, which is also what a later entry wants. */
+let entrySkipAt = null;
+const entrySkipSince = () => {
+  if (entrySkipAt == null) return null;
+  const s = (performance.now() - entrySkipAt) / 1000;
+  if (s > TAP_CUE.out) { entrySkipAt = null; return null; }
+  return s;
+};
+/* SUBTITLES FOR LEVEL 1'S OPENING LINE (request 357), voice-gameplay-start.mp3,
+ * made the way the boss arena's were (REACH_OLODO_SUBS): Whisper-small word
+ * stamps (_chromakey/req357/stt), each line's start and end refitted to the
+ * clip's own voiced runs (20 ms RMS windows), Whisper's "a lodo" corrected to
+ * the name. Seconds from the clip's first sample; each word lights as it is said. */
+const ENTRY_SUBS = [
+  { at: 0.20, end: 1.58, words: [["He's", 0.20], ['at', 0.38], ['the', 0.54], ['end', 0.70], ['of', 0.94], ['the', 1.12], ['street.', 1.24]] },
+  { at: 2.56, end: 5.04, words: [['But', 2.56], ['his', 2.70], ['Agbero', 2.90], ['boys', 3.52], ['own', 3.76], ['this', 4.24], ['block.', 4.58]] },
+  { at: 5.52, end: 7.04, words: [['They', 5.52], ['collect', 5.66], ['illegal', 6.00], ['tolls,', 6.40]] },
+  { at: 7.38, end: 8.52, words: [['shake', 7.38], ['down', 7.60], ['businesses,', 7.94]] },
+  { at: 9.14, end: 11.62, words: [['and', 9.14], ['terrorize', 9.30], ['anyone', 9.88], ['who', 10.32], ['refuses', 10.62], ['to', 11.10], ['pay.', 11.40]] },
+  { at: 12.50, end: 13.50, words: [['Clear', 12.50], ['them', 12.80], ['out.', 13.04]] },
+  { at: 14.34, end: 15.88, words: [['Fight', 14.34], ['your', 14.50], ['way', 14.72], ['through', 14.96], ['the', 15.18], ['street,', 15.38]] },
+  { at: 16.26, end: 17.22, words: [['break', 16.26], ['their', 16.52], ['grip,', 16.78]] },
+  { at: 17.58, end: 18.46, words: [['and', 17.58], ['reach', 17.70], ['Olodo.', 17.94]] },
+];
+/* LEVEL 02'S ENTRY LINE (request 399): "Level two gameplay intro voiceover.mp3",
+ * Darki's own reasons. Transcribed from the RECORDING, which differs from the
+ * script in the brief (it says "the precinct", and has no title line) — the
+ * recording is authoritative. Whisper-small word stamps refitted to the clip's
+ * voiced runs (_chromakey/req399/build.js); "Jimo" spelled as the intro spells it. */
+const ENTRY_SUBS_L2 = [
+  { at: 0.20, end: 1.92, words: [["I’m", 0.20], ["going", 0.50], ["into", 0.82], ["the", 1.18], ["precinct.", 1.42]] },
+  { at: 2.78, end: 4.04, words: [["I’m", 2.78], ["getting", 2.92], ["that", 3.16], ["evidence,", 3.54]] },
+  { at: 4.62, end: 8.36, words: [["and", 4.62], ["anyone", 4.78], ["who", 5.16], ["stands", 5.62], ["in", 6.00], ["my", 6.30], ["way", 6.54], ["will", 6.90], ["have", 7.20], ["to", 7.40], ["deal", 7.60], ["with", 7.80], ["me.", 8.06]] },
+  { at: 8.98, end: 10.56, words: [["I", 8.98], ["don’t", 9.10], ["trust", 9.46], ["the", 9.72], ["uniform.", 10.00]] },
+  { at: 11.22, end: 12.70, words: [["I", 11.22], ["don’t", 11.36], ["trust", 11.66], ["the", 11.94], ["system,", 12.24]] },
+  { at: 13.56, end: 16.86, words: [["and", 13.56], ["I’m", 13.70], ["done", 14.02], ["waiting", 14.28], ["for", 14.66], ["justice", 14.98], ["to", 15.54], ["do", 15.90], ["its", 16.08], ["job.", 16.30]] },
+  { at: 17.62, end: 19.90, words: [["Jimoh", 17.62], ["thinks", 17.94], ["he", 18.24], ["controls", 18.52], ["the", 19.04], ["streets.", 19.42]] },
+  { at: 20.60, end: 21.00, words: [["Tonight,", 20.60]] },
+  { at: 21.48, end: 25.22, words: [["I’m", 21.48], ["taking", 21.68], ["away", 22.00], ["the", 22.42], ["one", 22.62], ["thing", 22.94], ["that", 23.34], ["could", 23.66], ["keep", 23.84], ["him", 24.14], ["untouchable,", 24.38]] },
+  { at: 25.48, end: 25.96, words: [["the", 25.48], ["proof.", 25.60]] },
+];
+const entrySubs = () => (activeLevel === 2 ? ENTRY_SUBS_L2 : ENTRY_SUBS);
+let introVoiceTime = null;             // the front end's clock for that line (onGameplayStart)
+/* Seconds into the line: the VOICE's own clock while it is really sounding and
+ * near the entry's (so a late start does not pull the words off the voice), the
+ * entry's otherwise — a frozen or failed voice must not freeze the words. */
+function entrySubT() {
+  const own = levelEntry.t - levelEntry.lead;
+  const v = introVoiceTime?.();
+  return v != null && v > 0 && Math.abs(v - own) < 1 ? v : own;
+}
+// Seconds the opening line has been playing; -1 before it starts or once the gate is opening.
+const entryVoT = () => (levelEntry.active && levelEntry.voiceStarted
+  && levelEntry.t < levelEntry.duration - LEVEL_ENTRY.barsOut ? levelEntry.t - levelEntry.lead : -1);
+function skipLevelEntryVoice() {
+  if (entryVoT() < SKIP_TAP.hintAt) return false;
+  stopIntroVoice?.();
+  levelEntry.t = Math.max(levelEntry.t, levelEntry.duration - LEVEL_ENTRY.barsOut);
+  entrySkipAt = performance.now();
+  levelEntry.skipped = true;           // the words go with the voice (drawLevelEntry)
+  return true;
 }
 
 function updateLevelEntry(dt) {
@@ -6119,9 +6964,10 @@ function updateLevelEntry(dt) {
   const walkK = Math.max(0, Math.min(1,
     (levelEntry.t - levelEntry.lead - LEVEL_ENTRY.walkAt) / LEVEL_ENTRY.walkDur));
   const eased = walkK * walkK * (3 - 2 * walkK);
-  player.x = LEVEL_ENTRY.startX + (LEVEL_ENTRY.markX - LEVEL_ENTRY.startX) * eased;
-  player.y = LEVEL_ENTRY.walkY;
-  player.vx = walkK > 0 && walkK < 1 ? (LEVEL_ENTRY.markX - LEVEL_ENTRY.startX) / LEVEL_ENTRY.walkDur : 0;
+  const spot = entrySpot();
+  player.x = spot.startX + (spot.markX - spot.startX) * eased;
+  player.y = spot.walkY;
+  player.vx = walkK > 0 && walkK < 1 ? (spot.markX - spot.startX) / LEVEL_ENTRY.walkDur : 0;
   player.facing = 1;
   player.anim = walkK < 1 ? 'walk' : 'idle';
   advancePlayerAnim(dt);
@@ -6202,6 +7048,30 @@ function drawLevelEntry() {
     ctx.restore();
   }
   drawLetterboxPx(bars);
+  /* THE LINE'S SUBTITLES, IN THE BOTTOM BAR (request 357), as the boss arena's
+   * (drawBossSubtitles): same type, scroll and word lighting, masked inside the
+   * bar. The gate's bar is 180 px, so the words get a 92 px window — the arena
+   * bar's own height — centred in it; while the bar is thinner than that (the
+   * gate opening at the end) the window is the bar and shrinks with it. */
+  if (levelEntry.active && levelEntry.voiceStarted && !levelEntry.skipped && bars >= 6) {
+    const h = Math.min(bars, CUT.barH);
+    drawSubtitleScroll(ctx, entrySubs(), entrySubT(),
+      { x: 0, y: VIEW_H - bars + (bars - h) / 2, w: VIEW_W, h },
+      { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad });
+  }
+  /* 3 s into the line: the top-right hint (request 349) and, LOWER-CENTRE, the
+   * tap cue that shows the motion it is asking for (request 353). The cue also
+   * stays for its own confirm once the player has taken the skip, while the gate
+   * opens. Both sit clear of the bottom bar. */
+  if (isTouchUI() && levelEntry.active && levelEntry.voiceStarted) {
+    const voT = entryVoT();
+    const since = entrySkipSince();
+    if (voT >= 0) drawSkipHint(ctx, VIEW_W, voT, 30);
+    if (voT >= 0 || since != null) {
+      drawTapCue(ctx, VIEW_W, VIEW_H, Math.max(0, levelEntry.t - levelEntry.lead),
+        { inset: Math.round(bars) + 22, since });
+    }
+  }
 }
 
 /* THE BOTTOM BAR IS EMPTY, AND DELIBERATELY.
@@ -6233,9 +7103,10 @@ function onEnemyDefeated(e) {
    * owned by updateBossFight, which counts the living rather than the dead, so
    * a body leaving the street here needs no bookkeeping at all beyond the
    * level tally. */
-  if (inBossStage()) { levelKills++; benchEnemy(e); return; }
+  if (inBossStage()) { levelKills++; maybeDropMedpack(e); benchEnemy(e); return; }
   waveKills++;
   levelKills++;
+  maybeDropMedpack(e);
   const sec = SECTIONS[section];
   /* THE QUEUED COUNT AS NOT YET ARRIVED. A corner man stands behind the wall at
    * y ~548 — far outside any strike's depth reach — until his gate camera opens.
@@ -6258,7 +7129,8 @@ function onEnemyDefeated(e) {
    * Olodo narration and counted it down on the HUD. That line is now part of the
    * entrance cutscene (see startBossIntro), where it plays letterboxed with both
    * fighters on screen, so there is nothing left here to wait for. */
-  if (waveKills >= sec.quota) waveState = 'cleared';
+  /* Level 02's last arena has no gate after it: clearing it ends the level. */
+  if (waveKills >= sec.quota) waveState = sec.final ? 'complete' : 'cleared';
 }
 
 // Walk past a cleared gate â†’ next section. The last gate opens onto the boss
@@ -6271,6 +7143,9 @@ function advanceSection() {
   dropCarry({ drop: true });
   section++;
   waveKills = 0;
+  // THE STREET'S CHECKPOINTS are its gates: progress is saved once per gate passed.
+  rrGameEvent('checkpoint', { level: frontEnd?.level ?? 1, section, boss: !!SECTIONS[section].boss,
+    difficulty: chosenDifficulty });
   if (SECTIONS[section].boss) { startBossIntro(); return; }
   waveState = 'fighting';
   spawnWave({ keepAlive: true });     // anyone still standing comes through the gate too
@@ -6309,6 +7184,8 @@ const BOSS_FALLDOWN_DUR = 7 / 24;   // boss-olodo-fall 4-10 â€” the crash a
 const BOSS_GETUP_DUR = 19 / 24;     // â€¦and 11-29 â€” a dazed push back onto his feet
 const fallTimes = (e) => e.boss
   ? { down: BOSS_FALLDOWN_DUR + BOSS_GETUP_DUR, getUp: BOSS_GETUP_DUR }
+  : e.kind === 'sars'
+    ? { down: SARS_FALLDOWN_DUR + SARS_GETUP_DUR, getUp: SARS_GETUP_DUR }
   : e.kind === 'shaved'        // Aye falls on his own sheet, so on his own clock
     ? { down: AYE_FALLDOWN_DUR + AYE_GETUP_DUR, getUp: AYE_GETUP_DUR }
     : { down: DOWN_DUR, getUp: GETUP_DUR };
@@ -6781,7 +7658,10 @@ const EXECUTIONS = {
 // the input and reading the input.
 const EXEC_TOKENS = {
   J: { flag: 'leftJabPressed', key: 'J', shape: 'square',   col: '#f19ad2' },
-  K: { flag: 'upperPressed',   key: 'K', shape: 'triangle', col: '#6ee7a8' },
+  /* The finisher's beat is ALSO the GRAB button (request 338b): the prompt draws
+   * the real grab-button art, so pressing what it shows has to count — G, MMB,
+   * R2 or the touch GRAB. △ / K keeps working for anyone already using it. */
+  K: { flag: 'upperPressed', also: ['grabPressed'], key: 'G', shape: 'triangle', col: '#6ee7a8' },
 };
 
 const EXEC_PERF = {
@@ -7065,6 +7945,14 @@ function startExecution(target, def = EXECUTIONS.darki_olodo, opts = {}) {
   if (!canExecute(target, def, opts)) return false;
   endAttack();                                  // never carry a swing or a hold in
   endBlock();
+  // The finisher is drawn bare-handed, so a weapon he brought into the boss room
+  // (request 335) is set down behind him first, on the road for L2 afterwards,
+  // rather than vanishing from his hand for the length of the sequence.
+  const held = weaponOf(player);
+  if (held) {
+    setWeaponOwner(held, null, { x: player.x - player.facing * 40, y: player.y, facing: player.facing });
+    emitWeaponEvent(held.type + '_drop', held, player);
+  }
   // Save what we are borrowing, so a failure at any point can hand it all back.
   execution = {
     def, victim: target, t: 0, fired: new Set(), lastFrame: -1,
@@ -7182,7 +8070,7 @@ function endExecution({ killed = false } = {}) {
       // wave tally. Nothing about death bookkeeping is duplicated here.
       victim.hp = 0;
       const away = Math.sign(victim.x - player.x) || player.facing || 1;
-      launchEnemy(victim, { x: 180, y: -330 }, away, 0, true);
+      launchEnemy(victim, { x: 180, y: -330 }, away, 0, true, { fit: true });
     } else {
       // A SURVIVED FINISHER HANDS HIM TO THE FALL SHEET, NOT BACK TO THE FIGHT.
       // The choreography's last cell leaves him FLAT ON THE TARMAC â€” that is what
@@ -7207,7 +8095,7 @@ function endExecution({ killed = false } = {}) {
       // a second, untabled subtraction on top of it.
       if (def.endLaunch) {
         const away = Math.sign(victim.x - player.x) || player.facing || 1;
-        launchEnemy(victim, def.endLaunch, away, 0, false);
+        launchEnemy(victim, def.endLaunch, away, 0, false, { fit: true });
         // launchEnemy ends by forcing `menace`, which is the mob's approach mode.
         // The boss drives his own kit off `idle`, so he is put back on it here â€”
         // the same correction the fall branch below makes, for the same reason.
@@ -7261,8 +8149,10 @@ function endExecution({ killed = false } = {}) {
 function execReadTokens() {
   const hit = [];
   for (const tok in EXEC_TOKENS) {
-    const flag = EXEC_TOKENS[tok].flag;
-    if (input[flag]) { hit.push(tok); input[flag] = false; }
+    const T = EXEC_TOKENS[tok];
+    for (const flag of [T.flag, ...(T.also || [])]) {
+      if (input[flag]) { if (!hit.includes(tok)) hit.push(tok); input[flag] = false; }
+    }
   }
   // A press on any OTHER attack button is a wrong button, not a free pass: it is
   // reported so a checkpoint that is open can fail on it (Â§34 Test 5).
@@ -7589,6 +8479,7 @@ function updateExecution(dt) {
       const bonus = cpFor?.grade ? (EXEC_PERF.dmgBonus[cpFor.grade] ?? 0) : 0;
       const mul = isFinal ? (EXEC_PERF.finalDmgMul[ex.finalGrade] ?? 1) : 1;
       ex.dmgFrac += ev.dmg * (1 + bonus) * mul;
+      registerHit(ex.victim.maxHp * ev.dmg * (1 + bonus) * mul);
       const trueHp = ex.victimHp0 - ex.victim.maxHp * ex.dmgFrac;
       ex.victim.hp = ev.type === ex.lastDmgType
         ? Math.max(0, trueHp)               // the reveal: dead here or not at all
@@ -7774,6 +8665,7 @@ function drawExecution() {
     const i = execFrame();
     const h = def.drawH, w = h * (G.cw / G.ch);
     ctx.save();
+    ctx.globalAlpha = 1;                 // the composite includes Darki: same full-opacity rule
     ctx.translate(ex.anchorX - cameraX, ex.anchorY);
     if (ex.facing < 0) ctx.scale(-1, 1);
     ctx.drawImage(img, (i % G.cols) * G.cw, Math.floor(i / G.cols) * G.ch, G.cw, G.ch,
@@ -7787,6 +8679,7 @@ function drawExecution() {
   const sy = Math.floor(i / G.cols) * G.ch;
   const h = def.drawH, w = h * (G.cw / G.ch);
   ctx.save();
+  ctx.globalAlpha = 1;                 // Darki at full opacity, always (request 349)
   // Move the origin to the anchor â€” Darki's feet â€” then mirror about it when he
   // faces left. Mirroring the whole composition rather than either character is
   // the point: their relative positions have to survive the flip.
@@ -7998,6 +8891,9 @@ function execVictimHeadScreen(ex) {
 // screen and above the pair, so it reads as a marker floating over him rather
 // than a label welded to his skull.
 let execBtnX = 0, execBtnY = 0, execBtnHas = false;
+// the touch HUD's GRAB art, drawn as the execution prompt's button (drawExecButton)
+const grabButtonImg = new Image();
+grabButtonImg.src = 'frontend/ui/controls/grab.png';
 
 function drawPadShape(shape, cx, cy, r, col, lw) {
   /* ON A PHONE, DRAW THE BUTTON THAT IS ACTUALLY ON THE SCREEN.
@@ -8121,8 +9017,16 @@ function drawExecButton(ex) {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  // the button itself
-  drawPadShape(t.shape, x, y, 14, t.col, 3.5);
+  /* THE BUTTON ITSELF IS THE GAME'S OWN GRAB BUTTON (request 338b): the same
+   * frontend/ui/controls/grab.png the touch HUD shows, so the prompt and the thing
+   * pressed are one picture on every device. The drawn shape stays as the
+   * fallback until the image has arrived. */
+  if (grabButtonImg.complete && grabButtonImg.naturalWidth) {
+    const h = R * 1.9, w = h * grabButtonImg.naturalWidth / grabButtonImg.naturalHeight;
+    if (inPerfect) { ctx.shadowColor = 'rgba(255,228,94,0.9)'; ctx.shadowBlur = 16; }
+    ctx.drawImage(grabButtonImg, x - w / 2, y - h / 2, w, h);
+    ctx.shadowBlur = 0;
+  } else drawPadShape(t.shape, x, y, 14, t.col, 3.5);
   /* …and the keyboard key under it, small, for anyone not on a pad. Suppressed
    * on touch: the badge above already names the on-screen control, and a
    * lonely "K" under it names a key the player does not have. */
@@ -8679,7 +9583,19 @@ function bossFootfalls(b, dt, weight = BOSS_FOOT.weight) {
  * Built lazily rather than as a module-level constant because the sprite handles
  * are null until `loadWorld` resolves, and a constant would capture the nulls.
  */
-const enemyKit = (enemy) => (enemy.kind === 'senior' ? {
+const enemyKit = (enemy) => (enemy.kind === 'sars' ? {
+  /* HIS STANDING POSE IS ON THE ATTACK SHEET (request 435). The walk sheet has
+   * one section — the stride — so its `idle` was a single frame, and every
+   * moment he stood still (the wind-up telegraph, a throwing stand-off, a
+   * stalled approach) he was a statue for up to 1.7 s: "the SARS freeze, it
+   * looks like the game is hanging". The attack sheet opens every move on the
+   * same planted knife guard; its `idle` is a loop cut from those frames (see
+   * loadWorld), so he squares up on the pose his strikes start from. */
+  idle: { s: sarsAttackSprite, c: SARS_ATTACK_SHEET }, walk: { s: sarsWalkSprite, c: SARS_WALK_SHEET },
+  atk: { s: sarsAttackSprite, c: SARS_ATTACK_SHEET }, throw: { s: sarsThrowSprite, c: SARS_THROW_SHEET },
+  fall: { s: sarsReactSprite, c: SARS_REACT_SHEET }, hurt: { s: sarsReactSprite, c: SARS_REACT_SHEET },
+  death: { s: sarsReactSprite, c: SARS_REACT_SHEET }, carry: { s: gingerCarrySprite, c: ENEMYCARRY_SHEET },
+} : enemy.kind === 'senior' ? {
   idle: { s: seniorSprite, c: SENIOR_SHEET },        // guard + the ginger bounce
   walk: { s: seniorWalkSprite, c: SENIORWALK_SHEET },
   atk: { s: seniorSprite, c: SENIOR_SHEET },         // all four attacks, one sheet
@@ -8811,10 +9727,28 @@ function enemyAnim(enemy) {
          spec: gingerWalkSprite?.anims?.walk, name: 'walk' };
 }
 
+/* A SARS WHOSE MOVE HAS PLAYED OUT but whose recovery has not settles into his
+ * guard loop instead of holding the clip's last cell (request 435) — after a
+ * combo that hold ran 0.6 s, after a throw 0.7 s, and both read as the game
+ * hanging. Sticky once taken: from then on the guard's own spec is playing. */
+function sarsSettle(enemy, K, move) {
+  if (!move || enemy.mode !== 'recover') return move;
+  const guard = kitAnim(K.idle, 'idle', 'guard');
+  if (!guard) return move;
+  const played = enemy.animSpec === move.spec && enemy.animTime >= move.spec.frames.length;  // animTime counts FRAMES
+  return played || enemy.animSpec === guard.spec ? guard : move;
+}
+
 function enemyAnimRaw(enemy) {
   if (enemy.boss) return bossAnim(enemy);
   const K = enemyKit(enemy);
   const senior = enemy.kind === 'senior';
+  const sars = enemy.kind === 'sars';
+  if (sars && enemy.mode === 'rearm') return kitAnim(K.throw, 'reArm', 'reArm');
+  if (sars && (enemy.mode === 'attack' || enemy.mode === 'recover')) {
+    if (enemy.moveName === 'quickThrow') return sarsSettle(enemy, K, kitAnim(K.throw, 'quickThrow', 'quickThrow'));
+    if (enemy.moveName === 'normalThrow') return sarsSettle(enemy, K, kitAnim(K.throw, 'knivesThrow', 'normalThrow'));
+  }
   /* Held in Darki's grab: react through the hit-recoil on each synchronised
    * strike, otherwise hang in the guard pose. Both ride the same foot-anchored
    * sheet, so the swap never pops his size or flips him.
@@ -8972,7 +9906,9 @@ function enemyAnimRaw(enemy) {
      * without a per-class branch, and serves the next armed class for free.
      * A kit with no `atk` row yields null here and falls straight through to
      * the Agbero's jab/kick pair below, so the Agbero is untouched. */
-    const own = kitAnim(K.atk, enemy.moveName, enemy.moveName);
+    const ownName = sars ? ({ jab: 'policeQuickJab', spinKick: 'policeSpiningKick', rapidKick: 'policeRapidLegKick', combo: 'policeCombinationCombo' }[enemy.moveName]) : enemy.moveName;
+    const own = kitAnim(K.atk, ownName, enemy.moveName);
+    if (own && sars) return sarsSettle(enemy, K, own);   // see sarsSettle
     if (own) return own;
     return enemy.moveName === 'kick'
       ? { sprite: gingerKickSprite, config: ENEMYKICK_SHEET, spec: gingerKickSprite.anims.kick, name: 'sidekick' }
@@ -8986,10 +9922,6 @@ function enemyAnimRaw(enemy) {
   // An UNARMED Aye has no stride to plant — he shuffles on his stance — so his
   // advance carries its own label and reads no footfall table at all, rather
   // than firing the armed stride's plant indices against a different clip.
-  if (enemy.mode === 'approach')                     // closing distance, guard up
-    return (senior || enemy.kind === 'shaved')
-      ? kitAnim(K.walk, 'walk', enemy.kind === 'shaved' && !isArmed(enemy) ? 'unarmedWalk' : 'advance')
-      : kitAnim(K.idle, 'walk', 'advance');
   /* THE FIGHT STANCE IS HIS DEFAULT WHENEVER DARKI IS ANYWHERE NEAR HIM.
    *
    * It used to reach the screen only during `state === 'guard'` — the half
@@ -9010,47 +9942,63 @@ function enemyAnimRaw(enemy) {
    * shows during a wind-up, so a commitment now GROWS out of the stance he was
    * already holding instead of snapping into it — which is what makes a crowd
    * read as a crowd getting ready rather than as scenery. */
-  if (!enemy.benched) {
+  /* HIS MOMENT IN THE DEFEAT BEAT (request 367): stood still, looking at the body,
+   * a good way off from Darki — so the near-and-still test below would hand him
+   * his walk cycle and he would march on the spot. He holds his stance instead. */
+  if (enemy.taking)
+    return senior ? kitAnim(K.idle, 'ginger', 'ginger') : kitAnim(K.idle, 'idle', 'ready');
+  /* ONE POSE FILTER FOR EVERY CLASS (request 369). The choice below — advance,
+   * stance or stride — is decided fresh on every call, and its inputs jitter: the
+   * standoff bob carries a body across the 0.6 px "travelling" line on and off,
+   * and the AI flips in and out of 'approach' as the gap breathes. Request 299
+   * filtered this for Aye alone; the Agbero and the senior kept it raw and
+   * measured 37 one-to-four-frame sheet pops in 30 s of fighting (stance -> walk
+   * -> stance), which is the "sprites struggling with which to display". Now every
+   * class holds the pose it is in until the new reading has HELD: AYE_POSE_TO_WALK
+   * of continuous wanting before he strides or advances, AYE_POSE_TO_READY before
+   * he squares up. Arriving on this route — out of a flinch, a swing, a walk-in,
+   * a get-up or a teleport — he takes the right pose at once, so the filter can
+   * never slide a walking man along in his guard. "On the route a moment ago" =
+   * called within the last ~3 frames. Keyed off `mobClock`, not dt, because this
+   * router also runs from the draw. */
+  const shaved = enemy.kind === 'shaved';
+  let want = 'walk';
+  if (enemy.mode === 'approach') want = 'advance';   // closing distance, guard up
+  else if (!enemy.benched) {
     const near = Math.abs(player.x - enemy.x) < SENIOR.gingerRange
       && Math.abs(player.y - enemy.y) < SENIOR.gingerLane;
     const travelling = Math.abs(enemy.vx) > SENIOR.gingerMoveEps
       || Math.abs(enemy.x - (enemy.prevX ?? enemy.x)) > 0.6;
-    /* AYE HOLDS HIS STANCE-OR-STRIDE CHOICE (request 299). This test is decided
-     * fresh every frame, and the standoff bob carries a body across the 0.6 px
-     * line on and off — measured 50 sheet changes in 10 s of an unhurt
-     * standoff. On the Agbero both sides are near-identical drawings, so it
-     * never showed; on Aye they are his armed-hit sheet's guard and his stalking
-     * stride, so it read as his hit-reaction sprite glitching constantly. A
-     * pose he switches into is held POSE_HOLD before it may switch back. Keyed
-     * off `mobClock`, not dt, because this router also runs from the draw. */
-    if (enemy.kind === 'shaved') {
-      const want = near && !travelling ? 'ready' : 'walk';
-      /* A JITTER FILTER, not a timer. He swaps only once the reading has HELD:
-       * into his stride after AYE_POSE_TO_WALK s of continuous movement (the
-       * flicker was single-frame "moving" blips, which can never last that
-       * long), back into his guard after AYE_POSE_TO_READY s of standing.
-       * Arriving on this route — out of a flinch, a swing, a walk-in, a get-up
-       * or a teleport — he takes the right pose at once, so the filter can never
-       * slide a walking man along in his guard. "On the route a moment ago" =
-       * called within the last ~3 frames. */
-      const onRoute = mobClock - (enemy.poseRouteAt ?? -1e9) <= 0.05;
-      enemy.poseRouteAt = mobClock;
-      const moving = want === 'walk';
-      if (moving) { enemy.poseStillSince = null; enemy.poseMoveSince ??= mobClock; }
-      else { enemy.poseMoveSince = null; enemy.poseStillSince ??= mobClock; }
-      if (enemy.poseHeld == null || !onRoute) enemy.poseHeld = want;
-      else if (enemy.poseHeld === 'ready' && moving
-               && mobClock - enemy.poseMoveSince >= AYE_POSE_TO_WALK) enemy.poseHeld = 'walk';
-      else if (enemy.poseHeld === 'walk' && !moving
-               && mobClock - enemy.poseStillSince >= AYE_POSE_TO_READY) enemy.poseHeld = 'ready';
-      if (enemy.poseHeld === 'ready') return kitAnim(K.idle, 'idle', 'ready');
-      return kitAnim(K.walk, 'walk', isArmed(enemy) ? 'walk' : 'unarmedWalk');
-    }
-    if (near && !travelling)
-      return senior ? kitAnim(K.idle, 'ginger', 'ginger')
-        : kitAnim(K.idle, 'idle', 'ready');
+    // A SARS stands off at THROWING range, well outside gingerRange, so for him
+    // any standstill is a guard — never a frozen stride frame.
+    if ((near || sars) && !travelling) want = 'ready';
   }
-  return kitAnim(K.walk, 'walk', 'walk');
+  const onRoute = mobClock - (enemy.poseRouteAt ?? -1e9) <= 0.05;
+  enemy.poseRouteAt = mobClock;
+  if (enemy.poseWant !== want) { enemy.poseWant = want; enemy.poseWantSince = mobClock; }
+  /* …and a pose, once shown, is shown for at least POSE_MIN_HOLD: a reading that
+   * only just clears its dwell could otherwise put a pose up for 5-6 frames — a
+   * 0.1 s twitch, measured (req369probe, section 2). */
+  if (enemy.poseHeld == null || !onRoute) { enemy.poseHeld = want; enemy.poseHeldSince = mobClock; }
+  else if (enemy.poseHeld !== want
+    && mobClock - enemy.poseWantSince >= (want === 'ready' ? AYE_POSE_TO_READY : AYE_POSE_TO_WALK)
+    && mobClock - (enemy.poseHeldSince ?? -1e9) >= POSE_MIN_HOLD) {
+    enemy.poseHeld = want; enemy.poseHeldSince = mobClock;
+  }
+  /* The Agbero ADVANCES on his idle sheet, because that sheet carries a walking
+   * guard clip and his walk sheet is a casual stride; the senior and Aye advance
+   * on their own walk sheets. An UNARMED Aye has no stride to plant — he shuffles
+   * on his stance — so his advance and walk carry their own label and read no
+   * footfall table at all. */
+  if (enemy.poseHeld === 'advance')
+    return (senior || shaved || sars)       // his idle row is a stance, not a walking guard
+      ? kitAnim(K.walk, 'walk', shaved && !isArmed(enemy) ? 'unarmedWalk' : 'advance')
+      : kitAnim(K.idle, 'walk', 'advance');
+  if (enemy.poseHeld === 'ready')
+    return senior ? kitAnim(K.idle, 'ginger', 'ginger') : kitAnim(K.idle, 'idle', 'ready');
+  return shaved
+    ? kitAnim(K.walk, 'walk', isArmed(enemy) ? 'walk' : 'unarmedWalk')
+    : kitAnim(K.walk, 'walk', 'walk');
 }
 
 function spriteFor(anim) {
@@ -9661,6 +10609,57 @@ ATTACKS.macheteRush = {
   }],
   windows: {},
 };
+/* THE TORNADO (request 370): machete in hand and the rage bar full or burning,
+ * HIT, HIT and HOLD the second. The double-tap starts the machete combo as it
+ * always has (no lag bought for the hold); still held `holdToStart` later, which
+ * is before the combo's first cut lands, the string turns into this.
+ *
+ * ONE SHEET, PLAYED IN ORDER, with its main cycle held (request 374): the wind-up
+ * spins (0-88, every second frame — the section's own pick), then the cycle 90-112
+ * repeats for as long as HIT stays down and the rage lasts. Breaking out is just
+ * letting the clock run on: 113 is the same pose as 90, so the spin-out (113-126)
+ * and the fight stance that ends the sheet (127-170) follow the last lap with no
+ * seam. The sheet doubles most poses (24 fps art at 30); the doubles are dropped
+ * from the cycle and the settle so the spin turns, not stutters.
+ *
+ * Steered while spinning (`steer`, a share of his walk), and the blade is live all
+ * the way round: a 360-degree box, each man struck at most once per `cooldown`,
+ * and every strike floors him outward — the tornado clears a space round Darki
+ * rather than grinding one man down. See advanceTornado / tornadoStrikes. */
+const TORNADO_DOUBLES = [91, 95, 100, 106, 110, 115, 121, 125, 130, 136, 145, 149];   // req370/_loop.js
+const TORNADO = {
+  holdToStart: 0.18,                     // s the second tap must stay down (the combo cuts at ~0.19)
+  loop: [90, 112],                       // the main cycle, sheet frames
+  live: [6, 126],                        // blade out: from the first sweep to the end of the spin-out
+  steerUntil: 127,                       // he plants for the stance
+  faceAt: 122,                           // the spin-out frame whose body sits on the anchor (cx 249-260)
+  settle: 150,                           // the stance has landed: any input takes him out of it
+  whoosh: [8, 30, 52, 76, 101, 118],     // one per turn of the wind-up, one per lap, one on the way out
+  steer: 0.85,                           // of his walking speed
+  reachX: 175, laneY: 56, top: -235,     // the swept disc: the blade reaches ~200 px each side as drawn
+  cooldown: 0.5, bossCooldown: 0.7,      // per man, so one lap is one strike, not one per frame
+  win: { ...MACHETE_HIT, damage: 18, kb: { x: 420, y: -380 }, launch: true, big: true,
+    hitstop: 0.05, shake: 9, rage: 0 },
+};
+ATTACKS.macheteTornado = {
+  anim: 'macheteTornado',
+  frames: [
+    0, 2, 4, 6, 8, ...FR(12, 88).filter((f) => f % 2 === 0),
+    ...FR(90, 112).filter((f) => !TORNADO_DOUBLES.includes(f)),
+    ...FR(113, 149).filter((f) => !TORNADO_DOUBLES.includes(f)),
+    ...FR(150, 170).filter((f) => f % 2 === 0),
+  ],
+  fps: 30,
+  lock: true,
+  tornado: TORNADO,
+  windows: {},
+};
+{
+  const M = ATTACKS.macheteTornado, at = (f) => M.frames.findIndex((x) => x >= f);
+  M.tornadoAt = { loopA: at(TORNADO.loop[0]), loopB: M.frames.lastIndexOf(TORNADO.loop[1]),
+    liveA: at(TORNADO.live[0]), liveB: M.frames.lastIndexOf(TORNADO.live[1]),
+    steerUntil: at(TORNADO.steerUntil), faceAt: at(TORNADO.faceAt), settle: at(TORNADO.settle) };
+}
 /* THE RUSH, with the bat (request 307): the same committed lunge, on the bat
  * rush sheet. He charges in with it cocked over his shoulder (0-2), brings it
  * down across his chest (3-5) and carries it low and forward through the run
@@ -9712,6 +10711,7 @@ ATTACKS.macheteAir = {
   anim: 'macheteAir',
   air: true,
   holdUntilLand: true,
+  land: 'macheteAirLand',                // what touchdown hands over to (onTouchdown)
   frames: [18, 19, 21, 31, 32, 40, 42, 44, 46, 47, 48, 49],
   paceFrom: 40,                          // the dive is paced to the fall; up to the chop is not
   fps: 30,
@@ -9730,6 +10730,7 @@ ATTACKS.macheteAir = {
  * when nothing else is pressed. */
 ATTACKS.macheteAirLand = {
   anim: 'macheteAirLand',
+  airLand: true,                         // the second half of an air strike (strikeMomentum, airStrike)
   frames: [...JUMP_LAND_FRAMES, ...FR(70, 90).filter((f) => f % 2 === 0)],
   fps: 30,
   cancelStart: JUMP_LAND_FRAMES.length,
@@ -9740,6 +10741,48 @@ ATTACKS.macheteAirLand = {
   }],
   windows: {},
 };
+/* THE JUMP KICK, with the bat (request 356, BATSTRIKE_SHEET). He keeps the bat
+ * and kicks with his foot — the bat trails low behind him — so this is the
+ * unarmed air kick's blow at the bat's tier, not a bat impact. Live while the
+ * leg is out (3-26); the leg comes back under him over 27-38, paced to the fall
+ * (advanceAttack) so it is down as his feet arrive, held if he is still falling,
+ * and touchdown hands over to the sheet's own landing (batAirLand). The split is
+ * by sheet frame, so a re-cut section keeps it. Reach measured in _chromakey/req357:
+ * the toe 255-265 cell px past the foot anchor = ~178 px ahead as drawn. */
+const BAT_AIR_LAST = 38;                 // the last airborne frame; the landing starts after
+/* THINNED for the fall it has to fit (measured, req356verify): the dive after an
+ * air strike lasts ~0.2-0.3 s, and the section's 22 airborne frames would not be
+ * through even at the 2x pacing cap — he met the deck mid-kick and the landing
+ * snapped in. The kick is one held pose drifting slightly, so it keeps every
+ * fourth or fifth frame and the retract keeps its shape; the result is paced. */
+const BAT_AIR_FRAMES = [0, 4, 9, 15, 20, 26, 29, 33, 36, 38];
+ATTACKS.batAir = {
+  anim: 'batAir',
+  air: true,
+  holdUntilLand: true,
+  land: 'batAirLand',
+  frames: BAT_AIR_FRAMES.slice(),
+  paceFrom: 4,                           // the snap out of the tuck at the sheet's speed; the rest fills the fall
+  fps: 30,
+  cancelStart: 999,
+  strikes: [{
+    group: 'ba',
+    // like the unarmed kick's, it reaches DOWN too: he arrives above the man
+    boxes: Object.fromEntries(FR(3, 26).map((f) => [f, { x: 12, w: 166, top: -200, h: 180 }])),
+    win: { swing: 'kick', damage: 32, kb: { x: 330, y: -310 }, launch: true, big: true,
+      hitstop: 0.20, shake: 17, rage: 14 },
+  }],
+  windows: {},
+};
+// …and down: the landing crouch with the bat raised (47-51), settling into his guard.
+ATTACKS.batAirLand = {
+  anim: 'batAirLand',
+  frames: [47, 49, 51, 52, 53, 54, 55, 56, 57, 58, 59],
+  fps: 30,
+  cancelStart: 4,                        // past the crouch that takes the landing
+  windows: {},
+};
+
 /* THE THROW, any weapon (L2 while armed). The "Darki_Bat_throw" section of the
  * generic throw sheet. `release.frame` is the first frame his hand is empty —
  * measured: on 56 the weapon is still up over his hand (ink top 184 px), on 58 it
@@ -9753,6 +10796,17 @@ ATTACKS.weaponThrow = {
     76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88],
   fps: 30,
   release: { frame: 58 },
+  windows: {},
+};
+/* …with the machete (request 343): the same mechanic on the blade's own sheet,
+ * its "machete throw" section played whole. On 10 the blade is already out past
+ * his hand (ink to the cell's edge); 11 is the first empty-handed frame. At 30 fps
+ * that lets go 0.37 s in, a beat ahead of the bat's 0.43: the lighter weapon. */
+ATTACKS.macheteThrow = {
+  anim: 'macheteThrow',
+  frames: FR(0, 20),
+  fps: 30,
+  release: { frame: 11 },
   windows: {},
 };
 
@@ -9787,8 +10841,15 @@ function bindStrikes(move, frames) {
     move.cancelStart = move.lockUntil;
   }
 }
-for (const n of ['macheteSlash', 'macheteCombo', 'macheteRush', 'batRush', 'macheteAir', 'macheteAirLand', 'weaponThrow'])
+for (const n of ['macheteSlash', 'macheteCombo', 'macheteRush', 'batRush', 'macheteAir', 'macheteAirLand', 'batAir', 'weaponThrow', 'macheteThrow'])
   bindStrikes(ATTACKS[n], null);
+// Any move with a `release` is a weapon throw (the one test the input code needs).
+const isWeaponThrow = (name) => !!ATTACKS[name]?.release;
+
+// The bat jump's measured split points (BATJUMP_SHEET), as the machete's below.
+const BAT_JUMP_RISE = FR(17, 25);        // the push off the crouch, up to the apex
+const BAT_JUMP_FALL = FR(26, 31);        // over the top and down to the deck
+const BAT_JUMP_LAND = FR(32, 37);        // feet on the deck, the crouch that takes it
 
 /* At world load: point the moves at the sheets' own sections, and give the air
  * sheet the jump-arc clips the armed pose routing asks for. The sheet's
@@ -9799,6 +10860,27 @@ function bindDarkiWeaponAnims() {
   bindStrikes(ATTACKS.macheteSlash, sec(macheteComboSprite, 'darkiMacheteAttack'));
   bindStrikes(ATTACKS.macheteCombo, sec(macheteComboSprite, 'darkiMacheteCombo'));
   bindStrikes(ATTACKS.weaponThrow, sec(weaponThrowSprite, 'darkiBatThrow'));
+  bindStrikes(ATTACKS.macheteThrow, sec(macheteThrowSprite, 'macheteThrow'));
+  /* THE BAT JUMP (request 343): the machete jump's scheme on the bat's sheet —
+   * the wind-up into the crouch can't play before a jump that leaves on the
+   * press, so rise and fall are picked by HEIGHT (airPoseFrame) and the landing
+   * is the sheet's own touch and crouch. */
+  const B = batJumpSprite;
+  if (B) {
+    B.anims.jumpRise = { frames: BAT_JUMP_RISE.slice(), fps: 30, loop: false, byHeight: 'rise' };
+    B.anims.jumpFall = { frames: BAT_JUMP_FALL.slice(), fps: 30, loop: false, byHeight: 'fall' };
+    B.anims.land = { frames: BAT_JUMP_LAND.slice(), fps: 30, loop: false };
+  }
+  // THE BAT JUMP KICK (request 356): one section, split at its last airborne frame.
+  const S = batStrikeSprite;
+  if (S) {
+    const kick = sec(S, 'darkiBatJumpkick');
+    if (kick) {
+      bindStrikes(ATTACKS.batAir, kick.filter((f) => BAT_AIR_FRAMES.includes(f)));
+      ATTACKS.batAirLand.frames = kick.filter((f) => f > BAT_AIR_LAST);
+    }
+    S.anims.airKickFall = { frames: [ATTACKS.batAir.frames.at(-1)], fps: 1, loop: false };
+  }
   /* THE JUMP (request 326): the "jump and drop" section, played FORWARD across
    * the whole arc. The game's jump leaves the deck on the press, so the
    * section's wind-up (guard into crouch, 0-29) cannot play before it without
@@ -9958,11 +11040,16 @@ ATTACKS.rushKick = {
   frames: ATTACKS.highKick.frames,
   fps: ATTACKS.highKick.fps,
   lock: true,                            // committed â€” no cancelling out of a dash
-  lunge: { speed: 700, until: 9 },       // decays to nothing as the foot lands
+  lunge: { speed: 700, until: 9, contact: 84 },   // decays to nothing as the foot lands; stops on a body
+  /* Request 335: the kick out of a rush is the heaviest single blow he has
+   * unarmed, and the man it lands on becomes a PROJECTILE — `missile` arms the
+   * thrown-body collision (updateThrownBody) at full power, so he flattens the
+   * men behind him and bowls through `pierce` of them before he stops. */
   windows: Object.fromEntries([6, 7, 8, 9].map((s) => [s, {
     group: 'rk', swing: 'kick', box: { x: 14, w: 150, top: -235, h: 215 },
-    damage: 24, kb: { x: 430, y: -400 }, launch: true,
-    hitstop: 0.16, shake: 17, rage: 14, big: true,
+    damage: 30, kb: { x: 560, y: -440 }, launch: true,   // under the bat rush (32): weapons out-hit hands
+    hitstop: 0.22, shake: 24, rage: 16, big: true,
+    missile: { power: 1, pierce: 1 },
   }])),
 };
 
@@ -10162,9 +11249,21 @@ function launchEnemy(e, kb, dir, dmg, killable = true, opts = {}) {
   e.fallRate = varyRange(FALL_VARY.rate);
   e.jumpY = Math.min(e.jumpY, -1);
   e.facing = -dir;
+  e.rushKnock = !!opts.rush;           // lands into RUSH_BOUNCE + a skid
+  e.slideVx = 0;
+  // A body kicked into his own men is a projectile, exactly as one thrown off
+  // the carry is (updateThrownBody), with `pierce` extra men it may go through.
+  e.missilePierce = opts.missile?.pierce ?? 0;
+  if (opts.missile) {
+    e.thrownByCarry = true;
+    e.throwPower = opts.missile.power;
+    e.throwHits = new Set();
+  }
+  if (opts.fit) fitLaunchToView(e);
   // Knocked off his feet: whatever he was holding leaves his hands HERE, the
   // one knockdown funnel. Facing is already set toward the man who hit him.
   dropMachete(e);
+  dropSarsKnife(e);
   // A launch that is NOT ALLOWED TO KILL must not be able to leave a man on zero
   // either. The rage shockwave chips everyone in front of Darki with
   // `killable: false`, so `dying` never gets set â€” and a mob whose health the
@@ -10199,7 +11298,7 @@ function launchEnemy(e, kb, dir, dmg, killable = true, opts = {}) {
     }
   }
   attackTokens.delete(e);
-  e.mode = 'menace';
+  e.mode = e.boss ? 'idle' : 'menace';  // the boss drives his kit off `idle`
   e.didHit = false;
 }
 
@@ -10216,7 +11315,7 @@ function launchEnemy(e, kb, dir, dmg, killable = true, opts = {}) {
 const MOMENTUM = { kbShare: 0.6, liftShare: 0.15, dmgPer1000: 0.4, maxDmg: 1.4, hitstopMul: 1.25, shake: 6 };
 function strikeMomentum() {
   if (ATTACKS[player.attack]?.air && player.leaping) return Math.abs(player.vx);
-  if (player.attack === 'macheteAirLand') return player.landMomentum || 0;
+  if (ATTACKS[player.attack]?.airLand) return player.landMomentum || 0;
   return 0;
 }
 function withMomentum(win, s) {
@@ -10229,14 +11328,72 @@ function withMomentum(win, s) {
     dir: Math.sign(player.vx) || player.facing || 1 };
 }
 
+/* AIR STRIKES LAND HEAVIER (request 330): every strike thrown from the air —
+ * the kick, the machete's dive and its landing cut — hits with more knock, a
+ * longer freeze and more shake. Stacks under MOMENTUM (a running leap's run). */
+const AIR_IMPACT = { kbMul: 1.8, liftMul: 1.3, hitstopAdd: 0.04, shakeAdd: 6 };
+/* A BLOW THAT FLOORS A MAN IS FELT (request 330): any launch gets a longer
+ * freeze and more shake on the hit, so the knockdown reads as the big moment it
+ * is; the body meeting the road answers with groundSlam (see the enemy landing). */
+const KNOCKDOWN_IMPACT = { hitstopAdd: 0.03, shakeAdd: 5 };
+const airStrike = () => !!(ATTACKS[player.attack]?.air || ATTACKS[player.attack]?.airLand);
+
+/* RUSH KNOCKDOWNS (request 335). A blow thrown out of a run — the three rush
+ * moves, or any strike carrying a leap's momentum — floors a man who then
+ * BOUNCES (RUSH_BOUNCE) and skids before he gets up or dies. */
+const RUSH_MOVES = new Set(['rushKick', 'macheteRush', 'batRush']);
+const rushStrike = () => RUSH_MOVES.has(player.attack) || strikeMomentum() > 1;
+
+/* KEPT IN SHOT (request 335): "the force is throwing them out of frame 90% of
+ * the time". The knock is not weakened at the moment of the blow — the speed is
+ * capped so the whole predicted travel (the absorbing drift, the flight under
+ * the same 2200 px/s² gravity the 'hit' branch integrates, and a rush skid)
+ * ends `margin` inside the camera edge. One uniform scale on vx keeps the arc a
+ * true parabola; only how far it goes changes. */
+const LAUNCH_FIT = { margin: 120, minScale: 0.12, gravity: 2200, lead: 0.58 };
+function fitLaunchToView(e) {
+  const dir = Math.sign(e.vx);
+  if (!dir) return;
+  const g = LAUNCH_FIT.gravity, j0 = Math.min(0, e.jumpY || 0);
+  const flight = (-e.vy + Math.sqrt(Math.max(0, e.vy * e.vy - 2 * g * j0))) / g;
+  const skid = e.rushKnock ? RUSH_KNOCK.slideKeep / RUSH_KNOCK.slideDecay : 0;
+  const travel = Math.abs(e.vx) * (0.3 * (e.fallHold || 0) + flight + skid);
+  // The frame he will land in, not only the one on screen now: the follow
+  // camera trails a running leap, so measured off cameraX alone a leap's blow
+  // was capped shorter than a standing one. Darki keeps `lead` of a view on each
+  // side once it settles. The boss room's camera is locked, so there it is exact.
+  const lead = waveState === 'boss' ? 0 : viewW() * LAUNCH_FIT.lead;
+  const edge = dir > 0
+    ? Math.max(cameraX + viewW(), player.x + lead) - LAUNCH_FIT.margin
+    : Math.min(cameraX, player.x - lead) + LAUNCH_FIT.margin;
+  const room = (edge - e.x) * dir;
+  lastLaunchFit = { x: Math.round(e.x), vx: Math.round(e.vx), vy: Math.round(e.vy), travel: Math.round(travel), room: Math.round(room), edge: Math.round(edge) };
+  if (travel > room) e.vx *= Math.max(LAUNCH_FIT.minScale, room / travel);
+}
+let lastLaunchFit = null;   // test hook: the last fit's numbers
+
 function hitEnemy(e, win, src = player) {
-  if (src === player) { const s = strikeMomentum(); if (s > 1) win = withMomentum(win, s); }
-  const dmg = win.damage * rageMul();
-  const dir = win.dir ?? (Math.sign(e.x - src.x) || player.facing || 1);
+  const rushHit = src === player && rushStrike();
+  if (src === player) {
+    const s = strikeMomentum(); if (s > 1) win = withMomentum(win, s);
+    if (airStrike()) {
+      const A = AIR_IMPACT;
+      win = { ...win, kb: { x: (win.kb?.x ?? 0) * A.kbMul, y: (win.kb?.y ?? 0) * A.liftMul },
+        hitstop: (win.hitstop ?? 0) + A.hitstopAdd, shake: (win.shake ?? 0) + A.shakeAdd };
+    }
+  }
+  if (win.launch) win = { ...win, hitstop: (win.hitstop ?? 0) + KNOCKDOWN_IMPACT.hitstopAdd, shake: (win.shake ?? 0) + KNOCKDOWN_IMPACT.shakeAdd };
+  const dmg = win.damage * (win.foul ? 1 : rageMul());
+  if (!win.foul) registerHit(dmg);      // a foul (one enemy's knife in another) is not Darki's score
+  // A rush move drives the man the way Darki is running, whichever side of his
+  // centre the body happens to be on when the blow lands.
+  const dir = win.dir ?? (src === player && RUSH_MOVES.has(player.attack) ? (player.facing >= 0 ? 1 : -1)
+    : (Math.sign(e.x - src.x) || player.facing || 1));
   e.hp -= dmg;
   e.hpFlash = 0.25;
-  addRage(win.rage);
+  if (!win.foul) addRage(win.rage);
   const ko = e.hp <= 0;
+  if (src === player) streetLearn(e, ko, !!win.launch);   // the street watches (request 403)
   const impactX = (src.x + e.x) / 2;
   triggerHitFx(impactX, e.y - 110, win.hitstop, win.shake, !!win.big);
   // A window may name its OWN impact clip (the combo's opening two fists carry
@@ -10289,7 +11446,8 @@ function hitEnemy(e, win, src = player) {
     return;
   }
   if (win.launch || ko) {
-    launchEnemy(e, { x: win.kb.x, y: win.kb.y || -420 }, dir, 0);
+    launchEnemy(e, { x: win.kb.x, y: win.kb.y || -420 }, dir, 0, true,
+      { fit: src === player, rush: rushHit, missile: win.missile });
     e.dead = ko;
   } else {
     e.state = 'stagger';                          // brief flinch, stays grounded
@@ -10455,6 +11613,30 @@ function playWhiff(kick, byPlayer, atX) {
 }
 
 // Scan the active window against every hittable enemy (one hit per group).
+/* Once Darki has an eligible body inside the authored reach of the move he is
+ * already throwing, that body may not use navigation to erase the contact
+ * before the active frame arrives. This is not homing and does not extend any
+ * box: entry into a real current/future hitbox is still required. */
+function canCommitToPlayerAttack(e) {
+  const move = ATTACKS[player.attack];
+  if (!move || e.benched || e.hp <= 0 || e.dying || e.spawnEntry
+      || !isEnemyHittable(e) || vehicleBetween(player, e)) return false;
+  if (move.grab) return e === player.grabTargetRef && isGrabbable(e);
+  if (Math.abs(e.y - player.y) > 54) return false;
+  const windows = Object.entries(move.windows || {});
+  for (const [step, win] of windows) {
+    if (+step < player.attackStep || !win?.box) continue;
+    if (rectsOverlap(attackBox(win), enemyBodyBox(e))) return true;
+  }
+  return false;
+}
+
+function updateAttackCommitment(e) {
+  const held = player.attackCommit;
+  if (!held || !player.attack || held.has(e.id)) return;
+  if (canCommitToPlayerAttack(e)) held.add(e.id);
+}
+
 function resolveAttackHits() {
   const move = ATTACKS[player.attack];
   const win = move?.windows[player.attackStep];
@@ -10463,6 +11645,7 @@ function resolveAttackHits() {
   for (const e of enemies) {
     if (!isEnemyHittable(e)) continue;
     if (Math.abs(e.y - player.y) > 48) continue;   // must share the lane
+    if (vehicleBetween(player, e)) continue;        // …with no parked body in between
     const key = e.id + '@' + win.group;
     if (player.attackHits.has(key)) continue;
     if (rectsOverlap(abox, enemyBodyBox(e))) {
@@ -10502,14 +11685,20 @@ function seatGrabbed(e, k = 1) {
   e.facing = -dir;                                   // held face to face
 }
 
-// Grab eligibility. Corpses, downed/launched bodies, bosses, invulnerable and
-// already-held targets are never grabbable (`boss`/`noGrab`/`invuln` are honoured
-// if a future archetype sets them).
+// Grab eligibility. Corpses, downed/launched bodies, invulnerable and
+// already-held targets are never grabbable (`noGrab`/`invuln` are honoured if a
+// future archetype sets them). MC_Olodo CAN be grabbed and beaten like anyone
+// (request 335) — while he is in the fight, and not again until he has shaken
+// off the last hold (`grabCooldown`, BOSS.grabCooldown).
 function isGrabbable(e) {
   return !!e && !e.benched && !e.grabbed && !e.carried && e.hp > 0
-    && !e.boss && !e.noGrab && !(e.invuln > 0)
+    && !e.noGrab && !(e.invuln > 0)
+    && !(e.boss && (!e.active || e.grabCooldown > 0))
     && isEnemyHittable(e);
 }
+// The overhead pickup is a different matter: there is no carry art for him, so
+// the boss is never lifted.
+const isCarryable = (e) => isGrabbable(e) && !e.boss;
 
 // Closest eligible body IN FRONT of Darki, within reach and sharing his lane.
 function grabTarget() {
@@ -10519,7 +11708,7 @@ function grabTarget() {
     if (!isGrabbable(e)) continue;
     const forward = (e.x - player.x) * dir;              // +ve â†’ in front of him
     if (forward < GRAB.minGap || forward > GRAB.reach) continue;
-    if (Math.abs(e.y - player.y) > GRAB.lane) continue;
+    if (Math.abs(e.y - player.y) > GRAB.lane || vehicleBetween(player, e)) continue;
     if (forward < bestD) { bestD = forward; best = e; }  // nearest wins â†’ only one
   }
   return best;
@@ -10531,7 +11720,9 @@ function latchGrab(e) {
   grabbedEnemy = e;
   e.grabbed = true;
   e.state = 'grabbed';               // not "grounded" â†’ lane steering leaves it alone
-  e.mode = 'menace';
+  // The boss drives his kit off `idle`; a move he was throwing dies in the hold.
+  if (e.boss) { if (e.mode === 'special') endBossMove(e); e.mode = 'idle'; }
+  else e.mode = 'menace';
   e.vx = 0; e.vy = 0; e.jumpY = 0;
   e.staggerTimer = 0; e.downTimer = 0; e.didHit = false;
   e.grabHitT = 0;
@@ -10546,6 +11737,7 @@ function latchGrab(e) {
 // would end the hold. A lethal strike releases early rather than beating a corpse.
 function applyGrabHit(e, h) {
   e.hp -= h.damage * rageMul();
+  registerHit(h.damage * rageMul());
   e.hpFlash = 0.25;
   addRage(h.rage);
   /* ONE RULE FOR BOTH CLASSES: every blow restarts the reaction from its first
@@ -10857,13 +12049,15 @@ function releaseGrab(opts = {}) {
   e.grabbed = false;
   e.grabHitT = 0;
   e.state = 'walk';                  // clear 'grabbed' before handing control back
-  e.mode = 'menace';
+  e.mode = e.boss ? 'idle' : 'menace';
+  if (e.boss) e.grabCooldown = BOSS.grabCooldown;
   e.vx = 0; e.vy = 0; e.jumpY = 0;
   if (opts.launch) {
     const r = opts.force || GRAB.release;   // `force`: the finisher's own payload
     const dir = player.facing >= 0 ? 1 : -1;
     const damage = opts.lethal ? 0 : r.damage * rageMul();
     const killedByRelease = opts.lethal || e.hp - damage <= 0;
+    registerHit(damage);
     addRage(r.rage);
     triggerHitFx((player.x + e.x) / 2, e.y - 110, r.hitstop, r.shake, true);
     playHit(r);
@@ -10891,10 +12085,10 @@ function carryTarget() {
   const dir = player.facing >= 0 ? 1 : -1;
   let best = null, bestD = Infinity;
   for (const e of enemies) {
-    if (!isGrabbable(e) || e.carried) continue;
+    if (!isCarryable(e) || e.carried) continue;
     const forward = (e.x - player.x) * dir;
     if (forward < CARRY.minGap || forward > CARRY.reach) continue;
-    if (Math.abs(e.y - player.y) > CARRY.lane) continue;
+    if (Math.abs(e.y - player.y) > CARRY.lane || vehicleBetween(player, e)) continue;
     if (forward < bestD) { bestD = forward; best = e; }
   }
   return best;
@@ -11052,7 +12246,7 @@ function updateCarryPickup(move, step) {
   // that moment because the world moved on while the hand travelled.
   if (!carriedEnemy && !player.carryWhiffed && !player.carryDone && step >= cfg.latchStep) {
     player.carryDone = true;                       // this attempt is spent either way
-    const t = isGrabbable(player.carryTargetRef) && !player.carryTargetRef.carried
+    const t = isCarryable(player.carryTargetRef) && !player.carryTargetRef.carried
       ? player.carryTargetRef : carryTarget();
     if (t) { latchCarry(t); carryState = CARRY_STATE.LIFT; }
     else {
@@ -11088,6 +12282,7 @@ function finishCarryPickup() {
   if (!carriedEnemy) { carryState = CARRY_STATE.NONE; return false; }
   player.attack = null;
   player.attackHits = null;
+  player.attackCommit = null;
   player.attackStep = 0;
   player.carrying = true;
   player.anim = 'carry';
@@ -11316,13 +12511,14 @@ function updateThrownBody(e, dt) {
      * swing in progress — because a thrown ally passing through a man who
      * carries on kicking is the single worst outcome here. */
     const dmg = iHit.damage * rageMul();
+    registerHit(dmg);
     if (o.kind === 'senior' && q < CARRY.impact.seniorFloor) {
       o.hp -= dmg;
       o.hpFlash = 0.25;
       if (o.hp <= 0) { o.hp = 0; launchEnemy(o, iKb, dir, 0); o.dying = true; o.dead = true; }
       else staggerEnemy(o, dir, iKb.x, q >= CARRY.impact.seniorHeavy);
     } else {
-      launchEnemy(o, iKb, dir, dmg);
+      launchEnemy(o, iKb, dir, dmg, true, { fit: true, rush: !!e.rushKnock });
     }
     /* …AND HE REMEMBERS IT. Being hit with one of his own men is the moment the
      * player should feel they have provoked him rather than merely damaged him.
@@ -11337,6 +12533,14 @@ function updateThrownBody(e, dt) {
     // that into his crash, so he ends knocked down like anyone else.
     e.hp -= imp.selfDamage;
     e.hpFlash = 0.25;
+    // A rush-kicked body has the force to bowl through `missilePierce` more men,
+    // losing speed to each; the last one he meets stops him as above.
+    if (e.missilePierce > 0) {
+      e.missilePierce--;
+      e.vx *= RUSH_KNOCK.pierceKeep;
+      if (e.hp <= 0) { e.hp = 0; e.dying = true; e.dead = true; }
+      break;
+    }
     e.vx = -e.vx * 0.22;
     e.vy = Math.max(e.vy, -140);
     e.fallHold = 0;                                  // stop absorbing, start falling
@@ -12066,8 +13270,16 @@ function beginRushLeap(runSpeed = RUSH.speed) {
 // Begin a move (fresh clock + hit ledger). Grounded-only; movement is locked
 // for the swing. Called from the input buffer.
 function startAttack(name) {
+  /* A NAME THE TABLE DOES NOT HOLD IS A NO-MOVE, not a dead game. Every caller
+   * reaches this with a name from a routing table (ATTACKS keys, the weapon
+   * `moves` rows, the buffered input), and a single wrong entry in any of them
+   * used to land as `ATTACKS[name].anim` on an undefined — thrown from inside
+   * the update, which takes the rAF loop down with it and reads to the player
+   * as the game freezing. One typo should cost a move, not the session; the
+   * warning is what keeps it from being silent in a harness. */
+  if (!ATTACKS[name]) { console.warn('startAttack: no such move', name); return; }
   // A throw needs something to throw; one buffered across losing it is dropped.
-  if (name === 'weaponThrow' && !player.weapon) return;
+  if (isWeaponThrow(name) && !player.weapon) return;
   releaseGrab({ drop: true });        // never carry a hold into the next move
   dropCarry({ drop: true });          // â€¦of either kind
   // â€¦and never a RUN underneath one. Swinging ends the rush by definition, and
@@ -12126,6 +13338,8 @@ function startAttack(name) {
   player.runOn = !!ATTACKS[name].run; player.runT = 0; player.runX = player.x;
   player.frame = ATTACKS[name].frames[0];
   player.attackHits = new Set();
+  player.attackCommit = new Set();
+  for (const enemy of enemies) updateAttackCommitment(enemy);
   if (name === 'combo5') { player.comboHits = new Set(); player.comboVoDone = false; }  // track a full 5-hit string
   /* A swing is thrown from a PLANT, so every grounded move stops him dead. An
    * air move is not: the jump kick is thrown from a leap and its reach is the
@@ -12136,6 +13350,57 @@ function startAttack(name) {
    * otherwise draw the attack while `landT` still runs, and then cut back to a
    * landing pose it had already interrupted. */
   player.landT = 0;
+}
+
+/* SNAP OUT OF A COMBO (request 407).
+ *
+ * The beat-down strings are long commitments — the grab's Cont.Combo circle is
+ * ~7.8 s from the snatch to the uppercut, the 5-hit combo and the machete's
+ * three-blow string are `lock` moves — and the street does not wait for them: a
+ * man walking up behind Darki got a free hit and the run's combo count with it.
+ *
+ * A FRESH press of left or right now pulls him out on the spot: the string ends
+ * (endAttack — the one exit every hold already goes through, so the man in his
+ * hands is let go cleanly), he turns to face the way he pressed, and the next
+ * input is his. Press it again inside the rush window and that is a rush, because
+ * the same press is also the first tap `updateRushInput` sees; an attack button
+ * throws that attack at whoever he has turned to.
+ *
+ * The man he was beating is LEFT REELING, not just dropped: a heavy stagger
+ * pushed away from Darki and a short beat before he re-engages, so breaking out
+ * to deal with the one behind does not hand the one in front a free swing.
+ *
+ * EDGE-triggered, exactly like the rush taps: a direction already held when the
+ * string began is not a press, so walking into a grab and keeping the stick
+ * pushed does not cancel it on the first frame. The rage tornado is not on the
+ * list — it already steers with the direction keys. Nothing here touches the
+ * hit-streak (`run.combo`): the count lives as long as the next blow lands in
+ * its window, which is the point of getting out in time. */
+const COMBO_BREAKABLE = new Set(['grab', 'contCombo', 'grabUppercut', 'combo5', 'macheteCombo']);
+const comboBreakPrev = { left: false, right: false };
+const COMBO_BREAK = { victimKb: 150, victimRest: 0.9, faceHold: 0.7 };
+function updateComboBreakout() {
+  let fresh = 0;
+  for (const side of ['left', 'right']) {
+    const now = !!input[side];
+    if (now && !comboBreakPrev[side] && !fresh) fresh = side === 'right' ? 1 : -1;
+    comboBreakPrev[side] = now;
+  }
+  if (!fresh || !COMBO_BREAKABLE.has(player.attack)) return false;
+  if (player.state !== 'normal' || player.react || execution) return false;
+  breakOutOfCombo(fresh);
+  return true;
+}
+function breakOutOfCombo(dir) {
+  const victim = grabbedEnemy;
+  endAttack();                                   // lets go of anyone in his hands
+  if (victim && victim.hp > 0 && !victim.dying) {
+    staggerEnemy(victim, Math.sign(victim.x - player.x) || -dir, COMBO_BREAK.victimKb, true);
+    victim.atkCooldown = Math.max(victim.atkCooldown || 0, COMBO_BREAK.victimRest);
+  }
+  player.facing = dir;
+  player.faceHoldT = COMBO_BREAK.faceHold;     // long enough to throw or rush at the man he turned to
+  player.comboBreaks = (player.comboBreaks || 0) + 1;
 }
 
 // RMB is the kick button: plain RMB â†’ high kick; holding "back" (the direction
@@ -12167,7 +13432,78 @@ function weaponHitMove(W) {
 }
 function weaponDoubleMove(W) {
   player.hitTapT = Infinity;           // spent: a third tap starts a fresh pair
+  player.rageArmT = W.moves.rage ? 0 : null;   // …and the second tap may be HELD into the rage move
   return W.moves.double;
+}
+
+/* HIT HELD, from whichever device is pressing it: the keyboard key, the mouse /
+ * touch HIT button (both arrive as LMB), or the pad's square. */
+const hitHeld = () => !!(input.leftJabHeld || input.lmbHeld || input.padHitHeld);
+const rageMoveReady = () => (player.rage >= RAGE_MAX || player.rageActive)
+  && player.grounded && player.state === 'normal' && !player.react;
+
+/* The double tap's second press, still down: once it has been held
+ * `holdToStart`, the string it started becomes the weapon's rage move. Let go
+ * sooner (or the string is gone) and it was an ordinary double tap. */
+function armRageMove(dt) {
+  const W = player.weapon ? WEAPONS[player.weapon] : null;
+  if (!W?.moves.rage || !hitHeld() || player.attack !== W.moves.double) { player.rageArmT = null; return; }
+  player.rageArmT += dt;
+  if (player.rageArmT < ATTACKS[W.moves.rage].tornado.holdToStart) return;
+  player.rageArmT = null;
+  if (!rageMoveReady()) return;
+  // A full bar that has not burst yet (it filled on hits he TOOK) is spent here.
+  if (!player.rageActive) activateRage();
+  startAttack(W.moves.rage);
+  player.tornadoBreak = false;
+  player.tornadoClock = 0;
+  player.tornadoHits = new Map();
+  player.tornadoFace = player.facing;
+  player.tornadoLastF = -1;
+}
+
+/* The tornado's frame clock, called from advanceAttack. Holds the main cycle
+ * while HIT is down and the rage burns; the first frame either fails, it breaks
+ * out for good and the sheet plays on into the spin-out and the stance. */
+function advanceTornado(move, step, dt) {
+  const T = move.tornado, at = move.tornadoAt;
+  if (!player.tornadoBreak && (!hitHeld() || !player.rageActive
+      || WEAPONS[player.weapon]?.moves.rage !== player.attack)) player.tornadoBreak = true;
+  if (!player.tornadoBreak && step > at.loopB) {
+    player.animTime -= at.loopB - at.loopA + 1;
+    step = Math.floor(player.animTime);
+  }
+  // He turns to where he was steered on a spin-out frame centred on his feet,
+  // so the mirror does not shift him (the spin itself has no readable facing).
+  if (step >= at.faceAt) player.facing = player.tornadoFace;
+  // Settled into the stance: moving or attacking takes him straight out of it.
+  if (step >= at.settle && step < move.frames.length
+      && (input.left || input.right || input.up || input.down || player.bufferedAttack)) {
+    endAttack();
+    return -1;
+  }
+  player.tornadoClock += dt;
+  if (step >= at.liveA && step <= at.liveB) tornadoStrikes(T);
+  const f = move.frames[step];
+  if (f !== player.tornadoLastF) {
+    if (T.whoosh.includes(f)) playCue(T.win.blade, player.x);
+    player.tornadoLastF = f;
+  }
+  return step;
+}
+
+// The blade all the way round him: a box either side, in his lane, one strike
+// per man per `cooldown`, each knocking him OUTWARD (hitEnemy's default
+// direction is away from Darki).
+function tornadoStrikes(T) {
+  const box = { x: player.x - T.reachX, y: player.y + player.jumpY + T.top, w: T.reachX * 2, h: -T.top };
+  for (const e of enemies) {
+    if (!isEnemyHittable(e) || Math.abs(e.y - player.y) > T.laneY || vehicleBetween(player, e)) continue;
+    if (player.tornadoClock < (player.tornadoHits.get(e.id) ?? -1)) continue;
+    if (!rectsOverlap(box, enemyBodyBox(e))) continue;
+    player.tornadoHits.set(e.id, player.tornadoClock + (e.boss ? T.bossCooldown : T.cooldown));
+    hitEnemy(e, T.win);
+  }
 }
 
 // Responsive input: translate this frame's presses into a buffered attack
@@ -12177,6 +13513,7 @@ function weaponDoubleMove(W) {
 // `cancelStart`. Adding a move = add its trigger to the priority list.
 function consumeAttackInput(dt) {
   player.hitTapT = (player.hitTapT ?? Infinity) + dt;   // since the last HIT press (double-tap)
+  if (player.rageArmT != null) armRageMove(dt);        // …and the second press, still held
   // The manual grab-combo owns the mouse while it is active or armable: clicks
   // become punches, and the jab/kick they would otherwise fire is swallowed.
   if (manualComboOwnsMouse()) {
@@ -12240,6 +13577,14 @@ function consumeAttackInput(dt) {
       fireRushFollowUp('box');
       return;
     }
+    // …and the kick on arrival (request 335): the moment he has jammed into a
+    // man, the kick button is the rush kick too — the heavy one that sends the
+    // man into whoever stands behind him — not the standing high kick.
+    if (input.kickPressed) {
+      input.kickPressed = false; input.rmbRaw = false;
+      fireRushFollowUp('kick');
+      return;
+    }
     if (input.comboPressed) {
       input.comboPressed = false;
       fireRushFollowUp('r1');
@@ -12291,7 +13636,7 @@ function consumeAttackInput(dt) {
     // obeys the same legality rules (grounded, not mid-lock, not hurt).
     // ARMED, the same button lets go of what is in his hands: one weapon at a
     // time, so "pick up" and "throw" can never both be on offer.
-    player.bufferedAttack = player.weapon ? 'weaponThrow' : 'pickup';
+    player.bufferedAttack = player.weapon ? WEAPONS[player.weapon].moves.throw : 'pickup';
     player.attackBufferT = 0.18;
   }
   // The held weapon decides what the HIT button and the double are (WEAPONS).
@@ -12329,7 +13674,7 @@ function consumeAttackInput(dt) {
    * the one place that knows an air attack was committed. */
   // (A THROW is not an air move: it waits in the buffer for his feet.)
   if (!player.grounded && !player.airAttackDone && player.state === 'normal'
-      && player.bufferedAttack !== 'weaponThrow') {
+      && !isWeaponThrow(player.bufferedAttack)) {
     player.airAttackDone = true;
     playCue('jumpAttack', player.x);
     /* …AND NOW THERE IS AN ANIMATION FOR IT, so this is where it hangs — which
@@ -12641,12 +13986,56 @@ const BOUNCE = [
   { apex: 5, dur: 0.10 },    // the settle â€” reads as weight, not as a second fall
 ];
 const BOUNCE_TOTAL = BOUNCE.reduce((t, b) => t + b.dur, 0);
+/* …and a man floored by a RUSH (request 335: "a bounce or two before getting
+ * up or dying") comes off the road properly twice, skidding on with a share of
+ * his flight speed. The get-up / death timers are lengthened by RUSH_BOUNCE_TOTAL
+ * so the bounce plays out on the crash pose before he starts to rise. */
+const RUSH_BOUNCE = [
+  { apex: 44, dur: 0.34 },
+  { apex: 16, dur: 0.22 },
+  { apex: 4, dur: 0.10 },
+];
+const RUSH_BOUNCE_TOTAL = RUSH_BOUNCE.reduce((t, b) => t + b.dur, 0);
+const RUSH_KNOCK = {
+  slideKeep: 0.32,     // share of his flight vx he skids on with
+  slideDecay: 5,       // 1/s — the skid is gone in about half a second
+  scale: [0.8, 1.25],  // bounceScale window (off how hard he came down)
+  pierceKeep: 0.6,     // vx a kicked body keeps through each man it bowls over
+};
+const bounceTable = (e) => (e?.rushKnock ? RUSH_BOUNCE : BOUNCE);
+const bounceTotal = (e) => (e?.rushKnock ? RUSH_BOUNCE_TOTAL : BOUNCE_TOTAL);
+// Which hop `t` falls in (its index), or -1 once the bounce is over.
+function bounceHop(t, table) {
+  for (let i = 0; i < table.length; i++) { if (t < table[i].dur) return i; t -= table[i].dur; }
+  return -1;
+}
+
+// A body on the deck: the hop over it, the rush skid under it, and a lighter
+// thud each time a rush bounce brings him back down onto the road.
+function stepEnemyBounce(e, dt) {
+  e.bounceT += dt;
+  const table = bounceTable(e);
+  e.jumpY = -bounceLift(e.bounceT, e.bounceScale, table);
+  if (!e.rushKnock) return;
+  if (e.slideVx) {
+    e.x += e.slideVx * dt;
+    e.slideVx *= Math.exp(-RUSH_KNOCK.slideDecay * dt);
+    if (Math.abs(e.slideVx) < 6) e.slideVx = 0;
+  }
+  const hop = bounceHop(e.bounceT, table);
+  if (hop !== e.bounceHop) {
+    const w = 0.55 * e.bounceScale * (hop < 0 ? 0.4 : 1 / (hop + 1));
+    playThud(e.x, 0.75 * w);
+    groundSlam(e.x, e.y, w);
+    e.bounceHop = hop;
+  }
+}
 
 // Height above the deck `t` seconds after landing. Positive = up; callers negate
 // it into their own jumpY, which points down.
-function bounceLift(t, scale = 1) {
-  if (t < 0 || t >= BOUNCE_TOTAL) return 0;
-  for (const b of BOUNCE) {
+function bounceLift(t, scale = 1, table = BOUNCE) {
+  if (t < 0) return 0;
+  for (const b of table) {
     if (t < b.dur) { const u = t / b.dur; return b.apex * scale * 4 * u * (1 - u); }
     t -= b.dur;
   }
@@ -12783,6 +14172,137 @@ function advanceReaction(dt) {
 // exactly the strobing the heavy-hits-only rule exists to prevent.
 // `breaksGuard` is the Agbero side kick's whole reason to exist: it says this
 // blow ignores a raised guard. Everything else in the game respects one.
+/* ======================================================= THE RUN (request 338) ====
+ * What a player competes on, the combo that pays for keeping a streak alive, and
+ * the two ways Darki earns health back now that he can die. One ledger, `run`,
+ * reset at each level entry. Every blow Darki lands passes through
+ * `registerHit` and every blow he takes through `damagePlayer`, so the numbers
+ * cannot miss a hit by construction. */
+const COMBO = {
+  window: 3.4,           // seconds a streak survives without a new hit… (2.6 before request 344)
+  minWindow: 1.6,        // …shrinking toward this as it grows: a long streak is a skill
+  shrinkPer: 0.025,      // seconds off the window per hit already in the streak
+  stepEvery: 10,         // the score multiplier steps up every this many hits
+  stepMul: 0.25, maxMul: 3,
+  milestones: [[10, 'BRUTAL!'], [20, 'SAVAGE!'], [35, 'UNSTOPPABLE!'], [50, 'RATEL RAGE!']],
+};
+const COMBO_SPLASH = { img: null, frame: 125, cols: 10, count: 100, draw: 124 };
+// Out of the fight this long (no blow landed or taken, nobody close) -> heal.
+const REGEN = { calm: 5, perSec: 0.06, nearX: 300, nearY: 120 };
+const MEDPACK = {
+  heal: 0.35,            // of max HP
+  reachX: 46, reachY: 34, lift: 22, life: 30,
+  dropOnKills: [6, 15],  // guaranteed drops on these level kills…
+  crewDrop: true,        // …and on the first of MC_Olodo's crew to fall
+};
+const SCORE = {
+  perKo: 150, perComboHit: 50, perTopHitDmg: 5,
+  parTime: 600, perSecUnderPar: 5, health: 2000,
+  ranks: [['S', 32000], ['A', 25000], ['B', 18000], ['C', 11000], ['D', 0]],
+};
+
+const run = {};
+const medpacks = [];
+function resetRun() {
+  Object.assign(run, {
+    time: 0, hits: 0, dmgDealt: 0, dmgTaken: 0, topHit: 0,
+    combo: 0, comboT: 0, comboWin: COMBO.window, maxCombo: 0, comboScore: 0,
+    popT: 0, milestone: null, milestoneT: 0,
+    calmT: 0, regen: false, crewDropped: false, final: null,
+  });
+  medpacks.length = 0;
+}
+resetRun();
+
+const comboMul = (n) => Math.min(COMBO.maxMul, 1 + COMBO.stepMul * Math.floor(n / COMBO.stepEvery));
+
+// A blow Darki landed, for `dmg`. The streak grows and its window refills.
+function registerHit(dmg) {
+  if (!(dmg > 0)) return;
+  run.hits++;
+  run.dmgDealt += dmg;
+  run.topHit = Math.max(run.topHit, dmg);
+  run.combo++;
+  run.comboWin = Math.max(COMBO.minWindow, COMBO.window - COMBO.shrinkPer * run.combo);
+  run.comboT = run.comboWin;
+  run.maxCombo = Math.max(run.maxCombo, run.combo);
+  run.comboScore += dmg * comboMul(run.combo);
+  run.popT = 0.2;
+  run.calmT = 0;
+  const m = COMBO.milestones.find(([n]) => n === run.combo);
+  if (m) { run.milestone = m[1]; run.milestoneT = 1.4; }
+}
+const breakCombo = () => { run.combo = 0; run.comboT = 0; };
+
+// Live play only: called from update() after the cutscene / outro early returns.
+function updateRun(dt) {
+  run.time += dt;
+  run.popT = Math.max(0, run.popT - dt);
+  run.milestoneT = Math.max(0, run.milestoneT - dt);
+  if (run.combo > 0 && (run.comboT -= dt) <= 0) breakCombo();
+  // "Away from the fight" also means nobody standing over him.
+  const near = enemies.some((e) => !e.benched && e.hp > 0 && !e.dying && !e.offstage
+    && Math.abs(e.x - player.x) < REGEN.nearX && Math.abs(e.y - player.y) < REGEN.nearY);
+  run.calmT = near ? 0 : run.calmT + dt;
+  run.regen = player.state === 'normal' && player.hp > 0 && player.hp < player.maxHp && run.calmT >= REGEN.calm;
+  if (run.regen) player.hp = Math.min(player.maxHp, player.hp + player.maxHp * REGEN.perSec * dt);
+  updateMedpacks(dt);
+}
+
+/* MEDPACKS. Dropped where a man fell, on fixed kills so every run gets them
+ * (at least two in the street, one more in the boss arena). He walks over one
+ * to take it, and only when he is hurt — a full-health pass leaves it lying. */
+function maybeDropMedpack(e) {
+  const crew = inBossStage();
+  if (MEDPACK.dropOnKills.includes(levelKills) || (crew && MEDPACK.crewDrop && !run.crewDropped)) {
+    if (crew) run.crewDropped = true;
+    medpacks.push({ x: e.x, y: clampLane(e.y), t: 0 });
+  }
+}
+function updateMedpacks(dt) {
+  for (let i = medpacks.length - 1; i >= 0; i--) {
+    const m = medpacks[i];
+    m.t += dt;
+    if (m.t > MEDPACK.life) { medpacks.splice(i, 1); continue; }
+    if (player.state !== 'normal' || player.hp >= player.maxHp || player.jumpY < -40) continue;
+    if (Math.abs(player.x - m.x) > MEDPACK.reachX || Math.abs(player.y - m.y) > MEDPACK.reachY) continue;
+    player.hp = Math.min(player.maxHp, player.hp + player.maxHp * MEDPACK.heal);
+    medpacks.splice(i, 1);
+    playCue('grabSuccess', m.x);
+    triggerHitFx(m.x, m.y - MEDPACK.lift - 20, 0, 0, false);
+    spawnEmbers(m.x, m.y - MEDPACK.lift - 16, 18, '#9dffb4', 70);
+  }
+}
+
+/* THE SCORE, frozen the moment MC_Olodo goes down. Every part is a number a
+ * player can chase — fast, unhurt, long streaks, big blows — and the best run
+ * is kept per difficulty on this device (an online board needs a backend). */
+function computeScore() {
+  const S = SCORE;
+  const parts = {
+    kos: levelKills * S.perKo,
+    combat: Math.round(run.comboScore),
+    combo: run.maxCombo * S.perComboHit,
+    topHit: Math.round(run.topHit * S.perTopHitDmg),
+    time: Math.round(Math.max(0, S.parTime - run.time) * S.perSecUnderPar),
+    health: Math.round(S.health * Math.max(0, player.hp) / player.maxHp),
+  };
+  const total = Object.values(parts).reduce((a, b) => a + b, 0);
+  const rank = S.ranks.find(([, min]) => total >= min)[0];
+  /* Per level: Level 02's clear used to write (and so overwrite) Level 01's best,
+   * which is also the key Level Select reads as "Level 01 was completed". */
+  const key = `ror.best.l${activeLevel === 2 ? 2 : 1}.${chosenDifficulty}`;
+  let best = null;
+  try { best = JSON.parse(localStorage.getItem(key) || 'null'); } catch { best = null; }
+  const isBest = !best || total > best.score;
+  if (isBest) {
+    try { localStorage.setItem(key, JSON.stringify({ score: total, rank, time: run.time, maxCombo: run.maxCombo, topHit: run.topHit, at: Date.now() })); } catch {}
+  }
+  return { parts, total, rank, isBest, best, time: run.time, kos: levelKills, hits: run.hits,
+    maxCombo: run.maxCombo, topHit: run.topHit, dmgDealt: run.dmgDealt, dmgTaken: run.dmgTaken };
+}
+const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
 function damagePlayer(amount, from, heavy = amount >= HEAVY_DAMAGE, breaksGuard = false) {
   if (!playerHittable()) return;
   /* THE DIFFICULTY DIAL, and it is applied HERE rather than at each attacker for
@@ -12804,6 +14324,12 @@ function damagePlayer(amount, from, heavy = amount >= HEAVY_DAMAGE, breaksGuard 
     breakGuard();                       // â€¦the boot goes through, and he wears it
   }
   player.hp = Math.max(0, player.hp - amount);
+  playImpact(heavy);                    // original enemy-on-Darki impact remains primary
+  hudHit();                             // the bar flinches (request 410)
+  playCue('hpHit', player.x);           // quieter juicy HP cue layered on top
+  run.dmgTaken += amount;
+  run.calmT = 0;
+  breakCombo();                         // a blow taken ends the streak
   player.hpFlash = 0.3;
   player.state = 'hurt';
   releaseGrab({ drop: true });          // struck mid-grab â†’ the hold breaks
@@ -12825,12 +14351,6 @@ function damagePlayer(amount, from, heavy = amount >= HEAVY_DAMAGE, breaksGuard 
   player.invuln = dur + 0.45;
   triggerHitFx(player.x, player.y - 110, 0.08, 8);
   rumbleController(heavy ? 180 : 105, heavy ? 0.92 : 0.58, heavy ? 0.68 : 0.38);
-  // Impact_hit â€” the one sound that means DARKI got hit, whoever threw it. It
-  // sits here rather than in each attacker so a Ginger's jab, the side kick and
-  // all four of MC_Olodo's blows go through one cue by construction, and the
-  // next enemy added gets it for free. `heavy` drops it lower and louder, the
-  // same way playHit weights a big blow.
-  playImpact(heavy);
   /* AND HE SAYS SOMETHING ABOUT IT — unless that blow just killed him, in
    * which case the death cry below is the vocal and this one would talk over
    * it. HP is already decremented at this point, so the test is simply whether
@@ -12892,6 +14412,19 @@ function arenaBounds() {
   return { left, right };
 }
 
+function clampEnemyToArena(enemy) {
+  // Olodo's scripted retreat/return deliberately crosses the boss-room wall.
+  // Keep his lane grounded, but do not let the ordinary combat wall pin him
+  // visibly at the edge while the phase machine is trying to take him offstage.
+  if (enemy.boss && (bossFight.phase === 'away' || bossFight.phase === 'returning')) {
+    enemy.y = clampLaneBody(enemy.y, enemy.x);
+    return;
+  }
+  const bounds = arenaBounds();
+  enemy.x = Math.max(bounds.left, Math.min(bounds.right, enemy.x));
+  enemy.y = clampLaneBody(enemy.y, enemy.x);
+}
+
 function clampPlayerToArena() {
   const half = PLAYER.hitW / 2;
   player.x = Math.max(half, Math.min(WORLD_W - half, player.x));
@@ -12907,11 +14440,12 @@ function clampPlayerToArena() {
  * First match wins, so overlapping regions resolve in author order rather than
  * blending into something nobody drew. */
 function laneBandAt(x) {
-  for (const r of PLAY.regions) {
+  const base = activeLevel === 2 ? L2_PLAY : PLAY;
+  for (const r of base.regions) {
     if (r.off) continue;
     if (x >= r.x && x <= r.x + r.w) return r;
   }
-  return PLAY;
+  return base;
 }
 
 /* `x` is optional and defaults to the default band, because most callers are
@@ -12919,7 +14453,7 @@ function laneBandAt(x) {
  * to hand. Anything that actually moves a body passes it — that is what makes a
  * region traversable rather than decorative. */
 const clampLane = (y, x) => {
-  const b = x == null ? PLAY : laneBandAt(x);
+  const b = x == null ? (activeLevel === 2 ? L2_PLAY : PLAY) : laneBandAt(x);
   return Math.max(b.laneTop, Math.min(b.laneBottom, y));
 };
 /* THE RESIDENTS' LANE. The strip ABOVE the play boundary — from the red
@@ -12930,7 +14464,9 @@ const clampLane = (y, x) => {
 const RESIDENTS_LANE_TOP = 470;
 const clampLaneBody = (y, x) => {
   const b = laneBandAt(x);
-  return Math.max(Math.min(RESIDENTS_LANE_TOP, b.laneTop), Math.min(b.laneBottom, y));
+  /* Level 02 has no residents' lane: above its band is the back wall. */
+  const top = Math.max(b.laneTop, playerTopAt(x));
+  return Math.max(top, Math.min(b.laneBottom, y));
 };
 /* DARKI'S BOUNDARY. His feet stop at 645 — the ROAD side of the kerb.
  *
@@ -12987,7 +14523,7 @@ function laneDodge(enemy, moveDir, ignorePlayer = false) {
   }
   /* The parked line steers too: a vehicle ahead in my path is a blocker the
    * same way a body is, and the dodge walks me around it. */
-  for (const v of VEHICLE_ART) {
+  for (const v of solidBodies()) {
     const cx = v.x + v.w / 2;
     const ox = cx - enemy.x;
     if (Math.sign(ox) !== moveDir) continue;
@@ -13027,10 +14563,12 @@ function separateActors(dt) {
   if (!tune.laneSep) return;
   const maxStep = 170 * dt;                    // â‰ˆ walking pace, no snapping
   for (const e of enemies) {
+    if (player.attackCommit?.has(e.id)) continue;
     if (isGrounded(e)) sidestep(e, player, 1, 0, maxStep);
   }
   for (let i = 0; i < enemies.length; i++) {
     for (let j = i + 1; j < enemies.length; j++) {
+      if (player.attackCommit?.has(enemies[i].id) || player.attackCommit?.has(enemies[j].id)) continue;
       if (isGrounded(enemies[i]) && isGrounded(enemies[j])) {
         sidestep(enemies[i], enemies[j], 0.5, 0.5, maxStep);
       }
@@ -13054,7 +14592,10 @@ const ENEMY = {
   // enemy who arrives where he cannot swing.
   laneCommitY: 30,
   approachTimeout: 3.0,            // give the token back rather than stall the mob
-  maxTokens: 1,                    // simultaneous attackers â€” see `liveTokenCap`
+  maxTokens: 1,                    // lone-enemy fallback; groups scale in `liveTokenCap`
+  pressureX: 620,                  // only nearby, active fighters add group pressure
+  pressureN: 2, pressureTokens: 2, // a pair attacks as a pair instead of taking turns
+  swarmN: 5, swarmTokens: 3,       // a large mob can press from three distinct lanes
   /* WHEN DARKI IS SURROUNDED, MORE OF THEM COME AT ONCE.
    *
    * One token is the right default: it is what stops four men jab-locking a
@@ -13081,9 +14622,9 @@ const ENEMY = {
   noticeX: 520,
   entryGrace: 0.55,                // â€¦and a beat before he may swing, so noticing != instant jab
   windup: 0.45, active: 0.40, recover: 0.5,
-  strikeChance: 0.78,              // odds a wind-up commits to a punch (rest are feints)
+  strikeChance: 0.92,              // odds a wind-up commits to a punch (rest are feints)
   connectDelay: 0.16,              // don't land the hit until the jab is extending
-  cooldownMin: 2.0, cooldownVar: 2.2,
+  cooldownMin: 1.15, cooldownVar: 1.35,
   minGap: 66,                      // lunge stops this far out â€” never buries into Darki
   lungeMul: 2.1,
   baseHp: 42,                      // shipping value â€” hits to defeat one Ginger
@@ -13450,7 +14991,24 @@ function darkiSurrounded() {
 }
 
 /* The cap right now. One attacker normally; two while he is boxed in. */
-const liveTokenCap = () => (darkiSurrounded() ? ENEMY.surroundTokens : ENEMY.maxTokens);
+function liveTokenCap() {
+  const nearby = enemies.filter((e) => streetActive(e)
+    && Math.abs(e.x - player.x) <= ENEMY.pressureX).length;
+  let base = darkiSurrounded() ? ENEMY.surroundTokens : ENEMY.maxTokens;
+  if (nearby >= ENEMY.pressureN) base = Math.max(base, ENEMY.pressureTokens);
+  if (nearby >= ENEMY.swarmN) base = Math.max(base, ENEMY.swarmTokens);
+  /* THE PINCER (request 403): a street that has learned his arc may send one man
+   * from each side at once — the one behind is the distraction, the one in front
+   * has his back if he turns. Both sides must actually be manned. */
+  const R = streetRead();
+  if (R.smart < STREET_SMARTS.pincerAt) return base;
+  let l = 0, r = 0;
+  for (const e of enemies) {
+    if (!streetActive(e) || Math.abs(e.x - player.x) > 600) continue;
+    if (e.x < player.x) l++; else r++;
+  }
+  return l && r ? Math.max(base, 2) : base;
+}
 
 /* Is a JUNIOR ready to go — the question `seniorYields` asks before standing
  * aside. Written as "not a senior" rather than as "is a ginger" because the
@@ -13639,12 +15197,348 @@ function seniorPickMove(enemy, distX) {
 /* One lookup for both classes, so every shared code path — the lunge, the
  * connect test, the recover timer — stops caring which street class it is
  * driving. Adding a third class is a row in here. */
-const enemyMove = (e) => (e.kind === 'senior' ? seniorMove(e) : gingerMove(e));
-const enemyCfg = (e) => (e.kind === 'senior' ? SENIOR : ENEMY);
+const SARS_MOVES = {
+  jab: { windup: 0.24, active: 18 / 24, recover: 0.22, connectAt: 8 / 24, connectUntil: 12 / 24, rangeX: 165, reach: 126, reachY: 58, damage: 7, minGap: 82, lungeMul: 1.4, breaksGuard: false, heavy: false, swing: 'jab' },
+  spinKick: { windup: 0.38, active: 23 / 24, recover: 0.34, connectAt: 14 / 24, connectUntil: 19 / 24, rangeX: 230, reach: 195, reachY: 62, damage: 11, minGap: 128, lungeMul: 1.3, breaksGuard: true, heavy: true, swing: 'kick' },
+  rapidKick: { windup: 0.30, active: 18 / 24, recover: 0.30, connectAt: 7 / 24, connectUntil: 15 / 24, rangeX: 205, reach: 176, reachY: 60, damage: 8, minGap: 112, lungeMul: 1.35, breaksGuard: true, heavy: false, swing: 'kick' },
+  combo: { windup: 0.32, active: 47 / 24, recover: 0.42, connectAt: 8 / 24, connectUntil: 39 / 24, rangeX: 190, reach: 168, reachY: 62, damage: 14, minGap: 96, lungeMul: 1.25, breaksGuard: true, heavy: true, swing: 'jab' },
+  quickThrow: { windup: 0.18, active: 27 / 30, recover: 0.34, connectAt: 99, connectUntil: 0, rangeX: 680, reach: 0, reachY: 0, damage: 0, minGap: 0, lungeMul: 0, breaksGuard: false, heavy: false, swing: 'kick' },
+  normalThrow: { windup: 0.34, active: 17 / 30, recover: 0.42, connectAt: 99, connectUntil: 0, rangeX: 680, reach: 0, reachY: 0, damage: 0, minGap: 0, lungeMul: 0, breaksGuard: false, heavy: false, swing: 'kick' },
+};
+const enemyMove = (e) => (e.kind === 'sars' ? SARS_MOVES[e.moveName || 'jab'] : e.kind === 'senior' ? seniorMove(e) : gingerMove(e));
+const enemyCfg = (e) => (e.kind === 'sars' ? SARS : e.kind === 'senior' ? SENIOR : ENEMY);
 
 const gingerMove = (e) => GINGER_MOVES[e.moveName ?? 'jab'];
 const attackTokens = new Set();    // enemies currently allowed to attack
 let mobClock = 0;                  // shared clock for the slow orbit (dt-accumulated)
+
+/* ========================================================== STREET SMARTS ==
+ *
+ * REQUEST 403: "a player can wipe an entire wave by swinging the bat on one
+ * spot — they take turns walking into it." That was true, and it was arithmetic,
+ * not bad luck. The token holder closes to his strike range (110-175 px) and
+ * winds up for 0.45-0.62 s; the bat's box runs 16-230 px in front of Darki and a
+ * chained swing comes round every ~0.67 s with its blow 0.2 s in. Every man who
+ * took the token walked into the arc during his own wind-up, one after another,
+ * and nothing in the mob ever noticed it was happening.
+ *
+ * So the street now has a MEMORY, shared by every man on it. Each blow Darki
+ * lands is a lesson, keyed by the technique that landed it (his attack name) and
+ * the side of him it landed on. A knockdown taken while the man was COMMITTING —
+ * walking in, winding up — counts most, because that is exactly the mistake the
+ * exploit feeds on; a kill counts more still. Lessons fade (half-life `halfLife`)
+ * so a player who changes what he does is re-learned rather than remembered
+ * forever.
+ *
+ * Once a technique is "hot" (`learnAt`, about two or three punished approaches
+ * or two kills), the mob changes how it fights him, and only with what it could
+ * plausibly have seen:
+ *   - RESPECT THE ARC: nobody idles inside the hot move's reach on the side it
+ *     has been landing on; they hold just outside it and dance at the edge.
+ *   - DON'T FEED IT: a man on that side does not walk in while Darki can still
+ *     swing at him. He waits for an OPENING — Darki's back turned, Darki
+ *     recovering from a swing, hurt, busy with someone else — and then goes in
+ *     fast. He will still test the arc if Darki simply stands there long enough.
+ *   - GO ROUND: some of them cross to his other side — through the back of the
+ *     street, out of his lane, never through the swing — and come in from behind.
+ *   - DISTRACT: when one of them goes in from behind, a man in front steps up to
+ *     the edge of the arc and shows a wind-up, to draw the swing and the eye. If
+ *     Darki turns to deal with the one behind, the one in front has his back.
+ *     With the street this sharp, two may go in at once (one from each side).
+ *   - REINFORCEMENTS COME IN FROM BEHIND HIM: new arrivals walk on from the edge
+ *     at his back instead of the one he is facing.
+ * None of it is a stat buff: no extra damage, speed only on the dash in, the
+ * same tells. Every change is a decision the player can watch being made. */
+const STREET_SMARTS = {
+  // Request 424: keep coordinated pressure, but stop learning to retreat from moves.
+  on: false,
+  halfLife: 20,                  // seconds for a lesson to fade to half
+  learnAt: 1.6,                  // heat where the mob starts adapting…
+  fullAt: 3.0,                   // …and where it is fully adapted
+  weight: { kill: 1.0, punished: 0.6, knockdown: 0.35, punishedHit: 0.25, hit: 0.08 },
+  sideBias: 0.7,                 // share of a move's heat on one side that makes that side "the arc"
+  edgeMargin: 34,                // how far outside the arc they hold (plus up to +26 when fully adapted)
+  patience: 3.4,                 // a man held off the arc this long tests it anyway (shorter when sharper)
+  dashMul: 0.55,                 // speed bonus on the dash in through an opening (× smart)
+  crossClearY: 66,               // depth from Darki's row a crossing man keeps while passing him
+  pincerAt: 0.45,                // smart level where two may commit at once, one each side
+  baitT: 0.75,                   // how long the front man shows his feint
+  rolesEvery: 0.6,               // how often the squad re-reads who goes round
+};
+const streetMind = { heat: {}, side: { '-1': {}, '1': {} }, rolesT: 0, events: 0, lastLesson: null };
+
+function streetMindReset() {
+  streetMind.heat = {};
+  streetMind.side = { '-1': {}, '1': {} };
+  streetMind.rolesT = 0;
+  streetMind.events = 0;
+  streetMind.lastLesson = null;
+  for (const e of enemies) { e.streetRole = null; e.cross = null; e.holdT = 0; e.pincer = null; }
+  if (typeof streetPlan !== 'undefined') Object.assign(streetPlan, { on: false, a: null, b: null, phase: null, t: 0, launched: 0, cool: 0 });
+}
+
+/* The furthest any window of a move reaches in front of Darki, measured from his
+ * centre to the far edge of its box, plus a body's half-width (enemyBodyBox). */
+const streetReachCache = {};
+function streetReachOf(name) {
+  if (streetReachCache[name] != null) return streetReachCache[name];
+  const wins = Object.values(ATTACKS[name]?.windows || {});
+  let r = 0;
+  for (const w of wins) if (w?.box && !w.box.back) r = Math.max(r, w.box.x + w.box.w);
+  if (!wins.length) return 200;                     // filled at load (air kick): ask again later
+  return (streetReachCache[name] = (r || 170) + 30);
+}
+/* The last step of a move that can still hit — past it he is recovering. */
+function lastHitStep(name) {
+  const keys = Object.keys(ATTACKS[name]?.windows || {}).map(Number);
+  return keys.length ? Math.max(...keys) : -1;
+}
+
+/* A blow Darki just landed, read as a lesson. Called from hitEnemy BEFORE the
+ * reaction is applied, so `mode` is still what the man was doing when it hit. */
+function streetLearn(e, ko, launched) {
+  if (!STREET_SMARTS.on || e.boss || !player.attack || !ATTACKS[player.attack] || e.grabbed || e.carried) return;
+  const W = STREET_SMARTS.weight;
+  const committing = e.mode === 'approach' || e.mode === 'windup' || e.mode === 'attack' || e.mode === 'bait'
+    || !!e.cross;
+  const w = (ko ? W.kill : launched ? (committing ? W.punished : W.knockdown) : (committing ? W.punishedHit : W.hit))
+    * (diffDial().learn ?? 1);
+  const k = player.attack;
+  const s = Math.sign(e.x - player.x) || player.facing || 1;
+  streetMind.heat[k] = (streetMind.heat[k] || 0) + w;
+  streetMind.side[s][k] = (streetMind.side[s][k] || 0) + w;
+  streetMind.events++;
+  streetMind.lastLesson = { move: k, side: s, w: +w.toFixed(2), ko, committing };
+}
+
+function streetMindTick(dt) {
+  const f = Math.pow(0.5, dt / STREET_SMARTS.halfLife);
+  for (const k in streetMind.heat) streetMind.heat[k] *= f;
+  for (const s of ['-1', '1']) for (const k in streetMind.side[s]) streetMind.side[s][k] *= f;
+  streetMind.rolesT -= dt;
+  if (streetMind.rolesT <= 0) { streetMind.rolesT = STREET_SMARTS.rolesEvery; assignStreetRoles(); }
+  stepPincer(dt);
+}
+
+/* ============================================================== THE PINCER ==
+ *
+ * Why it has to be a PLAN and not two men who happen to go: Darki squares up to
+ * the nearest body between swings. A lone man coming in from behind simply
+ * becomes the man in front by the time he arrives, and walks into the arc like
+ * everyone else did. Two men arriving TOGETHER from opposite sides cannot both be
+ * faced — that is the whole trick, and it only works if they are in step.
+ *
+ * So once the street is sharp enough (`pincerAt`), with nobody else committed
+ * and a man ready on each side, one is picked per side and both are given the
+ * attack token. They GATHER at the edge of the arc on their own sides (out of
+ * reach, so neither is fed while waiting for the other), then GO together, fast.
+ * Whichever he turns to, the other has his back. */
+const streetPlan = { on: false, a: null, b: null, phase: null, t: 0, launched: 0, cool: 0 };
+function pincerReady(e) {
+  return streetActive(e) && e.mode === 'menace' && !e.cross && !attackTokens.has(e)
+    && e.atkCooldown <= 0.8 && Math.abs(e.x - player.x) < 650;
+}
+function stepPincer(dt) {
+  const P = streetPlan;
+  if (P.cool > 0) P.cool -= dt;
+  if (P.on) {
+    P.t += dt;
+    const live = (e) => attackTokens.has(e) && e.mode === 'approach' && streetActive(e);
+    if (P.phase === 'gather') {
+      const ready = (e) => Math.abs(Math.abs(e.x - player.x) - e.gatherX) < 46;
+      if (!live(P.a) || !live(P.b) || P.t > 2.2 || (ready(P.a) && ready(P.b))) { P.phase = 'go'; P.t = 0; }
+    }
+    // the plan is over once neither is still closing (they are swinging, hit, or gave up)
+    const striker = P.a?.pincerBait ? P.b : P.a, bait = striker === P.a ? P.b : P.a;
+    if (P.phase === 'go' && ((!live(P.a) && !live(P.b)) || (!live(striker) && bait && !bait.baiting) || P.t > 3)) {
+      // a bait still holding the edge gives his token back rather than walking in late
+      if (bait && attackTokens.has(bait) && bait.baiting) { attackTokens.delete(bait); bait.mode = 'menace'; bait.moveName = null; bait.atkCooldown = 0.5; }
+      for (const e of [P.a, P.b]) if (e) { e.pincer = null; e.pincerBait = false; e.baiting = false; }
+      Object.assign(P, { on: false, a: null, b: null, phase: null, t: 0, cool: 1.2 });
+    }
+    return;
+  }
+  const R = streetRead();
+  if (R.smart < STREET_SMARTS.pincerAt || P.cool > 0 || attackTokens.size) return;
+  let a = null, b = null, da = Infinity, db = Infinity;
+  for (const e of enemies) {
+    if (!pincerReady(e)) continue;
+    const d = Math.abs(e.x - player.x);
+    if (e.x >= player.x) { if (d < da) { da = d; a = e; } }
+    else if (d < db) { db = d; b = e; }
+  }
+  if (!a || !b) return;
+  for (const e of [a, b]) {
+    attackTokens.add(e);
+    claimAttackLane(e);
+    e.mode = 'approach';
+    e.approachT = 0;
+    e.side = Math.sign(e.x - player.x) || e.side;
+    e.moveName = pickEnemyMove(e, Math.abs(e.x - player.x));
+    e.pincer = P;
+    e.gatherX = Math.max(R.reach, enemyMove(e).rangeX) + 24;
+    e.pincerBait = onArcSide(e, R);              // the man in his arc distracts; the other goes in
+    e.atkCooldown = 0;
+  }
+  Object.assign(P, { on: true, a, b, phase: 'gather', t: 0 });
+  P.launched++;
+}
+
+/* What the street currently believes, in one read: how sharp it is (0..1), the
+ * move it is respecting, that move's reach, and which side of Darki it has been
+ * landing on (+1 / -1, or 0 when it has been landing on both). */
+function streetRead() {
+  if (!STREET_SMARTS.on) return { smart: 0, move: null, reach: 0, side: 0 };
+  let move = null, h = 0;
+  for (const [k, v] of Object.entries(streetMind.heat)) if (v > h) { h = v; move = k; }
+  const S = STREET_SMARTS;
+  const smart = Math.max(0, Math.min(1, (h - S.learnAt) / (S.fullAt - S.learnAt) + (h >= S.learnAt ? 0.15 : 0)));
+  if (!move || smart <= 0) return { smart: 0, move, reach: 0, side: 0, heat: h };
+  const r = streetMind.side['1'][move] || 0, l = streetMind.side['-1'][move] || 0;
+  const side = r >= S.sideBias * (r + l) ? 1 : l >= S.sideBias * (r + l) ? -1 : 0;
+  return { smart, move, reach: streetReachOf(move), side, heat: h };
+}
+
+/* Bodies that can take part in a plan right now. */
+const streetActive = (e) => !e.boss && !e.benched && !e.spawnEntry && e.hp > 0 && !e.dying
+  && !e.grabbed && !e.carried && e.state !== 'down' && e.state !== 'ko' && e.state !== 'hit';
+
+/* Is THIS man on the side the hot move has been landing on? With no one side
+ * (it has landed both ways) the arc is wherever Darki is currently facing. */
+function onArcSide(e, R) {
+  const s = Math.sign(e.x - player.x) || e.side || 1;
+  return R.side ? s === R.side : s === (player.facing >= 0 ? 1 : -1);
+}
+
+/* WHO GOES ROUND. Re-read every `rolesEvery`: with the arc on one side, a share
+ * of the men (a lone man always) take the far side and the rest hold the edge as
+ * bait. Prefers men already round there, then the ones furthest from the arc. */
+function assignStreetRoles() {
+  const R = streetRead();
+  const men = enemies.filter((e) => streetActive(e) && !attackTokens.has(e));
+  if (R.smart < 0.3) { for (const e of men) e.streetRole = null; return; }
+  /* The arc is the side the move has been landing on — or, when it has landed
+   * both ways, whichever way he is facing now. Only men who are NOT already in
+   * a plan are moved, only ever by sending them round (beginCross), and never
+   * more than two at once: the point is to man his blind side, not to march the
+   * whole street back and forth every time he turns. */
+  const arc = R.side || (player.facing >= 0 ? 1 : -1), rear = -arc;
+  const at = (e) => (e.cross ? e.cross.to : Math.sign(e.x - player.x) || e.side);
+  const want = men.length <= 1 ? men.length
+    : R.side ? Math.ceil(men.length * (0.4 + 0.3 * R.smart)) : Math.floor(men.length / 2);
+  let have = men.filter((e) => at(e) === rear).length;
+  let moving = men.filter((e) => e.cross).length;
+  const spare = men.filter((e) => at(e) === arc && !e.cross)
+    .sort((a, b) => Math.abs(b.x - player.x) - Math.abs(a.x - player.x) || a.id - b.id);
+  for (const e of spare) {
+    if (have >= want || moving >= 2) break;
+    beginCross(e, rear);
+    have++; moving++;
+  }
+  for (const e of men) e.streetRole = at(e) === rear ? 'flank' : 'bait';
+}
+
+/* CROSSING HIM WITHOUT WALKING THROUGH HIM. Pick the depth furthest from his row
+ * (the residents' strip on the street, the far edge of the floor on Level 02),
+ * get there on this side of him, pass at that depth, then settle on the far side.
+ * His blows need the target within 48 px of his row, so a man passing at 66+ is
+ * never in them. */
+function beginCross(e, to) {
+  const b = laneBandAt(player.x);
+  const top = clampLaneBody(-1e9, player.x), bottom = b.laneBottom;
+  const yUp = top, yDown = bottom;
+  const y = Math.abs(yUp - player.y) >= Math.abs(yDown - player.y) ? yUp : yDown;
+  if (Math.abs(y - player.y) < STREET_SMARTS.crossClearY) { e.side = to; return; }   // no room: just reassign
+  e.cross = { to, y, from: Math.sign(e.x - player.x) || -to };
+}
+
+function stepStreetCross(e, R, dt) {
+  const C = e.cross;
+  const clearX = Math.max(R.reach, 160) + 40;
+  const arena = arenaBounds();
+  const minX = arena.left + 30, maxX = arena.right - 30;
+  const passY = clampLaneBody(C.y, e.x);
+  const safe = Math.abs(e.y - player.y) >= STREET_SMARTS.crossClearY;
+  let tx;
+  if (!safe) tx = player.x + C.from * clearX;          // get the depth first, out of reach
+  else tx = player.x + C.to * clearX;                   // …then go past him at it
+  tx = Math.max(minX, Math.min(maxX, tx));
+  moveToward(e, tx, safe ? passY : passY, e.speed * 1.15, dt, true);
+  e.state = 'walk';
+  if (safe && Math.sign(e.x - player.x) === C.to && Math.abs(e.x - player.x) > clearX - 30) {
+    e.side = C.to;
+    e.cross = null;
+  }
+}
+
+/* An OPENING on this man's side: something Darki is doing that the arc cannot
+ * answer right now. */
+function streetOpening(e) {
+  const s = Math.sign(e.x - player.x) || e.side;
+  if (s !== (player.facing >= 0 ? 1 : -1)) return true;                 // his back is to me
+  if (player.state === 'hurt' || player.react || player.state === 'ko') return true;
+  if (grabbedEnemy || carriedEnemy) return true;                         // hands full
+  /* NOT his recovery. The gap between the end of one swing's blow and the next
+   * one a chaining player throws is ~0.57 s with the bat, and nobody covers the
+   * 170 px from outside the arc to striking range in that — every man who read
+   * the recovery as an opening arrived exactly in time for the next blow. The
+   * real openings are the ones above, and a man who has stopped swinging. */
+  if (player.attack) return false;
+  return true;                                   // not swinging at all
+}
+
+/* Is somebody already going in from the far side? That is the distraction. */
+const partnerCommitted = (e) => [...attackTokens].some((o) => o !== e
+  && Math.sign(o.x - player.x) !== Math.sign(e.x - player.x)
+  && (o.mode === 'windup' || o.mode === 'attack' || (o.mode === 'approach' && Math.abs(o.x - player.x) < 260)));
+
+/* Should this man stay off the arc rather than claim the token now? */
+function streetHoldsBack(e, R, dt) {
+  if (R.smart > 0 && e.cross) return true;               // going round first
+  if (R.smart <= 0 || !onArcSide(e, R)) { e.holdT = 0; return false; }
+  if (streetOpening(e) || (R.smart >= STREET_SMARTS.pincerAt && partnerCommitted(e))) { e.holdT = 0; return false; }
+  e.holdT = (e.holdT || 0) + dt;
+  // A lone man still tests him eventually — but a sharp street would rather go in as a pincer.
+  if (e.holdT > STREET_SMARTS.patience * (1 + 0.6 * R.smart)) { e.holdT = 0; return false; }
+  return true;
+}
+
+/* THE DISTRACTION. A man is going in from behind: the nearest man on the arc
+ * side steps up to its edge and shows a wind-up he does not throw. */
+/* Spread simultaneous attackers through the authored strike lane instead of
+ * feeding them all to one centre point. The slots are stable for the life of
+ * the commitment and mirrored by id, so a crowd forms a shallow arc rather
+ * than a single easy combo line. */
+function claimAttackLane(enemy) {
+  const C = enemyCfg(enemy);
+  const slots = [-C.laneCommitY, C.laneCommitY, 0];
+  const used = [...attackTokens]
+    .filter((e) => e !== enemy && Number.isFinite(e.attackLane))
+    .map((e) => e.attackLane);
+  const start = enemy.id % slots.length;
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[(start + i) % slots.length];
+    if (!used.includes(slot)) { enemy.attackLane = slot; return; }
+  }
+  enemy.attackLane = slots[start];
+}
+
+function streetBait(attacker) {
+  const R = streetRead();
+  if (R.smart < 0.3) return;
+  const as = Math.sign(attacker.x - player.x);
+  let best = null, bd = Infinity;
+  for (const e of enemies) {
+    if (e === attacker || !streetActive(e) || attackTokens.has(e) || e.mode !== 'menace' || e.cross) continue;
+    if (Math.sign(e.x - player.x) === as) continue;
+    const d = Math.abs(e.x - player.x);
+    if (d < 560 && d < bd) { bd = d; best = e; }
+  }
+  if (!best) return;
+  best.mode = 'bait';
+  best.stateTimer = STREET_SMARTS.baitT;
+  best.baitX = Math.max(R.reach, 150) + 8;
+}
 
 // Walk toward (tx,ty), steering around any body in the path (including the
 // player, so enemies round BEHIND Darki instead of piling into him).
@@ -13669,6 +15563,13 @@ function stepEnemyAI(enemy, dt) {
   const distX = Math.abs(dx);
   enemy.atkCooldown = Math.max(0, enemy.atkCooldown - dt);
   enemy.stateTimer -= dt;
+  updateAttackCommitment(enemy);
+  if (player.attackCommit?.has(enemy.id)) {
+    enemy.vx = 0;
+    enemy.state = 'guard';
+    enemy.facing = Math.sign(player.x - enemy.x) || enemy.facing;
+    return;
+  }
   if (enemy.kind === 'senior') {
     // The signature's ration, and the anger that a thrown ally leaves behind.
     enemy.spinCooldown = Math.max(0, (enemy.spinCooldown || 0) - dt);
@@ -13676,6 +15577,18 @@ function stepEnemyAI(enemy, dt) {
       enemy.aggroT -= dt;
       if (enemy.aggroT <= 0) enemy.aggression = 1;   // …and he cools off
     }
+  }
+
+  if (enemy.kind === 'sars' && enemy.knifeDroppedThisFall && enemy.state === 'walk') enemy.knifeDroppedThisFall = false;
+  if (enemy.kind === 'sars' && enemy.mode === 'rearm') {
+    enemy.state = 'guard'; enemy.vx = 0; enemy.facing = Math.sign(dx) || enemy.facing;
+    const elapsed = 38 / 30 - Math.max(0, enemy.stateTimer);
+    if (!enemy.rearmDone && elapsed >= 22 / 30) { enemy.knives = SARS.maxKnives; enemy.rearmDone = true; playCue('machetePickup', enemy.x, 0.45, 1.25); }
+    if (enemy.stateTimer <= 0) { enemy.mode = 'menace'; enemy.rearmDone = false; enemy.atkCooldown = 0.55; }
+    return;
+  }
+  if (enemy.kind === 'sars' && enemy.knives <= 0 && enemy.mode === 'menace' && distX > SARS.rearmSafe && enemy.atkCooldown <= 0) {
+    enemy.mode = 'rearm'; enemy.stateTimer = 38 / 30; enemy.rearmDone = false; attackTokens.delete(enemy); return;
   }
 
   switch (enemy.mode) {
@@ -13687,25 +15600,82 @@ function stepEnemyAI(enemy, dt) {
       // He sets up at the range of the move he has already chosen, so the kick
       // is thrown from out where it reaches and the jab from in where it does.
       const M = enemyMove(enemy);
+      /* STREET SMARTS (request 403): coming in on the side the hot move has been
+       * landing, he does not walk into it. Outside its reach he CHECKS UP at the
+       * edge until there is an opening (or his partner behind goes in), then
+       * dashes; if none comes in time he gives the token back. Inside the reach
+       * he is already committed, and carries on. */
+      const R = streetRead();
+      let pace = enemy.speed;
+      /* IN A PINCER he answers to the plan, not to the arc: wait at the edge on
+       * his side for his partner, then both go in together, fast. */
+      if (R.smart > 0 && !enemy.pincer && Math.sign(enemy.x - player.x) !== enemy.side) {
+        attackTokens.delete(enemy);
+        enemy.mode = 'menace';
+        enemy.moveName = null;
+        enemy.atkCooldown = 0.4;
+        beginCross(enemy, enemy.side);
+        break;
+      }
+      if (enemy.pincer && enemy.pincer.on) {
+        if (enemy.pincer.phase === 'gather') {
+          moveToward(enemy, player.x + enemy.side * enemy.gatherX, clampLane(player.y + enemy.laneBias), enemy.speed * 1.1, dt);
+          enemy.state = 'walk';
+          enemy.approachT = 0;
+          break;
+        }
+        if (enemy.pincerBait && !streetOpening(enemy)) {
+          moveToward(enemy, player.x + enemy.side * (Math.max(R.reach, 150) + 8), clampLane(player.y + enemy.laneBias), enemy.speed * 1.2, dt);
+          enemy.state = 'guard';
+          enemy.facing = Math.sign(dx) || enemy.facing;
+          enemy.baiting = true;
+          enemy.approachT = 0;
+          break;
+        }
+        enemy.baiting = false;
+        pace = enemy.speed * (1 + STREET_SMARTS.dashMul * R.smart);
+      } else if (R.smart > 0 && onArcSide(enemy, R)) {
+        const open = streetOpening(enemy) || (R.smart >= STREET_SMARTS.pincerAt && partnerCommitted(enemy));
+        if (!open && distX > R.reach - 10) {
+          enemy.checkT = (enemy.checkT || 0) + dt;
+          moveToward(enemy, player.x + enemy.side * (R.reach + 20), clampLane(player.y + enemy.laneBias), enemy.speed, dt);
+          enemy.state = 'walk';
+          if (enemy.checkT > 1.2) {
+            attackTokens.delete(enemy);
+            enemy.mode = 'menace';
+            enemy.moveName = null;
+            enemy.atkCooldown = 0.5;
+            enemy.checkT = 0;
+          }
+          break;
+        }
+        enemy.checkT = 0;
+        if (open) pace = enemy.speed * (1 + STREET_SMARTS.dashMul * R.smart);   // through the gap, fast
+      }
       const tx = player.x + enemy.side * (M.rangeX - 40);
       // He closes on a lane he can actually SWING from. `laneBias` spreads the
       // mob out in depth (-33 + id*22), which is wider than the strike gate
       // below â€” so ids 4+ walked to a lane they could never attack from, and
       // sat there holding the only attack token.
       const C = enemyCfg(enemy);
-      const bias = Math.max(-C.laneCommitY, Math.min(C.laneCommitY, enemy.laneBias));
+      const bias = Number.isFinite(enemy.attackLane)
+        ? enemy.attackLane
+        : Math.max(-C.laneCommitY, Math.min(C.laneCommitY, enemy.laneBias));
       // â€¦and he does NOT steer around the man he is closing on. Rounding behind
       // Darki is MENACING behaviour; for the token holder it was a soft-lock:
       // the dodge pushed him a lane clear of the player just as his x arrived on
       // target, and with no x error left to move on, nothing ever pulled him
       // back into the gate. Mode 'approach', token held, mob silent â€” which is
       // what a standing player saw as the street losing interest in him.
-      moveToward(enemy, tx, clampLane(player.y + bias), enemy.speed, dt, true);
+      moveToward(enemy, tx, clampLane(player.y + bias), pace, dt, true);
       enemy.state = 'walk';
       enemy.approachT = (enemy.approachT || 0) + dt;   // || 0: NaN here would disable the timeout silently
-      if (distX < M.rangeX && Math.abs(dy) < C.attackRangeY) {
+      // A vehicle between them: no swing at the van — he keeps closing instead.
+      if (distX < M.rangeX && Math.abs(dy) < C.attackRangeY && !vehicleBetween(enemy, player)) {
         enemy.mode = 'windup';
         enemy.stateTimer = M.windup;
+        // Going in from off the arc: somebody in front shows him a wind-up (request 403).
+        if (R.smart >= 0.3 && !onArcSide(enemy, R) && !enemy.pincer) streetBait(enemy);
         enemy.didHit = false;             // one connect per swing
         enemy.willStrike = combatRng() < C.strikeChance;  // most gingers follow through; some feint
         /* A SHARPEN IS NEVER A FEINT. The feint branch hands him to 'recover',
@@ -13738,6 +15708,7 @@ function stepEnemyAI(enemy, dt) {
         const M = enemyMove(enemy);
         if (enemy.willStrike) {
           enemy.mode = 'attack'; enemy.stateTimer = M.active;
+          if (enemy.kind === 'sars') enemy.meleeEvents = new Set();
           // The swing itself, thrown as the wind-up ends â€” so it is a warning
           // you can act on, not a report that you were hit. A FEINT stays
           // silent, which is what keeps the sound worth listening to.
@@ -13765,7 +15736,17 @@ function stepEnemyAI(enemy, dt) {
       // connect: the blow lands once Darki's in reach AND the strike is out â€”
       // past `connectAt` and not yet past `connectUntil`. Missing that window
       // is a whiff, not a delayed hit.
-      const into = M.active - enemy.stateTimer;       // elapsed time in the swing
+      const into = M.active - enemy.stateTimer;
+      if (enemy.kind === 'sars' && (enemy.moveName === 'quickThrow' || enemy.moveName === 'normalThrow')) {
+        const releases = enemy.moveName === 'quickThrow'
+          ? Array.from({ length: enemy.throwGoal || 1 }, (_, index) => (8 + index * 4) / 30)
+          : [9 / 30];
+        for (let index = 0; index < releases.length; index++) {
+          if (into >= releases[index] && !enemy.throwEvents.has(index)) {
+            enemy.throwEvents.add(index); if (!throwSarsKnife(enemy)) break;
+          }
+        }
+      }       // elapsed time in the swing
       /* …AND IT CAN BE JUMPED, if it is thrown low enough to jump.
        *
        * `player.jumpY` was not part of this test at all before the Senior
@@ -13776,9 +15757,23 @@ function stepEnemyAI(enemy, dt) {
        * beneath anyone more than that many pixels off the deck. Only the low
        * kick has it, which is what makes the low kick the move that teaches a
        * player to jump. (`jumpY` is negative going up, hence the negation.) */
+      if (enemy.kind === 'sars' && (enemy.moveName === 'rapidKick' || enemy.moveName === 'combo')) {
+        const impacts = enemy.moveName === 'rapidKick' ? [7 / 24, 13 / 24] : [8 / 24, 18 / 24, 29 / 24, 38 / 24];
+        const perHit = enemy.moveName === 'rapidKick' ? 4 : 4;
+        for (let index = 0; index < impacts.length; index++) {
+          if (into < impacts[index] || enemy.meleeEvents.has(index)) continue;
+          enemy.meleeEvents.add(index);
+          if (distX < M.reach && Math.abs(dy) < M.reachY && playerHittable() && !vehicleBetween(enemy, player)) {
+            damagePlayer(perHit, enemy, index === impacts.length - 1, index === impacts.length - 1 && M.breaksGuard);
+            enemy.didHit = true;
+          }
+        }
+      }
       const clearedIt = M.underOnly != null && -player.jumpY > M.underOnly;
-      if (!enemy.didHit && into >= M.connectAt && into <= M.connectUntil
-          && distX < M.reach && Math.abs(dy) < M.reachY && !clearedIt && playerHittable()) {
+      if (!['rapidKick', 'combo', 'quickThrow', 'normalThrow'].includes(enemy.moveName)
+          && !enemy.didHit && into >= M.connectAt && into <= M.connectUntil
+          && distX < M.reach && Math.abs(dy) < M.reachY && !clearedIt && playerHittable()
+          && !vehicleBetween(enemy, player)) {
         damagePlayer(M.damage, enemy, M.heavy, M.breaksGuard);
         enemy.didHit = true;
       }
@@ -13818,6 +15813,17 @@ function stepEnemyAI(enemy, dt) {
         enemy.moveName = null;            // next commitment picks afresh
       }
       break;
+    case 'bait': {                        // the distraction: step to the arc's edge, show a wind-up, don't throw
+      const s = Math.sign(enemy.x - player.x) || enemy.side;
+      moveToward(enemy, player.x + s * (enemy.baitX || 200), clampLane(player.y + enemy.laneBias), enemy.speed * 1.2, dt);
+      enemy.state = 'guard';
+      enemy.facing = Math.sign(dx) || enemy.facing;
+      if (enemy.stateTimer <= 0) {
+        enemy.mode = 'menace';
+        enemy.atkCooldown = Math.max(enemy.atkCooldown, 0.3);
+      }
+      break;
+    }
     case 'patrol':                        // pace until the player gets close
       if (distX < enemyCfg(enemy).aggroX) { enemy.mode = 'menace'; break; }
       enemy.state = 'walk';
@@ -13835,23 +15841,49 @@ function stepEnemyAI(enemy, dt) {
       }
       const C = enemyCfg(enemy);
       if (distX > C.leashX) { enemy.mode = 'patrol'; break; }
+      /* STREET SMARTS (request 403). A man going round Darki does only that until
+       * he is round; everyone else reads the arc before choosing where to stand. */
+      const R = streetRead();
+      enemy.baiting = false;                         // no plan holds a man who is circling
+      if (!enemy.pincer) enemy.pincerBait = false;
+      if (enemy.cross) {
+        if (R.smart > 0) { stepStreetCross(enemy, R, dt); break; }
+        enemy.cross = null;
+      }
+      /* A sharp street never walks a man round Darki by the front: if he has
+       * ended up on the other side from his post (knocked there, say), that is
+       * his post now, until the roles send him round properly. */
+      else if (R.smart > 0 && Math.sign(enemy.x - player.x) && Math.sign(enemy.x - player.x) !== enemy.side) {
+        enemy.side = Math.sign(enemy.x - player.x);
+      }
       enemy.repositionAt -= dt;
       if (enemy.repositionAt <= 0) {      // occasionally flank to the other side
-        enemy.side *= -1;
+        /* A sharp street leaves the side-picking to its roles, and when a man
+         * does change sides he goes round through the back, not through the arc. */
+        if (R.smart <= 0) enemy.side *= -1;
+        else if (R.smart < 0.3) beginCross(enemy, -enemy.side);
         enemy.repositionAt = 3 + combatRng() * 4;
       }
+      /* On the arc side he stands just outside its reach, and dances at the edge
+       * — the bait. Off it, the old stand-off. */
+      const onArc = R.smart > 0 && (R.side ? enemy.side === R.side : enemy.side === (player.facing >= 0 ? 1 : -1));
+      const standoff = onArc
+        ? Math.max(enemy.standoff, R.reach + STREET_SMARTS.edgeMargin + 26 * R.smart)
+        : enemy.standoff;
       // bob in/out around the standoff: keeps a gap AND keeps feet moving so
       // the walk never looks frozen while squared up
-      const bob = Math.sin(mobClock * 1.7 + enemy.id) * 14;
-      const tx = player.x + enemy.side * (enemy.standoff + bob);
+      const bob = Math.sin(mobClock * 1.7 + enemy.id) * (onArc ? 14 + 12 * R.smart : 14);
+      const tx = player.x + enemy.side * (standoff + bob);
       const ty = clampLane(player.y + enemy.laneBias + Math.sin(mobClock * 1.2 + enemy.id) * 8);
       moveToward(enemy, tx, ty, enemy.speed * enemy.amble, dt);
       enemy.state = 'walk';
       /* THE ATTACK SLOT. One token, one attacker — and the seniors stand aside
        * for the street rather than in front of it (see `seniorYields`). */
       if (enemy.atkCooldown <= 0 && !attackTokens.has(enemy) && !seniorYields(enemy, dt)
+          && !streetHoldsBack(enemy, R, dt)
           && attackTokens.size < liveTokenCap()) {
         attackTokens.add(enemy);          // claim the token and commit to a run
+        claimAttackLane(enemy);
         enemy.mode = 'approach';
         enemy.approachT = 0;
         // Pick the move HERE, before he closes in, because the approach has to
@@ -13870,16 +15902,31 @@ function stepEnemyAI(enemy, dt) {
         /* …while he HAS it. An Aye whose blade is on the road is a street
          * fighter again and picks jab or kick exactly as an Agbero does, so
          * losing the weapon changes his move, never whether he fights. */
-        enemy.moveName = enemy.kind === 'senior'
-          ? seniorPickMove(enemy, distX)
-          : enemy.kind === 'shaved' ? (isArmed(enemy) ? 'machete' : 'ayeKick')
-            : (combatRng() < (playerBlocking() ? ENEMY.kickChanceVsBlock : ENEMY.kickChance)
-              ? 'kick' : 'jab');
+        enemy.moveName = pickEnemyMove(enemy, distX);
       }
       break;
     }
   }
   enemy.direction = enemy.facing;
+}
+
+/* The commitment's move, picked as he takes the token — see the claim above. */
+function pickEnemyMove(enemy, distX) {
+  if (enemy.kind === 'sars') {
+    if (enemy.knives > 0 && distX >= SARS.throwMin) {
+      const quick = enemy.knives >= 2 && combatRng() < 0.58;
+      enemy.throwGoal = quick ? Math.min(enemy.knives, 2 + Math.floor(combatRng() * 4)) : 1;
+      enemy.throwEvents = new Set();
+      return quick ? 'quickThrow' : 'normalThrow';
+    }
+    const roll = combatRng();
+    return roll < 0.32 ? 'jab' : roll < 0.57 ? 'spinKick' : roll < 0.78 ? 'rapidKick' : 'combo';
+  }
+  return enemy.kind === 'senior'
+    ? seniorPickMove(enemy, distX)
+    : enemy.kind === 'shaved' ? (isArmed(enemy) ? 'machete' : 'ayeKick')
+      : (combatRng() < (playerBlocking() ? ENEMY.kickChanceVsBlock : ENEMY.kickChance)
+        ? 'kick' : 'jab');
 }
 
 /* --- MC_Olodo (Level 1 boss) ------------------------------------------ */
@@ -13938,6 +15985,9 @@ const BOSS = {
   baseHp: 620,
   baseDamage: 11,              // the straight
   baseFinishDamage: 18,        // the cross
+  // Seconds after a hold ends before he can be grabbed again (request 335) — the
+  // grab works on him like anyone, but he cannot be chain-held for the whole bout.
+  grabCooldown: 4,
   get maxHp() { return this.baseHp * this.hpMul; },
   get damage() { return this.baseDamage * this.damageMul; },
   get finishDamage() { return this.baseFinishDamage * this.damageMul; },
@@ -14058,7 +16108,7 @@ const bossEnraged = (b) => BOSS.enrageAt > 0 && b.hp / b.maxHp <= BOSS.enrageAt;
 
 function makeBoss() {
   return {
-    id: 900, kind: 'olodo', boss: true, noGrab: true,
+    id: 900, kind: 'olodo', boss: true, grabCooldown: 0,
     x: BOSS_ARENA.right + 260, y: clampLane(GROUND_Y + 34),   // off-screen right
     vx: 0, vy: 0, jumpY: 0,
     /* MC_Olodo takes the tier too. His hpMul was HALVED on request, and EASY
@@ -14076,6 +16126,7 @@ function makeBoss() {
     footX: BOSS_ARENA.right + 260, footY: clampLane(GROUND_Y + 34), stepDist: 0,
     dying: false, diedVo: false, fallHold: 0, fallRate: 1, execVictim: false,
     benched: false, active: false,          // `active` gates his AI (off in the cutscene)
+    renderHidden: true,                       // staged beyond frame until his entrance reaches the edge
     side: -1, laneBias: 0, standoff: BOSS.standoff, amble: 1,
     repositionAt: 4, passSide: 1, passY: GROUND_Y,
     atkCooldown: BOSS.cooldownMin, stateTimer: 0,
@@ -14097,7 +16148,22 @@ function makeBoss() {
 const bossFalling = (b) => !!olodoFallSprite && !b.grabbed
   && (b.state === 'hit' || b.state === 'down' || b.state === 'ko');
 
+/* MC_OLODO IN DARKI'S GRAB (request 335). He has no held or hurt art of his
+ * own, so the hold is played on his OWN fall sheet's dazed stretch rather than
+ * borrowing anybody else's body: 11 is the hand-to-the-head recoil each blow
+ * restarts (grabHitT, like the mob's), 12-17 the dazed, hunched sway between
+ * blows. */
+const OLODO_HELD = {
+  hit: { frames: [11], fps: 1, loop: false, footAnchor: true },
+  held: { frames: [12, 13, 14, 15, 16, 17, 16, 15, 14, 13], fps: 9, footAnchor: true },
+};
+
 function bossAnim(b) {
+  if (b.grabbed && olodoFallSprite) {
+    const hit = b.grabHitT > 0;
+    return { sprite: olodoFallSprite, config: OLODO_FALL_SHEET,
+             spec: hit ? OLODO_HELD.hit : OLODO_HELD.held, name: hit ? 'grabhit' : 'grabbed' };
+  }
   // GOING DOWN â€” his own drawn fall, not his stance turned on its side. Placed
   // FIRST because it has to beat the move sheets: a boss floored mid-hook still
   // has `anim === 'hook'` set from the move he was thrown out of, and reading
@@ -14212,7 +16278,7 @@ function bossStrike(b, kind) {
   const forward = (player.x - b.x) * (b.facing >= 0 ? 1 : -1);
   if (forward < -46 || forward > blow.reach()) return;
   if (Math.abs(player.y - b.y) > blow.reachY()) return;
-  if (!playerHittable()) return;
+  if (!playerHittable() || vehicleBetween(b, player)) return;
   // Only the CROSS and the single hook wash the screen. His straight reads as
   // the set-up, and the super's laps are a flurry â€” flashing on each one would
   // strobe the fight and turn the wash back into background hum.
@@ -14425,6 +16491,7 @@ function updateBossFight(dt) {
       b.facing = 1;
       bossFootfalls(b, dt);
     }
+    if (b.x >= goneX) b.renderHidden = true;
     if (!bossFight.crewSpawned && bossFight.t >= BOSS_PHASE.crewDelay) {
       bossFight.crewSpawned = true;
       spawnBossCrew(BOSS_PHASE.crew);
@@ -14435,6 +16502,7 @@ function updateBossFight(dt) {
       bossFight.phase = 'returning';
       bossFight.t = 0;
       b.facing = -1;
+      b.renderHidden = true;
     }
     return;
   }
@@ -14442,6 +16510,7 @@ function updateBossFight(dt) {
   if (bossFight.phase === 'returning') {
     b.x = Math.max(CUT.bossMark, b.x - BOSS_PHASE.returnSpeed * dt);
     b.facing = -1;
+    if (b.renderHidden && b.x - cameraX <= viewW() + 120) b.renderHidden = false;
     bossFootfalls(b, dt);
     if (b.x <= CUT.bossMark + 0.5) {
       b.x = CUT.bossMark;
@@ -14544,7 +16613,45 @@ const CUT = {
    * on silence, which is the same bug as the countdown it replaced. */
   silentHold: 0.80,
 };
-const cutscene = { active: false, phase: 0, t: 0, letterbox: 0, plate: 0, fight: 0, slammed: false, speechHold: 0 };
+const cutscene = { active: false, phase: 0, t: 0, letterbox: 0, plate: 0, fight: 0, slammed: false, speechHold: 0,
+  voAt: null, voT: 0 };
+
+/* SUBTITLES FOR THE BOSS-ARENA LINE (request 336), voice-reach-olodo.mp3.
+ * Transcribed with Whisper (small), then every line's start and end taken off
+ * the clip's own waveform (voiced runs, 20 ms RMS windows) — Whisper's word
+ * stamps ran 0.1-0.25 s late, so they were refitted inside each measured line,
+ * and the words either side of a measured gap were pinned to it. Seconds from
+ * the clip's first sample; each word lights as it is spoken. */
+const REACH_OLODO_SUBS = [
+  { at: 0.18, end: 2.86, words: [['There', 0.18], ['he', 0.36], ['is.', 0.68], ['MC', 1.84], ['Olodo.', 2.12]] },
+  { at: 3.62, end: 5.54, words: [['The', 3.62], ['man', 3.89], ['behind', 4.22], ['the', 4.53], ['tolls.', 4.85]] },
+  { at: 5.94, end: 7.98, words: [['The', 5.94], ['man', 6.14], ['who', 6.33], ['owns', 6.58], ['these', 6.86], ['streets.', 7.24]] },
+  { at: 8.76, end: 9.98, words: [['His', 8.76], ['boys', 9.03], ['are', 9.23], ['down.', 9.48]] },
+  { at: 10.58, end: 11.84, words: [['His', 10.58], ['protection', 10.90], ['is', 11.13], ['gone.', 11.35]] },
+  { at: 12.58, end: 14.42, words: [['Now', 12.58], ['he', 12.73], ['has', 12.87], ['nowhere', 13.08], ['left', 13.38], ['to', 13.56], ['hide.', 13.82]] },
+  { at: 15.24, end: 18.96, words: [['Olodo', 15.24], ['built', 15.73], ['his', 15.96], ['power', 16.37], ['on', 16.67], ['fear', 17.28], ['and', 18.10], ['dirty', 18.30], ['money.', 18.55]] },
+  { at: 19.84, end: 21.40, words: [['Time', 19.84], ['to', 20.09], ['collect', 20.48], ['the', 20.86], ['debt.', 21.02]] },
+];
+// The bar's type: two lines fit the 92 px bar — the one being said, the one before.
+// Scroll/lead/fade timing is the shared SUB_SCROLL (frontend.js).
+const SUBS = { font: 22, lineH: 30, maskPad: 4 };
+/* Seconds into the line. The AUDIO clock while the voice is really playing, so
+ * a dropped or stalled frame cannot pull the text off the voice; the scene's own
+ * accumulated dt otherwise (audio context suspended, or a headless test). */
+function reachOlodoSubT() {
+  if (cutscene.voAt != null && audioCtx && audioCtx.state === 'running')
+    return audioCtx.currentTime - cutscene.voAt;
+  return cutscene.voT;
+}
+function drawBossSubtitles() {
+  if (cutscene.voAt == null) return;                 // the line did not play
+  const depth = CUT.barH * cutscene.letterbox;
+  if (depth < 6) return;            // the bar still closing reveals the text: the clip grows with it
+  // the bottom letterbox bar, masked just under its top line (drawSubtitleScroll)
+  drawSubtitleScroll(ctx, REACH_OLODO_SUBS, reachOlodoSubT(),
+    { x: 0, y: VIEW_H - depth, w: VIEW_W, h: depth },
+    { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad });
+}
 let fightBanner = 0;             // "FIGHT!" lingers this long after control returns
 
 const cutPhase = () => CUT.phases[Math.min(cutscene.phase, CUT.phases.length - 1)][0];
@@ -14583,19 +16690,18 @@ function startBossIntro() {
   // outro holds forever by design, and it owns both the input and the frame).
   outro.active = false;
   evidence.active = false; evidence.gone = true;
-  /* DARKI MEETS MC_OLODO WITH HIS HANDS (request 305 — the user's call). Whatever
-   * he carried through the gate is set down where he crossed it, as the bars
-   * close, and lies there until it expires; the boss room takes no weapons
-   * (weaponsAllowed), so it cannot be picked back up, and nothing he threw
-   * earlier is left lying in the shot either. */
+  /* HE WALKS IN WITH WHAT HE LAST FOUGHT WITH (request 335 — continuity; this
+   * reverses request 305's "with his hands"). The weapon in his hand stays
+   * there through the walk-in, the speech and the fight — the idle/walk routing
+   * (WEAPON_POSE_SHEETS) draws him armed with no scene-specific code. If his
+   * last weapon is lying on the road instead (thrown, spilled), it is handed
+   * back: the scene opens on a cut to his mark, so nothing is seen to teleport.
+   * Leftovers that are nobody's are cleared out of the shot as before. */
+  if (!weaponOf(player) && lastPlayerWeapon && weapons.includes(lastPlayerWeapon)
+      && !lastPlayerWeapon.owner)
+    setWeaponOwner(lastPlayerWeapon, player);
   for (let i = weapons.length - 1; i >= 0; i--)
     if (!weapons[i].owner && weapons[i].life != null) weapons.splice(i, 1);
-  const carried = weaponOf(player);
-  if (carried) {
-    setWeaponOwner(carried, null, { x: player.x - player.facing * 30, y: player.y, facing: player.facing });
-    carried.life = THROWN.restLife;
-    emitWeaponEvent(carried.type + '_drop', carried, player);
-  }
   /* DARKI STARTS THE SCENE ON HIS OWN MARK, facing the arena, wherever the
    * fight left him. The stand-off is a composed shot and it has to play the
    * same way every time — see CUT.playerStartX. His depth is put on Olodo's
@@ -14617,6 +16723,7 @@ function startBossIntro() {
 
   boss = makeBoss();
   boss.x = CUT.bossStartX;
+  boss.renderHidden = true;
   boss.y = clampLane(GROUND_Y + 34);
   boss.footX = boss.x; boss.footY = boss.y;     // his mark IS his start: no travel banked
   enemies.push(boss);
@@ -14631,6 +16738,9 @@ function startBossIntro() {
    * audio is muted, blocked or undecoded, and holding seventeen silent seconds
    * for a line nobody can hear is worse than not staging it at all. */
   const spoke = playDarkiVoice('reachOlodo', { interrupt: true, pan: false });
+  // the subtitles' clock (drawBossSubtitles): zero on the voice's first sample
+  cutscene.voAt = spoke ? (audioCtx?.currentTime ?? 0) : null;
+  cutscene.voT = 0;
   cutscene.speechHold = spoke
     ? Math.max(0, DARKI_VOICE.reachOlodo.dur - cutSpokenBeats())
     : CUT.silentHold;
@@ -14639,6 +16749,7 @@ function startBossIntro() {
 // Control returns, MC_Olodo's AI wakes up, the fight is on.
 function finishBossIntro() {
   cutscene.active = false;
+  cutscene.voAt = null;              // the subtitles end with the scene
   setBars(cutscene, 0); cutscene.plate = 0; cutscene.fight = 0;
   waveState = 'boss';
   boss.active = true;
@@ -14654,6 +16765,7 @@ function skipCutscene() {
   player.x = CUT.playerMark;
   boss.x = CUT.bossMark;
   boss.facing = -1;
+  boss.renderHidden = false;
   /* The narration goes with the scene it belongs to. Skipping the entrance and
    * then fighting the first twenty seconds of the boss under a speech about
    * meeting him is the same leak as the music one â€” a beat that outlives the
@@ -14702,6 +16814,7 @@ function updateCutscene(dt) {
 
   mobClock += dt;                              // pulses/bobs keep breathing
   cutscene.t += dt;
+  cutscene.voT += dt;                          // the subtitles' fallback clock
   const name = CUT.phases[cutscene.phase][0];
   const dur = cutPhaseDur();
   const k = dur > 0 ? Math.min(1, cutscene.t / dur) : 1;   // 0â†’1 through this phase
@@ -14761,6 +16874,7 @@ function updateCutscene(dt) {
     // ease-out swagger: fast off the edge, settling onto his mark
     const e = 1 - Math.pow(1 - k, 3);
     boss.x = CUT.bossStartX + (CUT.bossMark - CUT.bossStartX) * e;
+    if (boss.renderHidden && boss.x - cameraX <= viewW() + 120) boss.renderHidden = false;
   } else if (cutscene.phase > 1) {
     boss.x = CUT.bossMark;
   }
@@ -14810,6 +16924,7 @@ function updateCutscene(dt) {
 const OUTRO = {
   phases: [
     ['fall', 1.20],              // bars close, the ledger flutters out and lands
+    ['taunt', 0],                // DYNAMIC — "Don't Play!" finishes before anyone runs (request 338)
     ['rout', 3.60],              // the crew breaks and runs; Darki stands and watches
     ['walk', 4.20],              // Darki crosses to it and takes it â€” this beat
     ['card', 0.85],              //   ends EARLY, the moment the lift finishes
@@ -14832,6 +16947,18 @@ const OUTRO = {
    * the ending can never hang on a body that fails to leave. */
   routSpeed: 420,                // px/s — a run, faster than any of them fight at
   routGone: 160,                 // px past the view edge that counts as away
+  // The beat before the rout (request 349): the crew paces at arm's length, unthreatening.
+  menaceGap: 250,                // px from Darki they hover at
+  menaceSway: 45,                // ± px of slow pacing around that
+  menaceSpeed: 80,               // px/s — a wary shuffle, nothing like the 420 px/s rout
+  /* …AND EACH OF THEM REALISES IT (request 367). Once per man, at his own random
+   * moment in the beat, he stops, turns to the body and holds — about five frames
+   * of his idle — before he goes back to pacing: the boss is down, and you see it
+   * land on each of them one at a time rather than on the crew as one unit. All of
+   * them are done before the rout, which they then run as before. */
+  takeDur: 0.45,                 // s — the hold (~5 frames of an idle clip)
+  takeLead: 0.25,                // s into the beat before the first can happen
+  takeTail: 0.30,                // s of the beat kept clear after the last one ends
   walkSpeed: 260,                // px/s he crosses the arena at
   reach: 64,                     // how close he stands before he stoops for it
   // The walk beat's 4.20 is a CAP, not a pace. Olodo can die anywhere in an
@@ -14841,6 +16968,7 @@ const OUTRO = {
   // `grabBy` fires, and the ledger lifts out of thin air short of his hand.
   grabBy: 0.50,
   liftDur: 0.40,                 // how long it rises into his hand and fades
+  closeDur: 0.60,                // the bars meeting in the middle under the summary
 };
 const EV_FALL = 0.85;            // seconds the ledger takes to reach the tarmac
 const EV_RISE = 160;             // â€¦from this high above it
@@ -14860,7 +16988,7 @@ const CASE_FILE = {
   teaser: 'NEXT CASE — whoever was paying him',
 };
 
-const outro = { active: false, phase: 0, t: 0, letterbox: 0, wash: 0, card: 0, slammed: false };
+const outro = { active: false, phase: 0, t: 0, letterbox: 0, wash: 0, card: 0, slammed: false, close: 0, tauntHold: 0, beatT: 0 };
 
 /* THE POST-MISSION SEQUENCE. The fight ends on the mission card; everything
  * after it â€” the evidence analysis over analysisBG, the next target, The Cabal,
@@ -14884,7 +17012,7 @@ const aftermath = createAftermath({
    * (two soundtracks at once) and `aftermath.active` keeps eating X/Enter/
    * arrows once gameplay resumes, which is the "two sessions in parallel" this
    * reads as. */
-  onChooseLevel: (level) => { endMission(); frontEnd?.startLevel(level); },
+  onChooseLevel: (level) => { endMission(); if (level === 2) loadLevel2Art(); frontEnd?.startLevel(level); },
 });
 
 /* Release everything the finished mission still owns: the input, the frame and
@@ -14912,7 +17040,25 @@ function startOutro(x, y) {
   parkPlayerForScene();          // the same park the boss entrance uses
   outro.active = true;
   outro.phase = 0; outro.t = 0;
-  setBars(outro, 0); outro.wash = 0; outro.card = 0; outro.slammed = false;
+  setBars(outro, 0); outro.wash = 0; outro.card = 0; outro.slammed = false; outro.close = 0;
+  /* REQUEST 338: the score is frozen here, the moment he is down, and Darki
+   * speaks over the body — "Don't Play!" — before his crew is allowed to break.
+   * The taunt beat holds the rout until the line has finished (the fall beat
+   * already covers the first 1.2 s of it); a muted line costs a short pause. */
+  run.final = computeScore();
+  const spoke = playDarkiVoice('dontPlay', { interrupt: true, pan: false });
+  const fallDur = OUTRO.phases.find((p) => p[0] === 'fall')[1];
+  outro.tauntHold = spoke ? Math.max(0, DARKI_VOICE.dontPlay.dur + 0.3 - fallDur) : 0.3;
+  /* Each survivor's moment of realising it (request 367): a random time inside
+   * the beat (fall + taunt), staggered across the crew, every one over before the
+   * rout. Shuffled slots rather than independent draws, so two men never freeze in
+   * the same instant and the beat reads as it passing from one to the next. */
+  outro.beatT = 0;
+  const crew = mobs().filter((e) => isWaveAlive(e) && !e.boss);
+  const span = Math.max(0.2, fallDur + outro.tauntHold - OUTRO.takeLead - OUTRO.takeDur - OUTRO.takeTail);
+  const slots = crew.map((_, i) => (i + Math.random()) / Math.max(1, crew.length));
+  for (let i = slots.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [slots[i], slots[j]] = [slots[j], slots[i]]; }
+  crew.forEach((e, i) => { e.takeAt = OUTRO.takeLead + slots[i] * span; });
   evidence.active = true;
   evidence.x = Math.max(BOSS_ARENA.left + 40, Math.min(BOSS_ARENA.right - 40, x));
   evidence.y = clampLane(y);
@@ -14976,6 +17122,50 @@ function setOutroPose(name) {
   player.stepClock = null;
 }
 
+/* A man's walk cycle advanced by hand during the outro. The outro REPLACES the
+ * fight update, so the per-enemy animation pass never runs while it owns the
+ * frame; without this he would slide on one frozen sprite. Same three lines
+ * that pass uses: ask the router for the clip, restart the clock on a change,
+ * step it at the clip's own fps. Plus his boots, so movement is heard. */
+function stepOutroAnim(e, dt) {
+  const { spec, name } = enemyAnim(e);
+  e.anim = name;
+  if (e.animSpec !== spec) { e.animSpec = spec; e.animTime = 0; }
+  e.animTime += dt * spec.fps;
+  const step = Math.floor(e.animTime);
+  e.frame = spec.frames[step % spec.frames.length];
+  stepFootfalls(e, name, spec, step, dt);
+}
+
+/* From Olodo's killing blow through the spoken beat, survivors are still
+ * living actors but no longer combatants. One owner clears their combat state
+ * and gives standing men the same wary pace before updateOutro takes the frame. */
+function paceDefeatedCrew(e, dt) {
+  if (!isWaveAlive(e) || e.boss) return;
+  attackTokens.delete(e);
+  e.attack = null; e.move = null; e.mode = 'idle'; e.intent = null;
+  // His moment (request 367): stop, turn to the body, hold — then back to pacing.
+  e.taking = outro.active && e.takeAt != null
+    && outro.beatT >= e.takeAt && outro.beatT < e.takeAt + OUTRO.takeDur;
+  if (e.taking) {
+    e.vx = 0;
+    e.state = 'idle';
+    if (boss) e.facing = Math.sign(boss.x - e.x) || e.facing;
+    stepOutroAnim(e, dt);
+    return;
+  }
+  const side = Math.sign(e.x - player.x) || (e.id % 2 ? 1 : -1);
+  const tx = player.x + side * (OUTRO.menaceGap
+    + OUTRO.menaceSway * Math.sin(mobClock * 0.8 + e.id * 1.7));
+  const gap = tx - e.x;
+  const step = Math.sign(gap) * Math.min(Math.abs(gap), OUTRO.menaceSpeed * dt);
+  e.x += step;
+  e.vx = step / Math.max(dt, 1e-4);
+  e.state = Math.abs(gap) > 4 ? 'walk' : 'idle';
+  e.facing = Math.sign(player.x - e.x) || e.facing;
+  stepOutroAnim(e, dt);
+}
+
 function updateOutro(dt) {
   swallowInput();
   mobClock += dt;
@@ -14985,7 +17175,8 @@ function updateOutro(dt) {
   if (aftermath.owningFrame) { aftermath.update(dt); return; }
   outro.t += dt;
   evidence.t += dt;
-  const [name, dur] = OUTRO.phases[outro.phase];
+  const [name, phaseDur] = OUTRO.phases[outro.phase];
+  const dur = name === 'taunt' ? outro.tauntHold : phaseDur;
 
   /* HIS POSE FOLLOWS THE LEDGER, and it changes the moment he has it.
    *
@@ -15029,23 +17220,19 @@ function updateOutro(dt) {
       e.facing = dir;
       e.x += dir * OUTRO.routSpeed * dt;
       e.vx = dir * OUTRO.routSpeed;
-      /* Their walk cycle, advanced by hand. The outro REPLACES the fight update
-       * (see the early return that calls this function), so the per-enemy
-       * animation pass never runs while it owns the frame — without this they
-       * would slide off the street on one frozen sprite. Same three lines that
-       * pass uses: ask the router for the clip, restart the clock on a change,
-       * step it at the clip's own fps. */
-      const { spec: rspec, name: rname } = enemyAnim(e);
-      e.anim = rname;
-      if (e.animSpec !== rspec) { e.animSpec = rspec; e.animTime = 0; }
-      e.animTime += dt * rspec.fps;
-      const rstep = Math.floor(e.animTime);
-      e.frame = rspec.frames[rstep % rspec.frames.length];
-      // …and their boots, so a street emptying is something you HEAR.
-      stepFootfalls(e, rname, rspec, rstep, dt);
+      stepOutroAnim(e, dt);
       const sx = e.x - cameraX;
       if (sx < -OUTRO.routGone || sx > viewW() + OUTRO.routGone) benchEnemy(e);
     }
+  } else if (name === 'fall' || name === 'taunt') {
+    /* THE BEAT BEFORE THE ROUT (request 349). The crew used to stand frozen
+     * through his fall and the taunt. Now they stay ALIVE without being a
+     * threat: each paces a slow arc at arm's length from Darki, facing him,
+     * walk cycle and boots running, and never attacks (no tokens, no attack
+     * state, input swallowed). When the beat ends, the rout above turns them
+     * and runs them off. */
+    outro.beatT += dt;                       // the clock each man's moment is timed on
+    for (const e of mobs()) paceDefeatedCrew(e, dt);
   }
   /* â€¦and the walk ends on `held` for the same reason. It used to run until
    * `gone`, so on the `grabBy` safety path â€” where the ledger is taken before
@@ -15096,6 +17283,8 @@ function updateOutro(dt) {
    * the card's own slam is what it has to sit behind. The old rate-7 damp took
    * about that long to arrive, so the beat keeps its length. */
   rampBars(outro, carded ? 1 : 0.30, dt, 0.90);
+  // …and on the card they keep coming until they meet: the level CLOSES (request 338)
+  outro.close = carded ? Math.min(1, outro.close + dt / OUTRO.closeDur) : 0;
   outro.wash = damp(outro.wash, carded ? 1 : 0, 5, dt);
   outro.card = damp(outro.card, carded ? 1 : 0, 20, dt);
 
@@ -15113,7 +17302,10 @@ function updateOutro(dt) {
      * straight to 'file' without ever advancing a phase, so a hook on the
      * advance would leave a skipped ending with no sequence behind it â€” a card
      * with a prompt on it that answers to nothing. */
-    if (name === 'file') { beginAftermath(); aftermath.update(dt); }
+    /* …but not before the scorecard has finished arriving (request 338): the
+     * sequence is what listens for X, and an early press must not skip it. */
+    const cardDur = OUTRO.phases.find((p) => p[0] === 'card')[1];
+    if (name === 'file' && cardDur + outro.t >= OUTRO.closeDur + 1.9) { beginAftermath(); aftermath.update(dt); }
     return;
   }
   outro.phase++;
@@ -15128,6 +17320,9 @@ function updateOutro(dt) {
 /* Idempotent: the branch above runs every frame the card is up. */
 function beginAftermath() {
   if (aftermath.active) return;
+  rrGameEvent('level_complete', { level: frontEnd?.level ?? 1, difficulty: chosenDifficulty, time: run.final?.time ?? run.time,
+    score: run.final?.total ?? 0, rank: run.final?.rank ?? null, kos: levelKills, hp: Math.ceil(Math.max(0, player.hp)),
+    maxCombo: run.maxCombo, topHit: run.topHit, parts: run.final?.parts ?? null });   // parts: the leaderboard's check
   aftermath.start({
     level: 1,
     stats: {
@@ -15135,6 +17330,8 @@ function beginAftermath() {
       hp: Math.ceil(Math.max(0, player.hp)),
       maxHp: player.maxHp,
       difficulty: chosenDifficulty,
+      score: run.final?.total ?? 0,
+      rank: run.final?.rank ?? null,
     },
   });
 }
@@ -15193,9 +17390,9 @@ const AIR_STRIKE = {
    * recovery never got a frame on screen. Turning the arc over is the intent;
    * deleting it is not. */
   riseCut: 0.55,
-  thrust: 215,          // px/s of forward drive added…
-  minSpeed: 300,        // …and the floor it is never below
-  gravityMul: 2.6,      // terminal gravity multiplier for the dive
+  thrust: 320,          // px/s of forward drive added… (request 330: was 215)
+  minSpeed: 400,        // …and the floor it is never below (was 300)
+  gravityMul: 3.2,      // terminal gravity multiplier for the dive (was 2.6: it drives down harder)
   gravityRamp: 0.22,    // seconds to reach it
   tiltMax: 0.48,        // ~27.5 degrees. Past this his shoulder leads and it
                         // stops reading as a kick and starts reading as a fall.
@@ -15438,11 +17635,13 @@ function onTouchdown() {
    * bounce, a knockdown) and come down through this same line, and those have
    * their own arrivals already animated — see the fall/getup tables. */
   if (player.react || player.state !== 'normal') return;
-  /* THE MACHETE COMES DOWN INTO THE ROAD. Its air strike is not cut on arrival
-   * like the kick: the landing is the second half of the blow (macheteAirLand),
-   * so it takes over from the held frame instead of a landing crouch. */
-  if (player.attack === 'macheteAir') {
-    startAttack('macheteAirLand');
+  /* A WEAPON'S AIR STRIKE COMES DOWN INTO THE ROAD. It is not cut on arrival
+   * like the kick: its sheet has its own landing (`land` — the machete's cut,
+   * the bat kick's crouch), which takes over from the held frame instead of
+   * the generic landing crouch. */
+  const landMove = ATTACKS[player.attack]?.land;
+  if (landMove) {
+    startAttack(landMove);
     playJumpLanding();
     return;
   }
@@ -15556,6 +17755,12 @@ function advanceAttackLunge(move, step, dt) {
   // `hold`: full speed up to that step (a run), then the decay into the plant.
   const hold = L.hold ?? 0;
   const k = player.runOn || step < hold ? 1 : 1 - (step - hold) / (L.until - hold);
+  // `contact`: the lunge stops on a body rather than carrying him through it —
+  // thrown from the rush window he is already at the man, and sailing past him
+  // turned the kick into a blow that knocked him BACKWARDS.
+  if (L.contact && enemies.some((e) => !e.benched && e.hp > 0 && isEnemyHittable(e)
+      && Math.abs(e.y - player.y) < GRAB.lane
+      && (e.x - player.x) * dir > 0 && (e.x - player.x) * dir < L.contact)) return;
   player.x += dir * L.speed * k * dt;
   clampPlayerToArena();
 }
@@ -15590,6 +17795,7 @@ function advanceAttack(dt) {
   // one — and its hitbox — on the way down; touchdown is what ends it.
   if (move.holdUntilLand && step >= move.frames.length && !player.grounded) step = move.frames.length - 1;
   if (move.run) step = advanceArmedRun(move, step, dt);
+  if (move.tornado) { step = advanceTornado(move, step, dt); if (step < 0) return; }
   // The pickup does not END when its frames do â€” if it is holding someone it
   // hands over to the carry STANCE, which is not an attack at all. Checked
   // before endAttack, whose whole job is to make sure no move ever finishes
@@ -15645,6 +17851,7 @@ function endAttack() {
   player.mcRepeat = 0; player.mcLaps = 0;
   player.attack = null;
   player.attackHits = null;
+  player.attackCommit = null;
   player.attackStep = 0;
   /* A MOVE THAT ENDS IN MID-AIR MUST NOT DROP HIM INTO A STANDING POSE.
    *
@@ -15699,27 +17906,17 @@ const damp = (cur, target, lambda, dt) => cur + (target - cur) * (1 - Math.exp(-
  * The ramp also has one property the damp never did: it ARRIVES. An exponential
  * only converges, so `letterbox` was never exactly 0 and the bars were still a
  * fraction of a pixel deep on the frame control came back. */
-const BAR_EASE = 0.73;
+/* BAR_EASE, BAR_DUR, easeBars, rampBars, easeRest and setBars now live in
+ * src/bars.js (request 399), unchanged, so the front end's Level 2 sequence
+ * moves the SAME bars. The notes on them above and below still describe them. */
 /* Matched to what the old damp actually did rather than picked fresh: at rate 9
  * the bars were within 0.2% of their target in 0.75 s, and LEVEL_ENTRY.barsOut
  * (0.75) is built on that. 0.70 lands them fully open with 0.05 s to spare. */
-const BAR_DUR = 0.70;
 
-const easeBars = (u) => {
-  const t = Math.max(0, Math.min(1, u));
-  const s = t * t * (3 - 2 * t);
-  return t + (s - t) * BAR_EASE;
-};
 
 /* Step one scene's bars toward `target`. Retargeting mid-move restarts the ease
  * FROM WHERE THE BARS ARE — that is what makes an interrupted close (the player
  * skipping a cutscene) ease back out instead of snapping. */
-function rampBars(s, target, dt, dur = BAR_DUR, ease = easeBars) {
-  if (s.barTo !== target) { s.barFrom = s.letterbox; s.barTo = target; s.barU = 0; }
-  s.barU = Math.min(1, (s.barU ?? 1) + dt / Math.max(0.0001, dur));
-  s.letterbox = s.barFrom + (target - s.barFrom) * ease(s.barU);
-  return s.letterbox;
-}
 
 /* A pure smoothstep: leaves AND arrives at a standstill.
  *
@@ -15729,16 +17926,11 @@ function rampBars(s, target, dt, dur = BAR_DUR, ease = easeBars) {
  * speed, which is a visible kick when the thing it is joining has been sitting
  * still. The level entry is one continuous gesture from full black to open
  * street, so its bars use this instead and every join is zero-velocity. */
-const easeRest = (u) => {
-  const t = Math.max(0, Math.min(1, u));
-  return t * t * (3 - 2 * t);
-};
 
 /* Put a scene's bars AT a depth with no move in flight. Every place that used
  * to assign `letterbox` directly goes through this, or the next `rampBars` call
  * would see its own stale `barTo`, believe it had already arrived, and hold the
  * bars at the value it was reset away from. */
-function setBars(s, v) { s.letterbox = v; s.barFrom = v; s.barTo = v; s.barU = 1; }
 
 // Cinematic side-scroll follow camera (SoR4 / TMNT: Shredder's Revenge feel):
 //   * leads ~38% from the edge in the travel direction (bias eases on turns);
@@ -15882,6 +18074,17 @@ function update(dt) {
   if (cutscene.active) { updateCutscene(dt); return; }
   // â€¦and his outro owns it for good once he is down.
   if (outro.active) { updateOutro(dt); return; }
+  /* MC_OLODO IS GOING DOWN (request 338): from the killing blow the player has
+   * no more say — nothing pressed now can cut his fall or the ending short, and
+   * nobody left on the street can land a blow on Darki while it plays. */
+  const bossEnding = bossBeaten();
+  if (bossEnding) {
+    swallowInput();
+    input.left = input.right = input.up = input.down = false;
+    input.blockHeld = false;
+    attackTokens.clear();
+    player.invuln = Math.max(player.invuln, 0.5);
+  } else updateRun(dt);
 
   // ---- combat timers ----
   player.invuln = Math.max(0, player.invuln - dt);
@@ -15897,9 +18100,9 @@ function update(dt) {
   if (player.state === 'hurt' || player.state === 'ko') {
     player.hurtTimer -= dt;
     if (player.hurtTimer <= 0) {
-      if (player.state === 'ko') {          // second wind â€” back up at full HP
-        player.hp = player.maxHp; player.hpShown = player.maxHp; player.invuln = 1.2;
-      }
+      // No second wind any more (request 338): a KO is a death, and the fall
+      // has played out — the game-over screen takes the frame.
+      if (player.state === 'ko') { startGameOver(); return; }
       player.state = 'normal';
     }
   }
@@ -15915,6 +18118,10 @@ function update(dt) {
   // the detector needs an unbroken view of the direction keys to tell a fresh
   // press from a held one, and skipping frames would let a hold read as a tap
   // the moment control came back. `tryStartRush` is what decides legality.
+  // A fresh left/right press first pulls him out of a combo string (request
+  // 407) — BEFORE the rush read, so the same press can open a rush.
+  if (player.faceHoldT > 0) player.faceHoldT -= dt;
+  updateComboBreakout();
   updateRushInput();
   // â€¦and the gauge refills on every frame he is not spending it. Ticked before
   // the input read, so a dash pressed this frame is judged against this frame's
@@ -15939,12 +18146,18 @@ function update(dt) {
   // direction press ends it through consumeAttackInput rather than trapping him.
   const rushing = rushState !== RUSH_STATE.NONE;
   const canMove = !attacking && !locked && !player.blocking && !rushing;
+  // The tornado is the one move he travels in under the stick (request 370):
+  // steered, not walked — no jump, no turning on the spot, until he plants.
+  const tornado = ATTACKS[player.attack]?.tornado;
+  const steering = !!tornado && !locked && player.grounded
+    && player.attackStep < ATTACKS[player.attack].tornadoAt.steerUntil;
 
   // Carrying a grown man costs him pace. It is a multiplier on the same number
   // rage scales, so an enraged carry is still faster than a calm one.
-  const speedMul = (player.rageActive ? RAGE_SPEED_MUL : 1) * (player.carrying ? CARRY.moveMul : 1);
-  const dir = canMove ? (input.right ? 1 : 0) - (input.left ? 1 : 0) : 0;
-  const depthDir = canMove ? (input.down ? 1 : 0) - (input.up ? 1 : 0) : 0;
+  const speedMul = (player.rageActive ? RAGE_SPEED_MUL : 1) * (player.carrying ? CARRY.moveMul : 1)
+    * (steering ? tornado.steer : 1);
+  const dir = canMove || steering ? (input.right ? 1 : 0) - (input.left ? 1 : 0) : 0;
+  const depthDir = canMove || steering ? (input.down ? 1 : 0) - (input.up ? 1 : 0) : 0;
   if (dir !== 0) {
     /* THE CLAMP MUST NOT CONFISCATE A LEAP. Read the cap BEFORE the acceleration
      * is added, because mid-leap it IS his current speed: a running jump leaves
@@ -15961,7 +18174,8 @@ function update(dt) {
     const max = airLeaping() ? Math.max(walkMax, Math.abs(player.vx)) : walkMax;
     player.vx += dir * PLAYER.accel * dt;
     player.vx = Math.max(-max, Math.min(max, player.vx));
-    player.facing = dir;
+    if (steering) player.tornadoFace = dir;   // applied as he comes out of the spin (advanceTornado)
+    else player.facing = dir;
   } else {
     /* FRICTION IS THE GROUND'S, and there is no ground under an air move.
      *
@@ -15986,7 +18200,10 @@ function update(dt) {
       player.vx = Math.abs(player.vx) <= drop ? 0 : player.vx - Math.sign(player.vx) * drop;
     }
     // Not steering left/right: square up to the nearest enemy (idle facing).
-    if (canMove) {
+    // …except just after a combo break-out (request 407): he turned to face the
+    // man he pressed toward, and the one he let go of is usually the nearest —
+    // squaring up to him would turn Darki straight back round.
+    if (canMove && !(player.faceHoldT > 0)) {
       const foe = nearestEnemy();
       if (foe) player.facing = Math.sign(foe.x - player.x) || player.facing;
     }
@@ -16164,6 +18381,12 @@ function update(dt) {
   // here, because it is a state change rather than a clamp.)
   clampPlayerToArena();   // the parked line resolves inside here on every path
   if (waveState === 'cleared' && player.x >= currentGate()) advanceSection();
+  /* LEVEL 02 CLEARED: the AREA CLEARED plate holds over the live floor for a
+   * beat, then the level's end screen (the game-over machinery's other face). */
+  if (activeLevel === 2 && waveState === 'complete' && !gameOver.active) {
+    l2ClearT += dt;
+    if (l2ClearT >= 2.6) startLevelClear();
+  }
 
   if (player.jumpY >= 0) {
     /* THE TOUCHDOWN EDGE. `player.grounded` still holds LAST frame's answer at
@@ -16329,12 +18552,16 @@ function update(dt) {
   updateCamera(dt);
 
   mobClock += dt;                          // shared orbit clock (deterministic)
+  player.quietT = player.attack ? 0 : (player.quietT || 0) + dt;   // how long since he last swung
+  streetMindTick(dt);                      // the street's memory fades (request 403)
+  updateHpJuice(dt);                       // the health bar's drain / ghost / flinch (request 410)
 
   for (const enemy of enemies) {
     if (enemy.benched) continue;           // parked off-screen between waves
     enemy.prevX = enemy.x; enemy.prevY = enemy.y;   // â€¦for the footstep speed gate
     enemy.hpFlash = Math.max(0, enemy.hpFlash - dt);
     enemy.hpShown += (enemy.hp - enemy.hpShown) * Math.min(1, dt * 8);
+    if (enemy.grabCooldown > 0) enemy.grabCooldown -= dt;
     // The sharpen scrape lives exactly as long as the sharpen does: a hit, a
     // knockdown, a grab or a carry that ends the wind-up ends the sound with it.
     if (enemy.sharpenSfx && enemy.mode !== 'windup') stopSharpenSfx(enemy);
@@ -16387,10 +18614,17 @@ function update(dt) {
         // How hard he actually hit, off the velocity he hit with. A Ginger
         // dropped by a jab must not bounce like one launched by the uppercut.
         enemy.bounceScale = Math.max(0.45, Math.min(1.35, enemy.vy / 620));
+        if (enemy.rushKnock) {
+          const [lo, hi] = RUSH_KNOCK.scale;
+          enemy.bounceScale = Math.max(lo, Math.min(hi, enemy.bounceScale));
+          enemy.slideVx = enemy.vx * RUSH_KNOCK.slideKeep;
+          enemy.bounceHop = 0;
+        }
         const thrownWeight = enemy.thrownByCarry
           ? 0.90 + 0.35 * (enemy.throwPower ?? 0)
           : 0.75;
-        playThud(enemy.x, thrownWeight);
+        playThud(enemy.x, thrownWeight * (0.85 + 0.35 * enemy.bounceScale));
+        groundSlam(enemy.x, enemy.y, enemy.bounceScale);
         if (enemy.dead) {
           enemy.state = 'ko';
           // A corpse now lies there for the whole death performance BEFORE the
@@ -16407,6 +18641,7 @@ function update(dt) {
           enemy.koTimer = enemy.dying
             ? (enemy.boss ? BOSS_FALLDOWN_DUR : DEATH_HOLD) + KO_FADE
             : KO_FADE;
+          if (enemy.rushKnock) enemy.koTimer += RUSH_BOUNCE_TOTAL;
           enemy.dead = false;
         } else {
           enemy.state = 'down';
@@ -16414,6 +18649,10 @@ function update(dt) {
           // speed â€” no more. He is up the frame the sheet ends. Per body, because
           // the boss's two sections are 7 and 19 frames against the mob's 9 and 6.
           enemy.downTimer = fallTimes(enemy).down / (enemy.fallRate || 1);
+          // The get-up waits for the bounce: rising starts once it has settled.
+          if (enemy.rushKnock)
+            enemy.downTimer = Math.max(enemy.downTimer,
+              RUSH_BOUNCE_TOTAL + fallTimes(enemy).getUp / (enemy.fallRate || 1));
         }
       }
     } else if (enemy.state === 'stagger') { // brief flinch, stays on its feet
@@ -16424,8 +18663,7 @@ function update(dt) {
       if (enemy.boss) advanceBossStance(enemy, dt);   // he never stops bobbing
     } else if (enemy.state === 'down') {   // KO'd on the tarmac, then back up
       enemy.downTimer -= dt;
-      enemy.bounceT += dt;
-      enemy.jumpY = -bounceLift(enemy.bounceT, enemy.bounceScale);
+      stepEnemyBounce(enemy, dt);
       if (enemy.downTimer <= 0) {
         enemy.state = 'walk'; enemy.jumpY = 0;
         enemy.mode = enemy.boss ? 'idle' : 'menace';
@@ -16443,8 +18681,7 @@ function update(dt) {
       }
     } else if (enemy.state === 'ko') {     // dead â€” lie still, then fade and tally
       enemy.koTimer -= dt;
-      enemy.bounceT += dt;
-      enemy.jumpY = -bounceLift(enemy.bounceT, enemy.bounceScale);
+      stepEnemyBounce(enemy, dt);
       // Only the LAST `KO_FADE` seconds fade. Anything before that is the death
       // animation, and a corpse that dissolves while it is still falling never
       // gets to be a corpse.
@@ -16453,6 +18690,8 @@ function update(dt) {
     } else if (enemy.boss) {
       updateBossFight(dt);                 // …and his two gears: retreat, crew, return
       stepBossAI(enemy, dt);               // MC_Olodo: stance footwork + fist combo
+    } else if (bossEnding) {
+      paceDefeatedCrew(enemy, dt);          // the fight ended on Olodo's killing blow
     } else {
       stepEnemyAI(enemy, dt);              // Streets-of-Rage mob AI
     }
@@ -16463,8 +18702,10 @@ function update(dt) {
     // The crossing hands him over at roadY, which is the lane top, so the
     // clamp resumes at the handover as a no-op.
     if (!(enemy.spawnEntry && enemy.entryPlane === 'background')) {
-      enemy.y = clampLaneBody(enemy.y, enemy.x);
+      if (enemy.spawnEntry) enemy.y = clampLaneBody(enemy.y, enemy.x);
+      else clampEnemyToArena(enemy);
       resolveVehicleCollision(enemy, 24);   // the parked line is solid; he walks around
+      if (!enemy.spawnEntry) clampEnemyToArena(enemy); // collision resolution cannot push him through a wall
     }
     // The boss drives his own frame (his stance clock, or the fist-combo step
     // table), so the generic router only applies to the street mob: it picks the
@@ -16478,7 +18719,7 @@ function update(dt) {
     // needs is already here (spec-change detection restarts the clock, `loop:
     // false` holds the last frame, `fallRate` varies the playback), so he takes
     // the same path rather than getting a second copy of it.
-    if (enemy.boss && !bossFalling(enemy)) continue;
+    if (enemy.boss && !bossFalling(enemy) && !enemy.grabbed) continue;
     const { spec, name, config: animCfg } = enemyAnim(enemy);
     enemy.anim = name;
     if (enemy.animSpec !== spec) { enemy.animSpec = spec; enemy.animTime = 0; }
@@ -16625,15 +18866,26 @@ const GRADE_PRESETS = {
     /* Distance: the sky and the residential street behind the wall. Harder,
      * because it is furthest from the fight and carries the most competing
      * detail — signage, windows, the mural. */
-    far: { desaturate: 0.34, tint: '#b4bb94', tintStrength: 0.30, vignette: 0.10 },
-    /* The gameplay plane. Much lighter: this is the ground Darki stands on and
-     * the brief is explicit that it must stay crisp, detailed and readable. It
-     * gets just enough to sit behind the fighters. */
-    near: { desaturate: 0.15, tint: '#c3c8a8', tintStrength: 0.14, vignette: 0.07 },
+    far: { desaturate: 0.17, tint: '#b4bb94', tintStrength: 0.15, vignette: 0.05 },
+    /* The gameplay plane: the shop row, the pavement and the road. It was the
+     * lightest pass (desaturate 0.15) on the reading that the plane had to stay
+     * crisp; played, the first row of shops still competed with the fighters
+     * (request 408: measured background saturation 0.42 against the fighters'
+     * 0.49). Detail is untouched — this takes COLOUR and a little VALUE, which
+     * is what separates figure from ground — so the art stays sharp and the
+     * fighters are now the most saturated, brightest things in the frame. */
+    near: { desaturate: 0.29, tint: '#b4b8a2', tintStrength: 0.14, vignette: 0.045 },
+    /* LEVEL 02's plate (GPB) and, pre-graded at load, its pillars (request 408).
+     * The facility art is far more saturated than the street — measured 0.62
+     * against the fighters' 0.49, i.e. the background out-coloured the people —
+     * so it takes the heaviest pass. A cool neutral multiply rather than the
+     * street's olive, so the police facility keeps its own blue-orange cast. */
+    l2: { desaturate: 0.37, tint: '#b2b7c1', tintStrength: 0.12, vignette: 0.055 },
   },
   strong: {
-    far: { desaturate: 0.52, tint: '#a7af86', tintStrength: 0.44, vignette: 0.16 },
-    near: { desaturate: 0.26, tint: '#b9c09c', tintStrength: 0.24, vignette: 0.11 },
+    far: { desaturate: 0.26, tint: '#a7af86', tintStrength: 0.22, vignette: 0.08 },
+    near: { desaturate: 0.36, tint: '#adb19a', tintStrength: 0.18, vignette: 0.06 },
+    l2: { desaturate: 0.43, tint: '#a9afba', tintStrength: 0.16, vignette: 0.075 },
   },
 };
 const GRADE = { preset: 'subtle' };
@@ -16800,6 +19052,93 @@ function drawWorldPlate(img, dx, dy, scale) {
 // parallax; the warm gradient behind it is only a backstop — it covers the
 // screen-shake overscan and any frame where the layer has not arrived yet, so
 // a sliver at the screen edge never reads as a seam.
+/* LEVEL 02'S ART (request 399). Fetched when Level 02 is chosen, not at boot —
+ * Level 01 players never pay for it — and the handover waits for it
+ * (isWorldReady below). A layer that fails stays null and simply is not drawn;
+ * the failure is logged and surfaced as l2Art.error. */
+const l2Art = { state: 'idle', gpb: null, mp: null, fp: [], error: null };
+function loadLevel2Art() {
+  if (l2Art.state !== 'idle') return;
+  l2Art.state = 'loading';
+  const decoded = (src) => loadImage(src).then((img) => (img.decode ? img.decode().catch(() => {}).then(() => img) : img));
+  Promise.allSettled([decoded(L2.gpb.src), decoded(L2.mp.src), ...L2.fp.map((p) => decoded(p.src))])
+    .then((r) => {
+      const v = r.map((x) => (x.status === 'fulfilled' ? x.value : null));
+      [l2Art.gpb, l2Art.mp] = v;
+      l2Art.fp = v.slice(2);
+      const bad = r.filter((x) => x.status === 'rejected').map((x) => x.reason?.message);
+      if (bad.length) { l2Art.error = bad.join('; '); console.error('[ror level 2] art failed:', l2Art.error); }
+      l2Art.state = 'ready';
+    });
+}
+const levelArtReady = () => {
+  if (frontEnd?.level !== 2) return true;
+  loadLevel2Art();
+  return l2Art.state === 'ready';
+};
+
+/* GPB, the gameplay plane: 1:1 with the camera, one uniform scale, drawn once. */
+/* THE PILLARS GET THE PLATE'S GRADE, BAKED (request 408). The middle pillars
+ * are drawn in the depth-sorted actor pass and the front pillars after it, so
+ * the screen-space pass at the seam never reaches them — left alone they would
+ * be the most saturated things on screen, out-colouring the fighters exactly as
+ * the plate did. Each is graded ONCE into an offscreen copy with the same blend
+ * ops drawEnvGrade uses (desaturate, then the multiply tint; no vignette — that
+ * is a property of the frame, not of an object), alpha restored from the
+ * original. Re-baked when the preset changes; the original is used where blend
+ * modes are not supported, exactly as the screen pass is skipped there. */
+const gradedCache = new Map();
+function gradedArt(img, tier) {
+  const preset = GRADE_PRESETS[GRADE.preset];
+  const g = preset && preset[tier];
+  if (!img || !img.width || !g || !blendSupported()) return img;
+  const key = GRADE.preset + ':' + tier;
+  let byImg = gradedCache.get(img);
+  if (!byImg) gradedCache.set(img, byImg = {});
+  if (byImg[key]) return byImg[key];
+  const c = makeCanvas(img.width, img.height), x = c.getContext('2d');
+  x.drawImage(img, 0, 0);
+  if (g.desaturate > 0) { x.globalCompositeOperation = 'saturation'; x.globalAlpha = g.desaturate; x.fillStyle = '#808080'; x.fillRect(0, 0, c.width, c.height); }
+  if (g.tintStrength > 0) { x.globalCompositeOperation = 'multiply'; x.globalAlpha = g.tintStrength; x.fillStyle = g.tint; x.fillRect(0, 0, c.width, c.height); }
+  x.globalAlpha = 1;
+  x.globalCompositeOperation = 'destination-in';
+  x.drawImage(img, 0, 0);
+  return (byImg[key] = c);
+}
+
+function drawLevel2Back() {
+  ctx.fillStyle = '#07090d';               // under the shake overscan, never seen otherwise
+  ctx.fillRect(-12, cameraY - 12, VIEW_W / (tune.zoom || 1) + 24, VIEW_H / (tune.zoom || 1) + 24);
+  if (l2Art.gpb) drawWorldPlate(l2Art.gpb, snapWorldX(-cameraX), snapWorldY(L2.artY), L2.scale);
+}
+/* One middle pillar, from the SAME snapped origin as the GPB, so the two can
+ * never drift apart. Called by the actor pass at the pillar's foot row. */
+function drawLevel2Pillar(p) {
+  if (!l2Art.mp) return;
+  const x = snapWorldX(-cameraX) + p.drawX;
+  if (x > viewW() + 40 || x + l2X(L2.mp.w) < -40) return;
+  ctx.drawImage(gradedArt(l2Art.mp, 'l2'), x, snapWorldY(L2.artY) + (p.drawY - L2.artY), l2X(L2.mp.w), l2X(L2.mp.h));
+}
+/* FP, the front pillars: nearer than anything that walks, so drawn after the
+ * whole actor pass, at their own parallax about the view's centre. */
+/* A front pillar's left edge in camera space: its centre moves at fpParallax
+ * about the view's centre, so it sits where the PSD has it as it crosses mid-screen. */
+function fpScreenX(p) {
+  const vw = viewW(), w = l2X(p.w);
+  return vw / 2 + (l2X(p.left) + w / 2 - cameraX - vw / 2) * L2.fpParallax - w / 2;
+}
+function drawLevel2Front() {
+  const vw = viewW();
+  L2.fp.forEach((p, i) => {
+    const img = l2Art.fp[i] && gradedArt(l2Art.fp[i], 'l2');
+    if (!img) return;
+    const w = l2X(p.w), h = l2X(p.h);
+    const x = snapWorldX(fpScreenX(p));
+    if (x > vw + 40 || x + w < -40) return;
+    ctx.drawImage(img, x, snapWorldY(l2Y(p.top)), w, h);
+  });
+}
+
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
   g.addColorStop(0, '#2b1033');
@@ -16841,6 +19180,86 @@ function drawFrontage() {
   const img = bg.main, scale = tune.streetScale;
   const x = snapWorldX(-cameraX * tune.streetParallax + tune.streetX);
   drawWorldPlate(img, x, snapWorldY(tune.streetY), scale);
+}
+
+/* THE ADVERT LAYER (request 337) — the business layer. Billboards on the
+ * pavement, authored on the same 9259-wide canvas as the plates (ASSETS/
+ * Adverts.png, top-aligned) and PARENTED TO THE MAIN PLAY PLANE: same scroll,
+ * same scale, same origin, drawn just in front of it so the board in front of
+ * the mural wall (board-4) is not hidden by it, and behind every vehicle and
+ * fighter. The layer is 95% empty, so it ships as one tight crop per board
+ * (_chromakey/_advertprep.js) instead of a 40 MB plate.
+ *
+ * Each board is a SLOT, keyed by `id`: the QR codes will lead to a booking app
+ * where an approved advert replaces a slot's artwork, so the art is looked up
+ * per slot and the rest of the game never needs to know which is which. */
+const ADVERT_SLOTS = [
+  { id: 'board-1', x: 2700, y: 136, w: 539, h: 413, src: 'layers/adverts/board-1.png', qr: false },  // MIVA (taken)
+  { id: 'board-2', x: 3745, y: 216, w: 201, h: 338, src: 'layers/adverts/board-2.png', qr: true },   // portrait sign
+  /* `fit` (request 345): the big two-post board is 525 px of art — planted, its
+   * panel's top ran ~116 px off the top of the frame. Scaled about its foot
+   * centre so the posts stay planted where they stood, to fit whole at the
+   * usual fighting lane (Darki at y 700: the frame's top there is world ~168,
+   * so 556 - 168 = 388 px of height is all there is; 0.70 = 367 px leaves its
+   * frame a margin under the top edge). Only this board. */
+  { id: 'board-3', x: 4345, y: 21, w: 658, h: 525, src: 'layers/adverts/board-3.png', qr: true, fit: 0.70 },    // big two-post
+  { id: 'board-4', x: 7527, y: 126, w: 491, h: 391, src: 'layers/adverts/board-4.png', qr: true },   // before the mural
+];
+/* PLANTED ON THE WALKWAY (request 344). As authored the boards' feet ended on
+ * the back edge of the pavement (546-554) or, board-4, 30 px above it (517) —
+ * standing on the shop step or on nothing. Every board's lowest row (its post
+ * feet) now sits on one line a little way INTO the walkway (it runs ~531-570
+ * here), and each foot gets a contact shadow; `slot.y` stays the authored spot. */
+const ADVERT_FOOT_Y = 556;
+let advertArt = [];              // [{ slot, img, feet }] — img is null until (or unless) it loads
+let advertStash = null;          // test hook: hideAdverts
+async function loadAdverts() {
+  return Promise.all(ADVERT_SLOTS.map(async (slot) => {
+    const img = await loadImage(slot.src).catch(() => null);
+    // the same green-fringe clean the plates get (the boards were cut from green)
+    const art = img && img.width ? deSpillLayer(img) : null;
+    return { slot, img: art, ...(art ? advertFeet(art) : { feet: [], gap: 0 }) };
+  }));
+}
+/* Where the posts meet the ground, once, at load: `gap` is how far the lowest
+ * SOLID row sits above the crop's bottom edge (board-2's crop ends in ~14 rows
+ * of faint fringe — planted by its edge, its post would still hover), and
+ * `feet` are the solid runs along the few rows above that, in its own pixels. */
+function advertFeet(cv) {
+  const w = cv.width, h = cv.height;
+  const d = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const solidAt = (x, y) => d[(y * w + x) * 4 + 3] > 128;
+  let bottom = h - 1;
+  for (; bottom > 0; bottom--) { let any = false; for (let x = 0; x < w; x++) if (solidAt(x, bottom)) { any = true; break; } if (any) break; }
+  const rows = Math.min(6, bottom + 1), runs = [];
+  let start = -1;
+  for (let x = 0; x <= w; x++) {
+    let solid = false;
+    for (let r = 0; r < rows && x < w; r++) if (solidAt(x, bottom - r)) { solid = true; break; }
+    if (solid && start < 0) start = x;
+    else if (!solid && start >= 0) { if (x - start >= 3) runs.push([start, x]); start = -1; }
+  }
+  return { feet: runs, gap: h - 1 - bottom };
+}
+function drawAdverts() {
+  if (!advertArt.length) return;
+  const scale = tune.streetScale;
+  const ox = snapWorldX(-cameraX * tune.streetParallax + tune.streetX);
+  const oy = snapWorldY(tune.streetY);
+  for (const { slot, img, feet, gap } of advertArt) {
+    if (!img) continue;
+    const k = scale * (slot.fit ?? 1);                    // a board's own fit, about its foot centre
+    const x = ox + (slot.x + slot.w * (1 - (slot.fit ?? 1)) / 2) * scale;
+    if (x > VIEW_W + PLATE_MARGIN || x + slot.w * k < -PLATE_MARGIN) continue;
+    const foot = oy + ADVERT_FOOT_Y * scale;
+    ctx.fillStyle = 'rgba(0,0,0,0.38)';
+    for (const [a, b] of feet) {
+      ctx.beginPath();
+      ctx.ellipse(x + (a + b) / 2 * k, foot - 1, ((b - a) / 2 + 9) * k, 4.5 * scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.drawImage(img, x, foot - (slot.h - gap) * k, slot.w * k, slot.h * k);
+  }
 }
 
 // Road surface is part of the street layer above; nothing extra to draw.
@@ -16978,6 +19397,9 @@ function drawPlayer() {
   const offY = tune['dOffY' + key] ?? 0;
 
   // ground shadow (tracks the base scale so it stays steady across sheets)
+  // — and the aura and the speed trail after it — belong to the floor, not to
+  // the body, so the mirror pass skips them (see drawReflections).
+  if (!reflecting) {
   ctx.fillStyle = `rgba(0,0,0,${tune.shadowAlpha})`;
   ctx.beginPath();
   const squash = player.grounded ? 1 : Math.max(0.5, 1 + player.jumpY / 500);
@@ -17002,6 +19424,7 @@ function drawPlayer() {
    * they must sort against the street exactly as he does, which they get for
    * free by riding inside his draw. */
   drawRushFx();
+  }
 
   // flash/tint: hit â†’ red, else rage â†’ gold
   let img = frame, tint = null;
@@ -17009,11 +19432,13 @@ function drawPlayer() {
   else if (player.rageActive) tint = ['#ffb020', 0.22 + 0.12 * (0.5 + 0.5 * Math.sin(mobClock * 16))];
   if (tint) img = tintedFrame(frame, tint[0], tint[1]);
 
-  // i-frame blink after being hit
-  const blink = player.invuln > 0 && player.state === 'normal' && Math.floor(player.invuln * 22) % 2 === 0;
-
+  /* DARKI IS ALWAYS DRAWN AT FULL OPACITY (request 349). There used to be an
+   * i-frame blink here (alpha 0.4 on alternate 1/22 s steps while `invuln` ran).
+   * The boss ending holds `invuln` up for its whole length and a replay could
+   * carry some over, so he read as see-through exactly where the player is
+   * watching him. The red hit flash above already says "you were hit". */
   ctx.save();
-  ctx.globalAlpha = blink ? 0.4 : 1;
+  ctx.globalAlpha = 1;
   ctx.translate(screenX, player.y + player.jumpY + offY);
   // A KO used to be the idle pose rotated flat, because there was no art of him
   // going down. Darki_Fall is that art, so the pose is drawn, not faked â€” and
@@ -17047,11 +19472,12 @@ function drawPlayer() {
     ctx.rotate(drawnTilt());
     ctx.translate(0, -pivotY);
   }
-  ctx.drawImage(img, -anchor, -drawH + (animationSprite.lifts?.[player.frame] ?? 0));   // see feetOnGround
+  // lifts: see feetOnGround; sink: see groundRow (both 0 on a sheet that sets neither)
+  ctx.drawImage(img, -anchor, -drawH + (animationSprite.lifts?.[player.frame] ?? 0) + (animationSprite.sink || 0));
   ctx.restore();
   ctx.globalAlpha = 1;
 
-  if (window.__ror?.debugHitboxes && player.attack) {
+  if (window.__ror?.debugHitboxes && player.attack && !reflecting) {
     const win = ATTACKS[player.attack].windows[player.attackStep];
     if (win) {
       const b = attackBox(win);
@@ -17079,13 +19505,13 @@ const onFallSheet = (enemy) => !enemy.grabbed && !enemy.carried
       && (enemy.state === 'hit' || enemy.state === 'down' || enemy.state === 'ko'));
 
 function drawEnemy(enemy) {
-  if (enemy.execVictim) return;          // drawn by drawExecution, with his attacker
+  if (enemy.execVictim || enemy.renderHidden) return;  // staged bosses have neither body nor reflection
   const screenX = enemy.x - cameraX;
   if (screenX < -140 || screenX > VIEW_W + 140) return;
   const { sprite: es, config, spec } = enemyAnim(enemy);
   const frameIndex = es.frames[enemy.frame] ? enemy.frame : spec.frames[0];
   const frame = es.frames[frameIndex];
-  const anchor = es.anchors[frameIndex];
+  const anchor = (spec.footAnchor && es.footAnchors ? es.footAnchors : es.anchors)[frameIndex];
   const flip = enemy.facing !== config.faces;
 
   /* A staged Agbero entering through the broken wall carries an entryScale —
@@ -17109,11 +19535,13 @@ function drawEnemy(enemy) {
   // section, so it doesn't pop when he squares up into the (wider-stanced) guard
   // frames or when the boss swaps to his combo sheet.
   const shadowRef = enemy.boss ? olodoStanceSprite : gingerWalkSprite;
-  ctx.fillStyle = `rgba(0,0,0,${tune.shadowAlpha})`;
-  ctx.beginPath();
-  ctx.ellipse(screenX + tune.shadowOffsetX, enemy.y + 5 + tune.shadowOffsetY,
-    shadowRef.drawW * 0.3 * es2 * tune.shadowScaleX, 9 * tune.shadowScaleY, 0, 0, Math.PI * 2);
-  ctx.fill();
+  if (!reflecting) {                 // the floor's, not the body's (drawReflections)
+    ctx.fillStyle = `rgba(0,0,0,${tune.shadowAlpha})`;
+    ctx.beginPath();
+    ctx.ellipse(screenX + tune.shadowOffsetX, enemy.y + 5 + tune.shadowOffsetY,
+      shadowRef.drawW * 0.3 * es2 * tune.shadowScaleX, 9 * tune.shadowScaleY, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   if ((enemy.state === 'down' || enemy.state === 'ko') && !onFallSheet(enemy)) {
     // No fall art for this body (the boss): laid flat the old way â€” sprite over
@@ -17126,6 +19554,7 @@ function drawEnemy(enemy) {
     if (flip) ctx.scale(-1, 1);
     ctx.drawImage(img, -anchor, -es.drawH + 16);
     ctx.restore();
+    if (reflecting) { ctx.globalAlpha = 1; return; }   // the stars are an overlay, not a body
     ctx.fillStyle = '#ffd23f';
     const spin = (enemy.downTimer || enemy.koTimer) * 5;
     for (let i = 0; i < 3; i++) {
@@ -17151,9 +19580,18 @@ function drawEnemy(enemy) {
     else if (enemy.state === 'stagger') ctx.rotate(Math.sign(enemy.vx || 1) * 0.14);
   }
   if (flip) ctx.scale(-1, 1);
-  ctx.drawImage(img, -anchor, -es.drawH + (es.sink || 0));   // sink: see prepSpriteFrames
+  // A standing frame off a fall sheet (spec.footAnchor) is planted by its OWN
+  // lowest ink: the sheet's union bottom is the lying body, drawn lower in the
+  // cell, so the shared `sink` would leave him floating. Measured once per frame.
+  let footDrop = es.sink || 0;
+  if (spec.footAnchor) {
+    es.inkGaps ??= [];
+    footDrop = es.inkGaps[frameIndex] ??= lowestInkGap(frame);
+  }
+  ctx.drawImage(img, -anchor, -es.drawH + footDrop);   // sink: see prepSpriteFrames
   ctx.restore();
   ctx.globalAlpha = 1;
+  if (reflecting) return;            // prompts, chevrons and the HP bar are HUD, not body
 
   // Telegraph: a red flashing chevron over the head while winding up an
   // attack â€” the SoR "about to go off" cue that lets the player react. The boss
@@ -17172,7 +19610,7 @@ function drawEnemy(enemy) {
     ctx.closePath();
     ctx.fill();
   }
-  if (enemy.mode === 'windup' && Math.floor(enemy.stateTimer * 12) % 2 === 0) {
+  if ((enemy.mode === 'windup' || enemy.mode === 'bait' || enemy.baiting) && Math.floor((enemy.baiting ? mobClock : enemy.stateTimer) * 12) % 2 === 0) {
     const hy = enemy.y - es.drawH * es2 - 14;
     ctx.fillStyle = '#ff2e2e';
     ctx.beginPath();
@@ -17195,13 +19633,20 @@ function drawEnemy(enemy) {
 }
 
 function drawActors() {
+  for (const actor of actorList()) actor.draw();
+}
+
+/* The depth-sorted draw list. Entries that stand on the floor with a body worth
+ * mirroring carry `mirror: { y, h }` — the ground row they stand on and the
+ * height of the body above it — which is all drawReflections needs. */
+function actorList() {
   // Feet define z-depth: smaller Y is farther up the road and draws first.
   // Exact ties use a stable id; lane steering keeps active bodies apart.
   // A grabbed enemy is forced just behind Darki so he stays the dominant
   // foreground sprite for the whole hold, however their feet line up.
   // Behind-the-wall entrants draw in the residential pass (see
   // drawBackgroundActors); everyone here is already on the main plane.
-  const actors = enemies.filter((enemy) => !behindWallArt(enemy)).map((enemy, i) => ({
+  const actors = enemies.filter((enemy) => !behindWallArt(enemy) && !enemy.renderHidden).map((enemy, i) => ({
     // A CARRIED man sorts in FRONT of Darki, not behind: he is held out over the
     // top of him, so the hold only reads correctly if he occludes rather than
     // hides. (A grabbed one goes behind â€” see above â€” because there Darki is the
@@ -17209,23 +19654,38 @@ function drawActors() {
     depth: enemy.carried ? player.y + 0.001 : enemy.grabbed ? player.y - 0.001 : enemy.y,
     tie: i,
     draw: () => drawEnemy(enemy),
+    // A carried man is held up off the floor; his ground is Darki's.
+    mirror: enemy.execVictim ? null : {
+      x: enemy.x,
+      y: enemy.carried ? player.y : enemy.y,
+      h: (enemy.boss ? olodoStanceSprite.drawH * tune.bossScale : gingerWalkSprite.drawH * tune.enemyScale) * (enemy.entryScale ?? 1),
+    },
   }));
   // The parked vehicles sort INTO the depth like any other body on the road:
   // each at its own authored wheel row, so a fighter standing nearer draws in
   // front and the parked body reads behind him.
-  for (const v of VEHICLE_ART) {
+  /* LEVEL 02's middle pillars sort into the same depth as everyone else, at
+   * their foot row: a man standing nearer draws in front, one behind draws
+   * behind the shaft. */
+  if (activeLevel === 2) {
+    for (const p of L2_PILLARS) actors.push({ depth: p.y, tie: -50, draw: () => drawLevel2Pillar(p) });
+  }
+  for (const v of activeLevel === 2 ? [] : VEHICLE_ART) {
     const sx = v.x - cameraX;
     if (sx < -v.w - 80 || sx > viewW() + 80) continue;
     actors.push({
       depth: v.y,
       tie: -50,
       draw: () => {
-        ctx.fillStyle = 'rgba(0,0,0,0.30)';
-        ctx.beginPath();
-        ctx.ellipse(sx + v.w * 0.5, v.y + 5, v.w * 0.46, 9, 0, 0, Math.PI * 2);
-        ctx.fill();
+        if (!reflecting) {
+          ctx.fillStyle = 'rgba(0,0,0,0.30)';
+          ctx.beginPath();
+          ctx.ellipse(sx + v.w * 0.5, v.y + 5, v.w * 0.46, 9, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.drawImage(bg.vehicles, v.sx, v.sy, v.w, v.h, Math.round(sx), Math.round(v.y - v.h), v.w, v.h);
       },
+      mirror: { x: v.x + v.w * 0.5, y: v.y, h: v.h, w: v.w },
     });
   }
   /* A DROPPED MACHETE SORTS LIKE ANYTHING ELSE ON THE ROAD — same list, same
@@ -17241,13 +19701,187 @@ function drawActors() {
     actors.push({ depth: m.y, tie: m.flight ? 60 : -40, draw: () => drawWorldWeapon(m) });
   }
   if (!batPickup.taken) actors.push({ depth: BAT_PICKUP.y, tie: 50, draw: drawBatPickup });
-  actors.push({ depth: player.y, tie: 100, draw: drawPlayer });
+  actors.push({ depth: player.y, tie: 100, draw: drawPlayer,
+    mirror: { x: player.x, y: execution ? execution.anchorY : player.y, h: spriteFor('idle').drawH * tune.playerScale } });
   // The dropped ledger sorts like anything else on the road, except while it is
   // in Darki's hand â€” then it is forced just in FRONT of him so the pickup reads.
   if (evidence.active && !evidence.gone)
     actors.push({ depth: evidence.held ? player.y + 0.001 : evidence.y, tie: 101, draw: drawEvidence });
   actors.sort((a, b) => (a.depth - b.depth) || (a.tie - b.tie));
-  for (const actor of actors) actor.draw();
+  return actors;
+}
+
+/* ==================================================== FLOOR REFLECTIONS ==
+ *
+ * REQUEST 400: a body standing on a wet or polished floor shows in it.
+ *
+ * HOW. Between the floor and the actor pass, every body in actorList() that
+ * carries a `mirror` is drawn AGAIN by its own draw function — same frame, same
+ * tint, same flip — into a half-resolution buffer, mirrored about the row its
+ * feet stand on and foreshortened (`squash`: the floor is seen from above, so
+ * its mirror image is shorter than the body). `reflecting` tells those draw
+ * functions to leave out what belongs to the floor or the HUD (shadows, aura,
+ * prompts, HP bars). Each body is faded with distance from its feet on its own
+ * scratch layer first, so two men at different depths each fade from their own
+ * ground. Then the buffer is:
+ *   - MASKED by the level's wet map — only where the art is actually wet does
+ *     anything show (Level 02: the whole facility floor, weighted by the painted
+ *     floor's own gloss, crates cut out; Level 01: the kerb-side sheen and the
+ *     puddle by Baba Tyre, the dry asphalt shows nothing). Both maps are
+ *     generated from the art by _chromakey/req400/wetmap.js,
+ *   - TINTED toward the floor's colour (a mirror in dark water is darker than
+ *     the thing it mirrors),
+ *   - and composited with a slow horizontal RIPPLE, row by row, which is what
+ *     makes it read as water rather than as a second copy of the sprite.
+ * The half resolution is deliberate: it softens the image the way a wet,
+ * not-quite-flat floor does, and it halves the fill cost on a phone.
+ *
+ * Darki's own sprite is untouched by any of this (project rule: he is always
+ * drawn at full opacity). The reflection is a separate image in the floor.
+ */
+let reflecting = false;
+const WET_SCALE = 4;            // the wet maps are 1/4 of their art's pixels
+const REFLECT = {
+  on: true,
+  res: 0.5,                     // buffer resolution vs. the backing store
+  squash: 0.86,                 // mirror image height / body height
+  fade: 0.72,                   // the image fades out over this much of the body's height
+  levels: {
+    1: { src: 'layers/level-wet.png', artW: WORLD_W, artH: 1124, alpha: 0.9,
+      tint: '#120c0a', tintA: 0.22, ripple: 1.6 },
+    2: { src: 'layers/level2/wet.png', artW: 7239, artH: 724, alpha: 0.95,
+      tint: '#0a0d14', tintA: 0.12, ripple: 0.8 },
+  },
+};
+const wetArt = {};              // level -> Image (or 'loading' / 'failed')
+const reflBuf = { c: null, g: null, s: null, sg: null };
+
+function wetMapFor(level) {
+  const cfg = REFLECT.levels[level];
+  if (!cfg) return null;
+  const v = wetArt[level];
+  if (v && v !== 'loading' && v !== 'failed') return v;
+  if (!v) {
+    wetArt[level] = 'loading';
+    loadImage(cfg.src).then((img) => { wetArt[level] = img; })
+      .catch((e) => { wetArt[level] = 'failed'; console.warn('[ror] wet map failed:', cfg.src, e?.message); });
+  }
+  return null;
+}
+
+/* Where the wet map lies, in the scene space every world draw uses: the same
+ * origin, scale and snapping as the art it was read from. */
+function wetPlacement(level) {
+  const cfg = REFLECT.levels[level];
+  if (level === 2) return { x: snapWorldX(-cameraX), y: snapWorldY(L2.artY), w: cfg.artW * L2.scale, h: cfg.artH * L2.scale, cfg };
+  /* Sized off the mural AS LOADED: an Android browser gets the lowres copy, and
+   * streetScale is then WORLD_W / that copy's width, not 1. */
+  const img = bg?.main, k = tune.streetScale;
+  return { x: snapWorldX(-cameraX * tune.streetParallax + tune.streetX), y: snapWorldY(tune.streetY),
+    w: (img?.width || cfg.artW) * k, h: (img?.height || cfg.artH) * k, cfg };
+}
+
+function drawReflections() {
+  if (!REFLECT.on) return;
+  const level = activeLevel === 2 ? 2 : 1;
+  const wet = wetMapFor(level);
+  if (!wet) return;
+  const bodies = actorList().filter((a) => a.mirror);
+  if (!bodies.length) return;
+
+  const bw = Math.max(1, Math.round(canvas.width * REFLECT.res));
+  const bh = Math.max(1, Math.round(canvas.height * REFLECT.res));
+  if (!reflBuf.c) {
+    reflBuf.c = makeCanvas(bw, bh); reflBuf.g = reflBuf.c.getContext('2d');
+    reflBuf.s = makeCanvas(bw, bh); reflBuf.sg = reflBuf.s.getContext('2d');
+  }
+  if (reflBuf.c.width !== bw || reflBuf.c.height !== bh) {
+    reflBuf.c.width = reflBuf.s.width = bw;
+    reflBuf.c.height = reflBuf.s.height = bh;
+  }
+  const g = reflBuf.g, sg = reflBuf.sg;
+  // The scene transform as it stands (shake, zoom, camera), shrunk to the buffer.
+  const M = ctx.getTransform();
+  const r = REFLECT.res;
+  const setScene = (c) => c.setTransform(M.a * r, M.b * r, M.c * r, M.d * r, M.e * r, M.f * r);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+  g.clearRect(0, 0, bw, bh);
+
+  /* EVERY STEP WORKS ON ONE BODY'S RECTANGLE, never the whole buffer: the part
+   * of the floor its reflection can reach (its width, from its ground row down
+   * the fade). Whole-buffer clears and composites per body doubled the frame. */
+  const U = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };   // union, buffer px
+  const main = ctx;
+  for (const b of bodies) {
+    const m = b.mirror;
+    if (Math.abs(m.x - cameraX - VIEW_W / 2) > VIEW_W / 2 + 320) continue;   // off screen
+    const gy = m.y, fadeH = Math.max(20, m.h * REFLECT.fade);
+    const span = m.w ? m.w / 2 + 24 : Math.max(170, m.h * 0.9);   // reach of a kick or a sprawl
+    const rx0 = Math.max(0, Math.floor((M.a * (m.x - span - cameraX) + M.e) * r));
+    const rx1 = Math.min(bw, Math.ceil((M.a * (m.x + span - cameraX) + M.e) * r));
+    const ry0 = Math.max(0, Math.floor((M.d * gy + M.f) * r));
+    const ry1 = Math.min(bh, Math.ceil((M.d * (gy + fadeH) + M.f) * r));
+    if (rx1 <= rx0 || ry1 <= ry0) continue;
+    const rw = rx1 - rx0, rh = ry1 - ry0;
+    sg.setTransform(1, 0, 0, 1, 0, 0);
+    sg.globalCompositeOperation = 'source-over'; sg.globalAlpha = 1;
+    sg.clearRect(rx0, ry0, rw, rh);
+    sg.save();
+    sg.beginPath(); sg.rect(rx0, ry0, rw, rh); sg.clip();
+    setScene(sg);
+    sg.translate(0, gy);
+    sg.scale(1, -REFLECT.squash);
+    sg.translate(0, -gy);
+    ctx = sg; reflecting = true;
+    try { b.draw(); } finally { ctx = main; reflecting = false; }
+    // Fade from the feet down (the clip keeps it, and everything else, inside
+    // the rectangle, which starts at the ground row: nothing shows above it).
+    setScene(sg);
+    sg.globalCompositeOperation = 'destination-in';
+    sg.globalAlpha = 1;
+    const fade = sg.createLinearGradient(0, gy, 0, gy + fadeH);
+    fade.addColorStop(0, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.4, 'rgba(0,0,0,0.7)');
+    fade.addColorStop(1, 'rgba(0,0,0,0)');
+    sg.fillStyle = fade;
+    sg.fillRect(m.x - span - cameraX, gy, span * 2, fadeH);
+    sg.restore();
+    g.drawImage(reflBuf.s, rx0, ry0, rw, rh, rx0, ry0, rw, rh);
+    U.x0 = Math.min(U.x0, rx0); U.y0 = Math.min(U.y0, ry0);
+    U.x1 = Math.max(U.x1, rx1); U.y1 = Math.max(U.y1, ry1);
+  }
+  if (!(U.x1 > U.x0 && U.y1 > U.y0)) return;
+  const uw = U.x1 - U.x0, uh = U.y1 - U.y0;
+
+  // Only where the floor is wet.
+  const P = wetPlacement(level);
+  g.save();
+  g.beginPath(); g.rect(U.x0, U.y0, uw, uh); g.clip();
+  setScene(g);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(wet, P.x, P.y, P.w, P.h);
+  // A mirror in dark water is darker than what it mirrors.
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'source-atop';
+  g.globalAlpha = P.cfg.tintA;
+  g.fillStyle = P.cfg.tint;
+  g.fillRect(U.x0, U.y0, uw, uh);
+  g.restore();
+
+  // Onto the frame, row band by row band, each nudged sideways on a slow wave.
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = P.cfg.alpha;
+  const STRIP = 2, amp = P.cfg.ripple * baseScale(), t = mobClock;
+  const inv = 1 / r;
+  for (let y = U.y0; y < U.y1; y += STRIP) {
+    const h = Math.min(STRIP, U.y1 - y);
+    const depth = (y - U.y0) / uh;                         // further from the feet, more ripple
+    const dx = amp * (0.35 + 0.65 * depth) * Math.sin(y * inv * 0.11 + t * 2.3);
+    ctx.drawImage(reflBuf.c, U.x0, y, uw, h, U.x0 * inv + dx, y * inv, uw * inv, h * inv);
+  }
+  ctx.restore();
 }
 
 /* (A weapon on the tarmac — or in the air — is drawWorldWeapon, beside the
@@ -17293,47 +19927,124 @@ function drawLedgerFace(s = 1) {
 
 /* ===================================================== THE STATUS PLATE ===
  *
- * `frontend/ui/hp-frame.png` — portrait ring, name plate and the two bar slots,
- * supplied as finished art. Everything here is the LIVE half drawn into it.
+ * REQUEST 410: the SWORD FRAME — `frontend/ui/hp-sword.png`, keyed off the
+ * supplied green-screen HP.png by _chromakey/req410/key.js. A portrait ring on
+ * the left, two engraved channels along the grip and an engraved panel in the
+ * blade. Mapped as asked:
+ *   - the long top channel   = HEALTH
+ *   - the shorter channel    = RUN ENERGY (the sprint gauge, player.rushStam)
+ *   - the panel in the blade = RAGE (fills toward the tip; drains with the burst)
+ * Every slot was MEASURED off the keyed art (_chromakey/req410/measure.js, the
+ * dark channel runs and a flood fill of the portrait hole; checked by drawing
+ * them over the art, req410/slots.png) and is held in ART PIXELS of the 860x301
+ * image, so the frame can be drawn at any size. The channels are empty in the
+ * art, so — unlike the old mock-up plate — nothing has to be painted out first.
  *
- * THE ART IS A MOCK-UP, NOT AN EMPTY FRAME. It ships with its bars already
- * painted — gold to 39%, red to about 70% — because it was drawn as a picture
- * of the HUD rather than as a skin for one. So each bar's slot is repainted
- * with the empty-slot colour before the live fill goes down; otherwise the
- * baked-in gold would show through wherever the real value is lower, and the
- * bar would appear to have a floor it does not have.
- *
- * The rectangles below were MEASURED off the asset (a pixel scan for the gold
- * and red runs, bounded to exclude the frame's own gold rim), not eyeballed,
- * and are held as fractions of the image so the plate can be drawn at any size.
- * If the art is re-exported with different proportions these are the six
- * numbers to re-measure. */
+ * The health bar takes the four lessons of the supplied tutorial video
+ * (HP_JUICE below): smooth drain, the ghost bar, the flinch, and the colour
+ * that knows the danger. */
 const HP_PLATE = {
-  img: null,                       // frontend/ui/hp-frame.png, loaded at boot
-  aspect: 2172 / 724,
-  /* Drawn height as a fraction of VIEW_H, and the margins, both taken from the
-   * placement reference. Anchored to HEIGHT rather than width so the plate is
-   * the same physical size on a 16:9 screen and on a widened phone. */
-  hFrac: 0.117,
-  left: 14,
-  top: 10,
-  /* Both bars share one track; only the rows differ. Fractions of the image. */
-  trackX0: 565 / 2172,
-  trackX1: 2100 / 2172,
-  hpY0: 291 / 724,
-  hpY1: 378 / 724,
-  rageY0: 416 / 724,
-  rageY1: 495 / 724,
-  slot: '#1b2430',                 // the empty part of a slot, sampled off the art
-  /* THE PORTRAIT RING, measured the same way (an alpha scan of the art left of
-   * the bar track). The frame ships with a grey placeholder silhouette in it;
-   * Darki's own head is drawn over that, clipped to the ring's inner circle.
-   * `r` is a fraction of the image HEIGHT so the circle stays round whatever
-   * the plate is scaled to. */
-  faceCX: 283 / 2172,
-  faceCY: 355 / 724,
-  faceR: 196 / 724,
+  img: null,                       // frontend/ui/hp-sword.png, loaded at boot
+  artW: 860, artH: 301,
+  aspect: 860 / 301,
+  /* Drawn height as a fraction of VIEW_H. 0.13 puts its bottom edge at ~104 px,
+   * clear of everything laid out under it (the streak reads this, see drawRunHud). */
+  hFrac: 0.13,
+  left: 12,
+  top: 8,
+  hp:  { x0: 213, x1: 620, y0: 110, y1: 140, r: 6 },
+  run: { x0: 222, x1: 544, y0: 150, y1: 176, r: 6 },
+  /* The blade's engraved panel, traced clockwise from the hilt end. */
+  rage: [[641, 121], [672, 116], [712, 108], [762, 93], [748, 112], [722, 140], [690, 170], [668, 189], [652, 173], [638, 150]],
+  face: { cx: 133.5, cy: 168.5, r: 80.5 },
 };
+
+/* ====================================================== THE JUICY HEALTH BAR ==
+ *
+ * The supplied tutorial ("meet the health bar", 01-04), taken number for number:
+ *   01 SMOOTH DRAIN   the fill eases to its new width over 0.75 s, quint ease-out,
+ *                     instead of snapping ("let the damage take its time").
+ *   02 GHOST BAR      a pale bar holds where the health WAS, waits 0.4 s, then
+ *                     follows over 1.0 s, quint ease-out ("a ghost that shows
+ *                     what you lost").
+ *   03 THE HIT        the fill flashes to white in 0.03 s and back over 0.14 s,
+ *                     and the bar jolts sideways (kx - 9) in 0.05 s ("make the bar
+ *                     flinch"). Here the whole sword jolts — the bar is part of it.
+ *   04 LOW HEALTH     green above half, amber at or under 50%, red at or under 25%
+ *                     ("let the colour know the danger").
+ * Healing is not a hit: the fill rises on the same ease and the ghost simply
+ * stays with it. The state is stepped in update() (frame-rate independent), and
+ * drawn by drawHud. */
+const HP_JUICE = {
+  drain: 0.75, ghostDelay: 0.4, ghostDur: 1.0,
+  flashIn: 0.03, flashOut: 0.14,
+  kick: 9, kickOut: 0.05, kickBack: 0.12,
+  green: '#46d16b', amber: '#f0c24b', red: '#e5534b', ghost: '#f3efe4',
+};
+const hpJuice = { last: null, fill: 1, from: 1, to: 1, t: 1, ghost: 1, gFrom: 1, gTo: 1, gT: 9, flashT: 9, kickT: 9 };
+const quintOut = (t) => 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 5);
+function hpJuiceColor(p) {
+  return p <= 0.25 ? HP_JUICE.red : p <= 0.5 ? HP_JUICE.amber : HP_JUICE.green;
+}
+/* 03: called where the blow lands (damagePlayer). The drain and the ghost need
+ * no call — they follow the value. */
+function hudHit() {
+  /* Damage starts hit-stop before the next simulation tick. Begin both effects
+   * at their impact peak so the frozen frames show the flash and sword jolt,
+   * then let the ordinary HUD clock ease them home when play resumes. */
+  hpJuice.flashT = HP_JUICE.flashIn;
+  hpJuice.kickT = HP_JUICE.kickOut;
+}
+function updateHpJuice(dt) {
+  const J = hpJuice, K = HP_JUICE;
+  const target = Math.max(0, Math.min(1, player.hp / player.maxHp));
+  if (J.last == null) { J.last = J.fill = J.from = J.to = J.ghost = J.gFrom = J.gTo = target; }
+  if (target !== J.last) {
+    J.from = J.fill; J.to = target; J.t = 0;                       // 01
+    if (target < J.last) { J.gFrom = Math.max(J.ghost, J.fill); J.gTo = target; J.gT = 0; }   // 02
+    J.last = target;
+  }
+  J.t += dt;
+  J.fill = J.from + (J.to - J.from) * quintOut(J.t / K.drain);
+  J.gT += dt;
+  if (J.gT >= K.ghostDelay) J.ghost = J.gFrom + (J.gTo - J.gFrom) * quintOut((J.gT - K.ghostDelay) / K.ghostDur);
+  else J.ghost = J.gFrom;
+  if (J.ghost < J.fill) J.ghost = J.fill;                        // healing: the ghost rides along
+  J.flashT += dt;
+  J.kickT += dt;
+}
+const hpFlashAmt = () => {
+  const t = hpJuice.flashT, K = HP_JUICE;
+  return t < K.flashIn ? t / K.flashIn : Math.max(0, 1 - (t - K.flashIn) / K.flashOut);
+};
+const hpKickPx = () => {
+  const t = hpJuice.kickT, K = HP_JUICE;
+  if (t < K.kickOut) return -K.kick * quintOut(t / K.kickOut);
+  return -K.kick * Math.max(0, 1 - quintOut((t - K.kickOut) / K.kickBack));
+};
+
+/* A slot fill that reads as SUNK INTO the engraving: a rounded strip, then the
+ * channel's own shadow laid back over its top and a thin catch-light along the
+ * bottom, so the colour sits in the groove rather than on the bronze. */
+function engravedFill(x, y, w, h, r, col, alpha = 1) {
+  if (w <= 0.5) return;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.beginPath();
+  const rr = Math.min(r, w / 2, h / 2);
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, rr); else ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.fillStyle = col;
+  ctx.fillRect(x, y, w, h);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, 'rgba(0,0,0,0.42)');
+  g.addColorStop(0.38, 'rgba(0,0,0,0)');
+  g.addColorStop(0.82, 'rgba(255,255,255,0.10)');
+  g.addColorStop(1, 'rgba(0,0,0,0.25)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
 
 function drawHud() {
   const plate = HP_PLATE.img;
@@ -17348,61 +20059,85 @@ function drawHud() {
 
   if (plate && plate.width) {
     const h = VIEW_H * HP_PLATE.hFrac, w = h * HP_PLATE.aspect;
-    const x = HP_PLATE.left, y = HP_PLATE.top;
-    ctx.drawImage(plate, x, y, w, h);
-    /* HIS FACE IN THE RING, over the art's grey placeholder. Clipped to the
-     * ring's inner circle so the crop's square corners never show, and drawn
-     * with the same 1.12x framing the menu and pause panel use — the crop is
-     * head-and-shoulders, and at 1:1 it sits too small inside the ring. */
+    const k = h / HP_PLATE.artH;                       // art px -> virtual px
+    const x = HP_PLATE.left + hpKickPx(), y = HP_PLATE.top;   // 03: the whole sword flinches
+    const ax = (v) => x + v * k, ay = (v) => y + v * k;
+    /* HIS FACE IN THE RING — behind the frame, so the ring's own bevel sits over
+     * the edge of the crop. Same 1.12x head-and-shoulders framing as before. */
     const face = frontEnd?.ui?.avatar;
     if (face) {
-      const fcx = x + w * HP_PLATE.faceCX, fcy = y + h * HP_PLATE.faceCY;
-      const fr = h * HP_PLATE.faceR;
+      const F = HP_PLATE.face, fcx = ax(F.cx), fcy = ay(F.cy), fr = F.r * k;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(fcx, fcy, fr, 0, Math.PI * 2);
+      ctx.arc(fcx, fcy, fr + 1, 0, Math.PI * 2);
       ctx.clip();
+      ctx.fillStyle = '#10141c';
+      ctx.fillRect(fcx - fr - 2, fcy - fr - 2, fr * 2 + 4, fr * 2 + 4);
       const fs = fr * 2 * 1.12;
       ctx.drawImage(face, fcx - fs / 2, fcy - fs / 2 + fr * 0.04, fs, fs);
       ctx.restore();
     }
-    const bx = x + w * HP_PLATE.trackX0;
-    const bw = w * (HP_PLATE.trackX1 - HP_PLATE.trackX0);
-    const band = (y0, y1) => ({ by: y + h * y0, bh: h * (y1 - y0) });
-    /* HP — the slot first, then the drained "chip" the old bar had, then the
-     * live value. `hpShown` is the lagging value that makes a hit read as a
-     * drop rather than a jump, and it is kept: it is feedback, not decoration. */
-    const hp = band(HP_PLATE.hpY0, HP_PLATE.hpY1);
-    ctx.fillStyle = HP_PLATE.slot;
-    ctx.fillRect(bx, hp.by, bw, hp.bh);
-    const shown = Math.max(hpFrac, player.hpShown / player.maxHp);
-    if (shown > hpFrac) {
-      ctx.fillStyle = 'rgba(255,90,90,0.55)';
-      ctx.fillRect(bx, hp.by, bw * Math.min(1, shown), hp.bh);
+    ctx.drawImage(plate, x, y, w, h);
+
+    /* HEALTH — the long channel, with all four lessons. */
+    const H = HP_PLATE.hp, hx = ax(H.x0), hy = ay(H.y0), hw = (H.x1 - H.x0) * k, hh = (H.y1 - H.y0) * k, hr = H.r * k;
+    const J = hpJuice;
+    engravedFill(hx, hy, hw * J.ghost, hh, hr, HP_JUICE.ghost, 0.92);          // 02
+    engravedFill(hx, hy, hw * J.fill, hh, hr, hpJuiceColor(hpFrac));           // 01 + 04
+    const fl = hpFlashAmt();
+    if (fl > 0) engravedFill(hx, hy, hw * Math.max(J.fill, 0.02), hh, hr, '#ffffff', fl);   // 03
+
+    /* RUN ENERGY — the second channel. Always shown now: it has its own slot. */
+    const R = HP_PLATE.run, rx = ax(R.x0), ry = ay(R.y0), rw = (R.x1 - R.x0) * k, rh = (R.y1 - R.y0) * k, rr = R.r * k;
+    const ef = Math.max(0, Math.min(1, player.rushStam));
+    const denied = player.rushDeniedT > 0 && Math.sin(mobClock * 40) > 0;
+    const eCol = denied ? '#ff4d4d'
+      : player.rushWinded ? '#8a6a52'
+      : rushInexhaustible() ? '#ffb020'
+      : rushState !== RUSH_STATE.NONE ? '#ffd27a'
+      : ef >= 1 ? '#7be0a4' : '#c8a76a';
+    engravedFill(rx, ry, rw * ef, rh, rr, eCol);
+    if (player.rushWinded || denied) {
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.font = uiFont(800, Math.max(7, Math.round(rh * 0.78)));
+      ctx.fillStyle = denied ? '#ffd7d7' : '#e0c4ad';
+      ctx.fillText(player.rushWinded ? 'WINDED' : 'NO STAMINA', rx + rh * 0.4, ry + rh / 2 + 0.5);
     }
-    ctx.fillStyle = playerHealthColor(hpFrac);
-    ctx.fillRect(bx, hp.by, bw * Math.max(0, Math.min(1, hpFrac)), hp.bh);
-    /* RAGE */
-    const rg = band(HP_PLATE.rageY0, HP_PLATE.rageY1);
-    ctx.fillStyle = HP_PLATE.slot;
-    ctx.fillRect(bx, rg.by, bw, rg.bh);
-    ctx.fillStyle = rageCol;
-    ctx.fillRect(bx, rg.by, bw * Math.max(0, Math.min(1, rf)), rg.bh);
-    /* NO HP NUMBER. The frame's art carries a baked-in "39/100" from the
-     * mock-up and the live readout was drawn over the same spot — two numbers
-     * competing for one slot, and the bar already says everything the number
-     * did. The slot repaint above is what hides the painted one.
-     *
-     * The RAGE label stays: it names a bar that is otherwise unlabelled, and it
-     * is the one place the rage TIMER can be read while it is burning down.
-     * Sized off the plate rather than written as a constant — re-exporting the
-     * frame larger must not leave the type behind at its old size. */
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.font = uiFont(800, Math.round(rg.bh * 0.55));
-    ctx.fillStyle = player.rageActive ? '#fff2c4' : '#ffffff';
-    ctx.fillText(player.rageActive ? `RAGE!  ${player.rageTimer.toFixed(1)}s` : 'RAGE',
-      bx + rg.bh * 0.32, rg.by + rg.bh / 2);
+
+    /* RAGE — the blade's panel, filling from the hilt toward the tip. While the
+     * burst burns it DRAINS with the timer, and full-but-unspent it pulses. */
+    const poly = HP_PLATE.rage.map(([px2, py2]) => [ax(px2), ay(py2)]);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [px2, py2] of poly) { minX = Math.min(minX, px2); maxX = Math.max(maxX, px2); minY = Math.min(minY, py2); maxY = Math.max(maxY, py2); }
+    const rfShow = player.rageActive ? Math.max(0, player.rageTimer / RAGE_DUR) : Math.max(0, Math.min(1, rf));
+    ctx.save();
+    ctx.beginPath();
+    poly.forEach(([px2, py2], i) => (i ? ctx.lineTo(px2, py2) : ctx.moveTo(px2, py2)));
+    ctx.closePath();
+    ctx.clip();
+    ctx.fillStyle = 'rgba(8,4,2,0.55)';                 // the empty panel reads as a slot
+    ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+    if (rfShow > 0) {
+      const g = ctx.createLinearGradient(minX, 0, maxX, 0);
+      g.addColorStop(0, player.rageActive ? '#ff8a1e' : '#b0122e');
+      g.addColorStop(1, rageCol);
+      ctx.fillStyle = g;
+      ctx.fillRect(minX, minY, (maxX - minX) * rfShow, maxY - minY);
+      if (player.rageActive || rf >= 1) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = `rgba(255,200,90,${0.18 + 0.22 * pulse})`;
+        ctx.fillRect(minX, minY, (maxX - minX) * rfShow, maxY - minY);
+      }
+    }
+    ctx.restore();
+    if (player.rageActive) {
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.font = uiFont(900, Math.max(8, Math.round(h * 0.13)));
+      ctx.fillStyle = '#fff2c4';
+      ctx.fillText(`${player.rageTimer.toFixed(1)}s`, ax(700), ay(208));
+    }
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
   } else {
@@ -17456,7 +20191,8 @@ function drawHud() {
       : (player.mcFist === 0 ? 'RMB' : 'LMB');
     const lap = `lap ${Math.max(1, player.mcLaps)}/${MCOMBO.laps}`;
     ctx.fillText(`COMBO  ${player.mcStamina.toFixed(1)}s  ${lap}  next: ${prompt}`, px + 5, py + 61);
-  } else if (rushState !== RUSH_STATE.NONE || player.rushStam < 0.999 || player.rushDeniedT > 0) {
+  } else if (!hasPlate && (rushState !== RUSH_STATE.NONE || player.rushStam < 0.999 || player.rushDeniedT > 0)) {
+    // (With the sword frame up, the gauge lives in its own channel — request 410.)
     // THE SPRINT GAUGE. It shares the combo's row and yields to it, because the
     // two can never be needed at once â€” you cannot be running and holding a man.
     //
@@ -17520,6 +20256,140 @@ function drawHud() {
 // MC_Olodo's boss plate: a full-width meter under a slanted name tag, the
 // arcade "this one has a health bar" signal. Drawn instead of the little
 // floating bar over his head.
+/* THE STREAK, under the health plate (request 338; moved there in 344). The count punches up on every hit,
+ * the bar under it is the time left to land the next one, and a milestone word
+ * shouts over it. The multiplier the score is earning sits beside the count. */
+function drawRunHud() {
+  if (run.regen) {
+    // healing out of the fight: a quiet pill under the health plate
+    const a = 0.55 + 0.45 * Math.sin(mobClock * 5);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(10,30,18,0.72)';
+    ctx.fillRect(22, 112, 132, 22);
+    ctx.fillStyle = '#7dffa0';
+    ctx.font = uiFont(800, 11);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('+  RECOVERING', 32, 123);
+    ctx.restore();
+  }
+  const show = run.combo >= 1;
+  if (!show && run.milestoneT <= 0) return;
+  /* TOP LEFT, UNDER DARKI'S HEALTH (request 344; it was under the top-right
+   * buttons). Below the plate's own row — the sprint/grab gauge sits directly
+   * under it and the RECOVERING pill under that — and left-aligned with the
+   * plate so the streak reads as part of his status block. */
+  const x = HP_PLATE.left + 8;
+  const y = HP_PLATE.top + VIEW_H * HP_PLATE.hFrac + 96;   // the count's baseline
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  if (show) {
+    const left = Math.max(0, run.comboT / run.comboWin);
+    const pop = 1 + run.popT * 1.6;
+    const frame = Math.min(COMBO_SPLASH.count, run.combo) - 1;
+    const sx = (frame % COMBO_SPLASH.cols) * COMBO_SPLASH.frame;
+    const sy = Math.floor(frame / COMBO_SPLASH.cols) * COMBO_SPLASH.frame;
+    const size = COMBO_SPLASH.draw;
+    const artX = x - 10, artY = y - 94;   // 12px larger, centre preserved
+    ctx.save();
+    ctx.translate(artX + size / 2, artY + size / 2);
+    ctx.scale(pop, pop);                 // the supplied splatter punches toward the screen on each hit
+    if (COMBO_SPLASH.img?.width) {
+      ctx.drawImage(COMBO_SPLASH.img, sx, sy, COMBO_SPLASH.frame, COMBO_SPLASH.frame,
+        -size / 2, -size / 2, size, size);
+    } else {
+      // A failed optional UI image must never take the combat readout with it.
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = display(900, 54);
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(5,6,10,0.85)';
+      ctx.strokeText(String(run.combo), 0, -5);
+      ctx.fillStyle = '#ffe45e';
+      ctx.fillText(String(run.combo), 0, -5);
+      ctx.font = uiFont(900, 13);
+      ctx.fillStyle = '#f4f5f7';
+      ctx.fillText('HIT', 0, 29);
+    }
+    ctx.restore();
+    const lx = artX + size + 4;
+    const mul = comboMul(run.combo);
+    if (mul > 1) {
+      ctx.font = uiFont(900, 14);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(5,6,10,0.85)';
+      ctx.strokeText(`x${mul.toFixed(2).replace(/0$/, '')}`, lx, y - 6);
+      ctx.fillStyle = '#ff9a3d';
+      ctx.fillText(`x${mul.toFixed(2).replace(/0$/, '')}`, lx, y - 6);
+    }
+    if (run.combo > COMBO_SPLASH.count) {
+      ctx.font = uiFont(900, 13);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(5,6,10,0.85)';
+      ctx.strokeText(`+${run.combo - COMBO_SPLASH.count}`, lx, y + 15);
+      ctx.fillStyle = '#f4f5f7';
+      ctx.fillText(`+${run.combo - COMBO_SPLASH.count}`, lx, y + 15);
+    }
+    // the window: drains to nothing, and warms to red as it does
+    const bw = 170, bh = 6, by = y + 30;
+    ctx.fillStyle = 'rgba(5,6,10,0.7)';
+    ctx.fillRect(x - 1, by - 1, bw + 2, bh + 2);
+    ctx.fillStyle = left > 0.35 ? '#ffe45e' : '#ff4a3a';
+    ctx.fillRect(x, by, bw * left, bh);
+  }
+  if (run.milestoneT > 0 && run.milestone) {
+    const u = run.milestoneT / 1.4;
+    ctx.globalAlpha = Math.min(1, u * 3);
+    ctx.font = display(900, 30 + (1 - u) * 6);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(5,6,10,0.9)';
+    ctx.strokeText(run.milestone, x, y + 72);
+    ctx.fillStyle = '#ff6a3d';
+    ctx.fillText(run.milestone, x, y + 72);
+  }
+  ctx.restore();
+}
+
+/* A medpack lying in the street: a battered white tin with a red cross, bobbing
+ * over a soft red pool so it reads on any part of the road. Blinks before it
+ * expires. World space, like the weapons. */
+function drawMedpacks() {
+  for (const m of medpacks) {
+    const sx = m.x - cameraX;
+    if (sx < -80 || sx > viewW() + 80) continue;
+    if (MEDPACK.life - m.t < 4 && Math.floor(m.t * 8) % 2 === 0) continue;
+    const lift = MEDPACK.lift + Math.sin(m.t * 3.2) * 4;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(sx, m.y + 2, 22, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    const pool = ctx.createRadialGradient(sx, m.y, 2, sx, m.y, 54);
+    pool.addColorStop(0, `rgba(255,70,70,${0.35 + 0.15 * Math.sin(m.t * 3.2)})`);
+    pool.addColorStop(1, 'rgba(255,40,40,0)');
+    ctx.fillStyle = pool;
+    ctx.beginPath(); ctx.ellipse(sx, m.y, 54, 13, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.translate(sx, m.y - lift);
+    const w = 44, h = 30;
+    ctx.strokeStyle = '#2a1d17'; ctx.lineWidth = 3;
+    ctx.strokeRect(-9, -h / 2 - 8, 18, 9);                          // the handle
+    ctx.fillStyle = '#ece6d6';
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.fillStyle = '#c9c0ab';
+    ctx.fillRect(-w / 2, h / 2 - 7, w, 7);                          // the darker base band
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+    ctx.fillStyle = '#c3202b';
+    ctx.fillRect(-4, -11, 8, 20);
+    ctx.fillRect(-11, -4, 22, 8);
+    ctx.fillStyle = 'rgba(60,40,30,0.35)';                          // grime
+    ctx.fillRect(-w / 2 + 4, -h / 2 + 3, 6, 3);
+    ctx.fillRect(w / 2 - 12, h / 2 - 12, 7, 4);
+    ctx.restore();
+  }
+}
+
 function drawBossHud() {
   const w = 560, x = (VIEW_W - w) / 2, y = 58;
   const frac = Math.max(0, boss.hp / boss.maxHp);
@@ -17577,7 +20447,7 @@ function drawWaveHud() {
     ctx.fillText('AREA CLEARED', VIEW_W / 2, VIEW_H / 2 - 6);
     ctx.font = uiFont(400, 16);
     ctx.fillStyle = '#cfd8ea';
-    ctx.fillText('MC OLODO is down — Lagos Island is yours', VIEW_W / 2, VIEW_H / 2 + 30);
+    ctx.fillText(activeLevel === 2 ? `${LEVELS[2].code}  —  ${LEVELS[2].title}` : 'MC OLODO is down — Lagos Island is yours', VIEW_W / 2, VIEW_H / 2 + 30);
   }
   if (fightBanner > 0) {                 // overlays the live street; never a separate cutscene
     const k = Math.min(1, fightBanner / 0.25);
@@ -17613,35 +20483,13 @@ function drawLetterbox(amount) {
  * pixels rather than in seconds so the close and the open agree, and so the
  * shallower cutscene bars (CUT.barH 92) fade over the same physical distance
  * the deep entry gate (180) does. */
-const HAIRLINE_OUT_PX = 40;
 function drawLetterboxPx(px) {
-  const depth = Math.max(0, px);
-  const bars = Math.round(depth);
-  if (bars <= 0) return;
-  ctx.fillStyle = '#05070c';
-  ctx.fillRect(0, 0, VIEW_W, bars);
-  ctx.fillRect(0, VIEW_H - bars, VIEW_W, bars);
-  const openness = Math.max(0, Math.min(1, (VIEW_H / 2 - depth) / (VIEW_H / 2 - LEVEL_ENTRY.gateBarH)));
-  /* AND IT FADES AT THE OTHER END TOO. `openness` only ever described the
-   * CLOSING half — it reaches 1 at the hold depth and clamps there — so on the
-   * way back OUT the hairline stayed at full strength until the bar was gone
-   * and then vanished between two frames. Two bright lines snapping off the top
-   * and bottom of the street is the flick the entry glitches on, right as the
-   * bars leave frame. Fading the line with the last of the bar makes the exit
-   * as smooth as the entrance. */
-  const leaving = Math.min(1, depth / HAIRLINE_OUT_PX);
-  const alpha = 0.16 * openness * leaving;
-  if (alpha <= 0.004) return;
-  ctx.fillStyle = `rgba(255,228,94,${alpha})`;
-  /* Positioned on the UNROUNDED depth: the line is the moving part, and letting
-   * it land on sub-pixels is what keeps it gliding while the black fill behind
-   * it stays on whole pixels and keeps a crisp edge against the picture. */
-  ctx.fillRect(0, depth - 2, VIEW_W, 2);
-  ctx.fillRect(0, VIEW_H - depth, VIEW_W, 2);
+  drawBarsPx(ctx, VIEW_W, VIEW_H, px, LEVEL_ENTRY.gateBarH);
 }
 
 function drawCutscene() {
   drawLetterbox(cutscene.letterbox);
+  drawBossSubtitles();
 
   // Name plate: slides in from the right on an overshoot, angled like an arcade
   // title card. `cutscene.plate` is 0 â†’ 1 â†’ 0 across the pose/ready beats.
@@ -17702,13 +20550,15 @@ function drawOutro() {
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   }
   ui.drawVignette();
-  drawLetterbox(outro.letterbox);
+  // the thin action bars, then — on the card — all the way shut (outro.close)
+  drawLetterboxPx(Math.max(CUT.barH * outro.letterbox, (VIEW_H / 2) * outro.close));
 
   const c = outro.card;
   if (c <= 0.01) return;
   const name = outroPhase();
   const cardDur = OUTRO.phases.find((p) => p[0] === 'card')?.[1] ?? 0.85;
-  const summaryT = name === 'card' ? outro.t : name === 'file' ? cardDur + outro.t : 0;
+  // the panels wait for the bars to meet before they arrive over the black
+  const summaryT = (name === 'card' ? outro.t : name === 'file' ? cardDur + outro.t : 0) - OUTRO.closeDur;
   const panelIn = (i) => Math.max(0, Math.min(1, (summaryT - 0.08 - i * 0.14) / 0.56));
   const ease = (v) => 1 - Math.pow(1 - Math.max(0, Math.min(1, v)), 3);
 
@@ -17765,29 +20615,46 @@ function drawOutro() {
     ctx.fillStyle = 'rgba(255,255,255,0.09)';
     ctx.fillRect(status.x + 22, status.y + 51, status.w - 44, 1);
 
+    /* THE SCORECARD (request 338): the run's numbers, the total they make and
+     * its rank — frozen when MC_Olodo went down (run.final). */
+    const F = run.final || computeScore();
+    const shown = Math.round(F.total * ease(Math.max(0, Math.min(1, (summaryT - 0.3) / 1.1))));
+    ctx.textAlign = 'right';
+    ui.setDisplay(800, 40, 1);
+    ctx.fillStyle = C.paper;
+    ctx.fillText(shown.toLocaleString('en-US'), status.x + status.w - 86, status.y + 104);
+    ui.setFont(700, 9, 2.4);
+    ctx.fillStyle = C.muted;
+    ctx.fillText('SCORE', status.x + status.w - 86, status.y + 70);
+    ctx.textAlign = 'center';
+    ui.setDisplay(900, 54, 0);
+    ctx.fillStyle = F.rank === 'S' ? C.gold : F.rank === 'A' ? C.orange : C.paper;
+    ctx.fillText(F.rank, status.x + status.w - 46, status.y + 108);
+    ctx.textAlign = 'left';
+    ui.setFont(700, 9, 2.2);
+    ctx.fillStyle = F.isBest ? C.green : C.muted;
+    ctx.fillText(F.isBest ? 'NEW PERSONAL BEST' : `BEST  ${(F.best?.score ?? 0).toLocaleString('en-US')}`, status.x + 24, status.y + 82);
     const rows = [
-      ['TARGET', 'MC OLODO'],
-      ['STATUS', 'DEFEATED'],
-      ['ENEMIES DEFEATED', String(levelKills)],
-      ['DARKI HEALTH', `${Math.ceil(Math.max(0, player.hp))} / ${player.maxHp}`],
+      ['TIME', fmtTime(F.time)],
+      ['ENEMIES DEFEATED', String(F.kos)],
+      ['BEST COMBO', `${F.maxCombo} HITS`],
+      ['TOP HIT', String(Math.round(F.topHit))],
+      ['DAMAGE TAKEN', String(Math.round(F.dmgTaken))],
       ['DIFFICULTY', chosenDifficulty],
-      ['EVIDENCE', 'COLLECTION LEDGER'],
     ];
-    let y = status.y + 82;
+    let y = status.y + 140;
     for (const [label, value] of rows) {
       ui.setFont(700, 9.5, 1.8);
       ctx.fillStyle = C.muted;
       ctx.fillText(label, status.x + 24, y);
       ctx.textAlign = 'right';
       ui.setFont(650, 12.5, 0.45);
-      ctx.fillStyle = label === 'STATUS' ? C.green : label === 'TARGET' ? C.gold : C.paper;
+      ctx.fillStyle = label === 'BEST COMBO' ? C.gold : C.paper;
       ctx.fillText(value, status.x + status.w - 24, y);
       ctx.textAlign = 'left';
-      if (y < status.y + 257) {
-        ctx.fillStyle = 'rgba(255,255,255,0.055)';
-        ctx.fillRect(status.x + 24, y + 14, status.w - 48, 1);
-      }
-      y += 39;
+      ctx.fillStyle = 'rgba(255,255,255,0.055)';
+      ctx.fillRect(status.x + 24, y + 11, status.w - 48, 1);
+      y += 29;
     }
 
     ui.setFont(700, 8.5, 2.1);
@@ -18002,7 +20869,9 @@ function drawPauseOverlay() {
   const bossStage = inBossStage() || waveState === 'complete';
   const quota = SECTIONS[section] ? SECTIONS[section].quota : 0;
   pauseInfoRow(ui, 'OBJECTIVE',
-    bossStage ? 'BOSS  /  MC OLODO' : `CLEAR THE BLOCK  —  ${waveKills} / ${quota}`,
+    activeLevel === 2
+      ? (waveState === 'complete' ? 'AREA CLEARED' : `CLEAR THE FACILITY  —  ${waveKills} / ${quota}`)
+      : bossStage ? 'BOSS  /  MC OLODO' : `CLEAR THE BLOCK  —  ${waveKills} / ${quota}`,
     ix, py + 200, iw);
   pauseInfoRow(ui, 'ARENA', `${Math.min(section + 1, SECTIONS.length)} OF ${SECTIONS.length}`,
     ix, py + 232, iw);
@@ -18022,6 +20891,150 @@ function drawPauseOverlay() {
   ui.drawGrain();
 
   /* Handed back the way the rest of game.js expects to find it. */
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+}
+
+/* THE GAME-OVER ART (request 338): dark, worn and bloodied, built ONCE into an
+ * offscreen canvas the first time the screen is drawn — a splash of blood behind
+ * the title with its spray and the runs dripping out of it, scratched grime over
+ * the frame, and a red bloom at the edges. Seeded, so it is the same splash every
+ * time, and nothing here is redrawn per frame. */
+function buildGameOverArt(w, h) {
+  const c = makeCanvas(w, h), g = c.getContext('2d');
+  let seed = 1337;
+  const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // edge bloom: black core giving way to old-blood red at the borders
+  const vg = g.createRadialGradient(w / 2, h * 0.42, h * 0.18, w / 2, h * 0.5, w * 0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(0.7, 'rgba(40,0,2,0.55)');
+  vg.addColorStop(1, 'rgba(70,4,6,0.85)');
+  g.fillStyle = vg; g.fillRect(0, 0, w, h);
+  const splat = (cx, cy, r, base, deep) => {
+    // the body of it: two passes of a ragged blob, deep under bright
+    for (const [col, k] of [[deep, 1.08], [base, 0.92]]) {
+      g.fillStyle = col;
+      g.beginPath();
+      const n = 34;
+      for (let i = 0; i <= n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const rr = r * k * (0.7 + rng() * 0.42) * (i % 5 === 0 ? 1.25 : 1);
+        const px = cx + Math.cos(a) * rr * 1.35, py = cy + Math.sin(a) * rr * 0.72;
+        i ? g.lineTo(px, py) : g.moveTo(px, py);
+      }
+      g.closePath(); g.fill();
+    }
+    // spray: droplets flung out of it, the far ones smaller
+    g.fillStyle = base;
+    for (let i = 0; i < 90; i++) {
+      const a = rng() * Math.PI * 2, d = r * (1.1 + rng() * 2.2);
+      const s = r * (0.012 + rng() * 0.07) * (2.4 - d / r) / 1.4;
+      if (s <= 0.6) continue;
+      g.beginPath();
+      g.ellipse(cx + Math.cos(a) * d * 1.35, cy + Math.sin(a) * d * 0.72, s * 1.5, s, a, 0, Math.PI * 2);
+      g.fill();
+    }
+    // the runs: drips sliding down out of the lower edge
+    for (let i = 0; i < 9; i++) {
+      const x = cx + (rng() - 0.5) * r * 2.2, top = cy + r * 0.25;
+      const len = r * (0.4 + rng() * 1.5), wd = r * (0.03 + rng() * 0.05);
+      g.fillStyle = deep;
+      g.fillRect(x - wd / 2, top, wd, len);
+      g.beginPath(); g.arc(x, top + len, wd * 0.9, 0, Math.PI * 2); g.fill();
+    }
+    // a wet sheen across the top of it
+    g.fillStyle = 'rgba(255,220,220,0.07)';
+    g.beginPath(); g.ellipse(cx - r * 0.3, cy - r * 0.28, r * 0.55, r * 0.12, -0.15, 0, Math.PI * 2); g.fill();
+  };
+  splat(w / 2, h * 0.30, Math.min(150, w * 0.12), '#7a0b0f', '#3e0306');
+  splat(w * 0.16, h * 0.84, 46, '#5e070a', '#2c0204');
+  splat(w * 0.88, h * 0.12, 34, '#5e070a', '#2c0204');
+  // grime: specks and scratches over everything
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle = rng() < 0.6 ? `rgba(0,0,0,${0.15 + rng() * 0.25})` : `rgba(210,190,170,${0.03 + rng() * 0.05})`;
+    g.fillRect(rng() * w, rng() * h, 1 + rng() * 2, 1 + rng() * 2);
+  }
+  g.strokeStyle = 'rgba(220,200,180,0.06)';
+  g.lineWidth = 1;
+  for (let i = 0; i < 26; i++) {
+    const x = rng() * w, y = rng() * h, l = 40 + rng() * 220, a = -0.6 + rng() * 1.2;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  return c;
+}
+
+/* YOU FELL. The frozen street dims and bleeds out underneath; the line is about
+ * getting back up rather than losing, and the two choices are the pause menu's
+ * own buttons (same widget, same hitboxes, same navigation). */
+function drawGameOver() {
+  const ui = frontEnd?.ui;
+  if (!ui) return;
+  const C = ui.C;
+  const t = gameOver.t;
+  const k = Math.min(1, t / 0.6);
+  const ease = 1 - Math.pow(1 - k, 3);
+  ui.beginFrame();
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgba(6,2,3,${0.84 * ease})`;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ui.captureBackdrop();
+  if (!gameOver.cleared && (!gameOver.art || gameOver.art.width !== VIEW_W)) gameOver.art = buildGameOverArt(VIEW_W, VIEW_H);
+  // the splash lands: a quick overshoot, like it was thrown at the screen
+  const s = Math.min(1, t / 0.32);
+  const splash = s < 1 ? 0.6 + 0.5 * Math.sin(s * Math.PI * 0.62) : 1;
+  ctx.globalAlpha = ease;
+  ctx.translate(VIEW_W / 2, VIEW_H * 0.30);
+  ctx.scale(splash, splash);
+  ctx.translate(-VIEW_W / 2, -VIEW_H * 0.30);
+  if (!gameOver.cleared) ctx.drawImage(gameOver.art, 0, 0);
+  ctx.restore();
+
+  const fadeIn = (d) => Math.max(0, Math.min(1, (t - d) / 0.5));
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  // the title: bone white over the blood, with a hard shadow under it
+  ctx.globalAlpha = fadeIn(0.15);
+  const cl = gameOver.cleared;
+  const title = cl ? 'AREA CLEARED' : 'YOU FELL';
+  ui.setDisplay(900, cl ? 92 : 104, 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillText(title, VIEW_W / 2 + 4, 250);
+  ctx.fillStyle = cl ? '#ffe45e' : '#efe6d8';
+  ctx.fillText(title, VIEW_W / 2, 246);
+  ctx.fillStyle = cl ? '#e9b654' : '#a3121a';
+  ctx.fillRect(VIEW_W / 2 - 150, 266, 300, 4);
+  ctx.globalAlpha = fadeIn(0.45);
+  ui.setFont(700, 20, 1.2);
+  ctx.fillStyle = '#e8d9c4';
+  ctx.fillText(cl ? `${LEVELS[activeLevel].code}  /  ${LEVELS[activeLevel].title}` : 'A RATEL DOES NOT STAY DOWN.', VIEW_W / 2, 312);
+  ui.setFont(500, 14, 0.3);
+  ctx.fillStyle = 'rgba(214,200,184,0.75)';
+  if (!cl) ctx.fillText('Every scar is a lesson. Get up and take the street back.', VIEW_W / 2, 340);
+  // what this attempt was worth, in the same numbers the summary keeps
+  const st = gameOver.stats || {};
+  ctx.globalAlpha = fadeIn(0.7);
+  ui.setFont(700, 11, 3);
+  ctx.fillStyle = 'rgba(214,200,184,0.6)';
+  ctx.fillText(`SURVIVED ${fmtTime(st.time || 0)}   ·   ENEMIES DOWN ${st.kos || 0}   ·   BEST COMBO ${st.maxCombo || 0}`, VIEW_W / 2, 392);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = fadeIn(0.85);
+  ctx.translate(0, (1 - fadeIn(0.85)) * 14);
+  const bw = 360, bh = 54, bx = (VIEW_W - bw) / 2, by = 444;
+  menuItems().forEach((it, i) => ui.button({
+    id: `pause:${i}`, x: bx, y: by + i * (bh + 12), w: bw, h: bh,
+    label: it.label, icon: it.icon, focused: i === pauseChoice, index: i,
+  }));
+  ctx.restore();
+  ui.drawControlBar([
+    { icon: 'dpad', label: 'NAVIGATE' },
+    { icon: 'cross', label: 'SELECT', color: '#8fb4ff' },
+  ]);
+  ui.drawGrain(0.9);
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -18061,6 +21074,12 @@ function draw() {
    * shake is re-rolled on every call — the layer snap reads it (snapWorldX). */
   frameOriginX = baseScale() * (sx + imp.x);
   frameOriginY = baseScale() * (sy + imp.y);
+  if (activeLevel === 2) {
+    /* LEVEL 02: the PSD's own art and nothing of the street's — no sky, no
+     * backdrop, no billboards. Its grade (tier 'l2') is applied at the seam
+     * below, like the street's (request 408). */
+    drawLevel2Back();
+  } else {
   drawSky();
   drawSkyline();
   drawBackdrop();
@@ -18071,14 +21090,21 @@ function draw() {
   drawBackgroundActors();   // wall-entry Agberos on the residential plane, behind the wall
   drawSidewalkBand();
   drawFrontage();
+  drawAdverts();            // the billboards, parented to the play plane above
   drawRoad();
+  }
+  drawReflections();   // bodies mirrored in the wet floor, under the bodies themselves (request 400)
   /* THE SEAM. Everything above this line is environment; everything below is
    * the fight. The grade goes here and nowhere else — no masks, no per-sprite
    * work, and Darki, the enemies, the vehicles, the ledger, the sparks and the
-   * whole HUD are drawn afterwards and stay completely clean. */
-  drawEnvGrade('near');
-  drawActors();   // fighters, parked vehicles and the ledger, depth-sorted together
+   * whole HUD are drawn afterwards and stay completely clean. Below the
+   * reflections, so a reflection sits IN the graded floor rather than glowing on
+   * it. Level 02 has its own, heavier tier (request 408). */
+  drawEnvGrade(activeLevel === 2 ? 'l2' : 'near');
+  drawMedpacks();   // on the road, under every body
+  drawActors();   // fighters, parked vehicles (or Level 02's pillars) and the ledger, depth-sorted together
   drawSparks();
+  if (activeLevel === 2) drawLevel2Front();   // the front pillars, over everything that walks
   drawRegionEditor();   // F2 — level-design overlay, drawn in scene space above the world
   drawAssetMover();     // F3 — asset mover overlay (parked vehicles), same space
   ctx.restore();
@@ -18086,6 +21112,7 @@ function draw() {
   drawExecBrutalityDim();                  // â€¦and the reward round drops the lights
   drawFlash();                             // full-frame impact/rage wash
   if (levelEntry.active) drawLevelEntry(); // the dossier dissolves over the empty live street
+  else if (tapCueState.drawn) tapCueState.drawn = false;   // …and the skip cue leaves with it (request 353)
   else if (cutscene.active) drawCutscene();     // the entrance owns the frameâ€¦
   // â€¦the mission card closes it, and the post-mission sequence takes the frame
   // from there. Only one of the two draws: the analysis screens replace the card
@@ -18095,13 +21122,13 @@ function draw() {
   // The HUD steps aside for the pause screen rather than showing through it: the
   // health bar sits exactly where the PAUSED title goes, and the pause panel
   // already reports HP, rage and the objective in a form you can actually read.
-  else if (!paused) drawHud();             // HUD stays steady (not shaken)
+  else if (!paused) { drawHud(); drawRunHud(); }             // HUD stays steady (not shaken)
   // The finisher's own UI sits above the HUD and outside the shake, for the same
   // reason the HUD does: a prompt you have to read must not be moving. It stands
   // down while frozen for the same reason the HUD does.
   if (execution && !paused) { drawExecButton(execution); drawExecPerfHud(execution); drawExecBrutalityLabel(); }
   if (!paused) { drawExecResult(); drawExecDebug(); drawWeaponDebug(); }
-  if (paused && !window.__rorTouch?.editing) drawPauseOverlay();
+  if (paused && !window.__rorTouch?.editing) (gameOver.active ? drawGameOver() : drawPauseOverlay());
 }
 
 /* ========================================================= REGION EDITOR ==
@@ -18612,6 +21639,7 @@ window.__ror = {
   get font() { return fontState(); },
   get worldProgress() { return Math.min(1, worldLoaded / WORLD_STEPS); },
   get worldError() { return worldError ? worldError.message : null; },
+  get worldErrorStack() { return worldError ? worldError.stack : null; },
   get prepMaxSlice() { return Math.round(prepMaxSlice); },   // longest block the prep held the thread
   get prepNow() { return prepNow; },                          // the sheet the lane is working on
   get sprites() { return { sprite, idleSprite, uppercutSprite, jabLeftSprite, highKickSprite, backKickSprite, comboSprite, combatWalkSprite,
@@ -18622,13 +21650,65 @@ window.__ror = {
     seniorSprite, seniorWalkSprite, seniorFallSprite, seniorCarrySprite,
     shavedWalkSprite, shavedArmedSprite, shavedAttackSprite,
     shavedSharpenSprite, ayeFallSprite, ayeStruggleSprite, ayeUWalkSprite, ayeUAttackSprite, macheteSprite, batPickupSprite, batWalkSprite, batIdleSprite, batSwingSprite, batRushSprite,
-    macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite,
+    macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteTornadoSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite, macheteThrowSprite, batJumpSprite, batStrikeSprite,
     jumpSprite, jumpStrikeSprite,
-    olodoStanceSprite, olodoSpecialSprite, olodoHookSprite, olodoFallSprite }; },
+    olodoStanceSprite, olodoSpecialSprite, olodoHookSprite, olodoFallSprite,
+    sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite }; },
   /* What a class is DRAWN at, resolved the way the renderer resolves it. Two
    * classes only read as two classes if one is visibly bigger, so that claim
    * needs to be measurable rather than taken on trust from a config constant. */
   enemyDrawH(e) { return enemyAnim(e)?.config?.drawH ?? null; },
+  /* …AND WHAT HE ACTUALLY MEASURES ON SCREEN, which the config number above
+   * cannot answer. `drawH` is the height ONE frame's ink is mapped to; every
+   * other frame of the sheet comes out at whatever the pose and the shared
+   * union box make it, and `tune.enemyScale` lands on top at draw time. A class
+   * wired with a sane-looking `drawH` can still walk in half a head short — the
+   * only way to see that is to measure the prepared canvas, after everything.
+   *
+   * `lean` is the same head-versus-reach test `measureFrame` uses on Darki, in
+   * SHEET space (before the flip): positive means the drawing points right. It
+   * is what catches a sheet wired with the wrong `faces`, because the flag is
+   * the thing under suspicion and so cannot be the thing consulted. */
+  measureEnemyFrame(e, animName = null) {
+    const a = enemyAnim(e);
+    if (!a) return null;
+    // Naming a kit slot measures THAT sheet — its own config too, or the answer
+    // would be the current anim's `faces` wearing another sheet's pixels.
+    const slot = animName ? enemyKit(e)[animName] : null;
+    const spr = slot?.s ?? a.sprite;
+    const cfg = slot?.c ?? a.config;
+    const idx = spr.frames[e.frame] ? e.frame : a.spec.frames[0];
+    const f = spr.frames[idx];
+    if (!f) return null;
+    const d = f.getContext('2d').getImageData(0, 0, f.width, f.height).data;
+    let y0 = f.height, y1 = -1, x0 = f.width, x1 = -1;
+    for (let y = 0; y < f.height; y++)
+      for (let x = 0; x < f.width; x++)
+        if (d[(y * f.width + x) * 4 + 3] > 40) {
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+        }
+    if (y1 < 0) return null;
+    const band = Math.max(2, Math.round((y1 - y0 + 1) * 0.14));
+    let headSum = 0, headN = 0;
+    for (let y = y0; y < Math.min(f.height, y0 + band); y++)
+      for (let x = 0; x < f.width; x++)
+        if (d[(y * f.width + x) * 4 + 3] > 40) { headSum += x; headN++; }
+    const headX = headN ? headSum / headN : (x0 + x1) / 2;
+    const reach = x1 - x0 + 1;
+    const scale = (e.boss ? tune.bossScale : tune.enemyScale) * (e.entryScale ?? 1);
+    return { kind: e.kind, src: cfg?.src ?? null, anim: slot ? animName : a.name, frame: idx,
+      inkH: y1 - y0 + 1, canvasH: spr.drawH, configDrawH: cfg?.drawH ?? null,
+      screenH: +((y1 - y0 + 1) * scale).toFixed(1), scale,
+      faces: cfg?.faces ?? 1,
+      lean: +(reach > 1 ? ((x1 - headX) - (headX - x0)) / reach : 0).toFixed(3) };
+  },
+  // The tornado's state (request 370): where its clock is and whether it has broken out.
+  get tornado() {
+    return { attack: player.attack, step: player.attackStep, frame: player.frame, broken: !!player.tornadoBreak,
+      armT: player.rageArmT ?? null, hitHeld: hitHeld(), at: ATTACKS.macheteTornado.tornadoAt,
+      sheet: darkiSheetKey(player.anim) };
+  },
   enemyKitOf(e) {
     const K = enemyKit(e);
     return Object.fromEntries(Object.entries(K).map(([k, v]) => [k, v?.c?.src ?? null]));
@@ -18677,7 +21757,20 @@ window.__ror = {
     const pick = (n) => ({ frames: ATTACKS[n].frames.slice(), fps: ATTACKS[n].fps,
       windows: Object.fromEntries(Object.entries(ATTACKS[n].windows).map(([s, w]) => [s, { group: w.group, box: w.box, damage: w.damage, launch: !!w.launch }])),
       releaseStep: ATTACKS[n].releaseStep ?? null, lockUntil: ATTACKS[n].lockUntil ?? null });
-    return Object.fromEntries(['macheteSlash', 'macheteCombo', 'macheteRush', 'macheteAir', 'macheteAirLand', 'weaponThrow', 'batSwing', 'batRush'].map((n) => [n, pick(n)]));
+    return Object.fromEntries(['macheteSlash', 'macheteCombo', 'macheteRush', 'macheteTornado', 'macheteAir', 'macheteAirLand', 'weaponThrow', 'macheteThrow', 'batSwing', 'batRush', 'batAir', 'batAirLand'].map((n) => [n, pick(n)]));
+  },
+  /* EVERY WEAPON'S MOVE ROW, RESOLVED — does each name it holds exist in
+   * ATTACKS, and is the `air` slot actually an air move? Both questions used to
+   * be answerable only by pressing the button: the knife's row named 'rush',
+   * which is the SPRINT'S ANIMATION and not an attack, and the first
+   * forward,forward after picking a knife up threw inside the update and took
+   * the frame loop down with it. A table a test can read is how a typo in a
+   * routing row gets caught at the table instead of in the player's hands. */
+  weaponMoveAudit() {
+    return Object.fromEntries(Object.entries(WEAPONS).map(([type, W]) => [type,
+      Object.fromEntries(Object.entries(W.moves).map(([slot, name]) => [slot,
+        { name: name ?? null, exists: name == null ? null : !!ATTACKS[name],
+          air: name && ATTACKS[name] ? !!ATTACKS[name].air : null }]))]));
   },
   get hitTapT() { return player.hitTapT; },
   macheteOfEnemy(e) { const m = macheteOf(e); return m ? m.id : null; },
@@ -18742,7 +21835,8 @@ window.__ror = {
   // stood at the wall â€” far too tight to watch a walk-in happen. Anything
   // testing arrival behaviour wants a band with room in it.
   toSection(i) {
-    section = Math.max(0, Math.min(BOSS_SECTION - 1, i));
+    // Level 02 has no boss room: its last section is a fight like the others.
+    section = Math.max(0, Math.min(activeLevel === 2 ? SECTIONS.length - 1 : BOSS_SECTION - 1, i));
     waveKills = 0;
     waveState = 'fighting';
     mobs().forEach(benchEnemy);
@@ -18755,9 +21849,10 @@ window.__ror = {
   // Snap the camera to a player x without waiting out the damped follow. A walk-in
   // test has to move the CAMERA, because "off screen" is measured against its edge.
   cameraTo(x) { cameraX = clampCamX(x - viewW() * 0.42, PLAYAREA.maxX + 1); return cameraX; },
+  setWaveKills(n) { waveKills = n; return waveKills; },
   // Stage a walk-in directly, so a scenario does not have to clear a whole wave
   // to get one arriving body it can watch.
-  stageEntrance(e, targetX, delay = 0) { stageEnemyEntrance(e, targetX, delay); return e.id; },
+  stageEntrance(e, targetX, delay = 0, route = 'auto') { stageEnemyEntrance(e, targetX, delay, route); return e.id; },
   // Land a blow on an enemy through the real damage path (hitEnemy), so the
   // reaction, the launch and the entrance hand-off are the ones the game uses.
   hurtEnemy(e, damage = 20, launch = false) {
@@ -18771,7 +21866,8 @@ window.__ror = {
     return enemies.filter((e) => !e.boss && !e.benched).map((e) => ({
       id: e.id, entry: !!e.spawnEntry, mode: e.mode, state: e.state,
       x: Math.round(e.x), targetX: Math.round(e.spawnTargetX),
-      delay: +(e.spawnDelay ?? 0).toFixed(2),
+      delay: +(e.spawnDelay ?? 0).toFixed(2), route: e.entryRoute, phase: e.entryPhase,
+      plane: e.entryPlane, scale: +(e.entryScale ?? 1).toFixed(2),
       dxPlayer: Math.round(e.x - player.x), facing: e.facing,
       onCamera: e.x > cameraX - 60 && e.x < cameraX + VIEW_W + 60,
     }));
@@ -19024,6 +22120,23 @@ window.__ror = {
   get sfxCues() { return sfxCues; },        // # of table cues fired (counts when silent)
   get sfxWhiffs() { return sfxWhiffs; },    // # of misses that made a sound
   get cuesLoaded() { return Object.keys(CUES).filter((k) => cueBuf[k]); },
+  /* The sword HUD's health-bar juice (request 410): drawn fill, ghost, and the flash / flinch clocks. */
+  get hpJuice() { return { ...hpJuice, flash: +hpFlashAmt().toFixed(3), kick: +hpKickPx().toFixed(2), color: hpJuiceColor(player.hp / player.maxHp) }; },
+  /* Request 348: is the SFX bus actually making sound? A tap on sfxGain (an
+   * analyser only listens; the output path is untouched), its peak over the
+   * last ~43 ms, plus the context state. */
+  probeCue(name) { return playCue(name, player.x); },   // request 348: a reference sound for audioProbe
+  suspendAudioForTest() { return audioCtx?.suspend(); }, // request 348: what the phone does to the context
+  get ctxResumes() { return ctxResumes; },
+  get tapCue() { return tapCueState; },                  // request 353: the skip cue's last drawn frame
+  skipEntryVoiceNow() { return skipLevelEntryVoice(); }, // …and its double-tap skip, without a real tap
+  audioProbe() {
+    if (!audioCtx || !sfxGain) return null;
+    if (!sfxProbe) { sfxProbe = audioCtx.createAnalyser(); sfxProbe.fftSize = 2048; sfxGain.connect(sfxProbe); }
+    const d = new Float32Array(sfxProbe.fftSize); sfxProbe.getFloatTimeDomainData(d);
+    let peak = 0, nan = 0; for (const v of d) { if (!Number.isFinite(v)) nan++; else peak = Math.max(peak, Math.abs(v)); }
+    return { state: audioCtx.state, peak: +peak.toFixed(4), nan, gain: sfxGain.gain.value, muted: audioMuted };
+  },
   get cueFired() { return { ...cueFired }; },
   get cueTable() { return CUES; },
   // Deal from the live pools so a test can read the ORDER they produce â€” the
@@ -19042,7 +22155,6 @@ window.__ror = {
   get openWindow() { return player.openWindow; },
   get comboVoPlays() { return comboVoPlays; },   // # of full-combo taunt triggers
   get voiceLoaded() { return Object.keys(voiceBuffers).length; },
-  get voicePlays() { return { ...voicePlays }; },
   get muted() { return audioMuted; },
   get musicReady() { return !!musicEl; },
   get musicOn() { return musicStarted; },
@@ -19065,6 +22177,9 @@ window.__ror = {
              barPx: Math.round(entryBarPx()),
              lead: +levelEntry.lead.toFixed(3),
              voiceStarted: levelEntry.voiceStarted,
+             skipped: !!levelEntry.skipped,
+             subT: levelEntry.voiceStarted ? +entrySubT().toFixed(3) : null,   // request 357
+             subLines: entrySubs().length,
              /* The RAW ramp under the eased bar. `letterbox` alone cannot say
               * whether the curve is doing its job — the two being equal would
               * mean no easing at all — so a test can compare them. */
@@ -19178,6 +22293,7 @@ window.__ror = {
       phase: bossFight.phase,
       t: +bossFight.t.toFixed(2),
       offstage: !!(boss && boss.offstage),
+      renderHidden: !!(boss && boss.renderHidden),
       active: !!(boss && boss.active),
       hpFrac: boss ? +(boss.hp / boss.maxHp).toFixed(3) : null,
       x: boss ? Math.round(boss.x) : null,
@@ -19224,7 +22340,7 @@ window.__ror = {
   get carryPower() {
     return player.carrying ? carryPower() : player.carryThrowPower;
   },
-  get carryTargets() { return enemies.filter((e) => isGrabbable(e)); },
+  get carryTargets() { return enemies.filter((e) => isCarryable(e)); },
   // Drives the whole mechanic from a test without a pad: press, hold, release.
   holdCarry(on = true) { kbHeld.execute = !!on; input.executeHeld = !!on;
     if (on) input.executePressed = true; },
@@ -19232,10 +22348,45 @@ window.__ror = {
   thrownBodies() { return enemies.filter((e) => e.thrownByCarry); },
   // --- RUSH (forward, forward) ---
   get rushState() { return rushState; },
+  get lastLaunchFit() { return lastLaunchFit; },
+  // request 338: the run ledger, the medpacks and the game-over screen
+  get run() { return { ...run, final: run.final && { ...run.final } }; },
+  get medpacks() { return medpacks.map((m) => ({ ...m })); },
+  dropMedpackAt(x, y) { medpacks.push({ x, y: clampLane(y), t: 0 }); return medpacks.length; },
+  get gameOver() { return { active: gameOver.active, t: gameOver.t, items: menuItems().map((i) => i.label), choice: pauseChoice }; },
+  get bossBeaten() { return bossBeaten(); },
+  get outroPhase() { return outro.active ? outroPhase() : null; },
+  get voicePlays() { return { ...voicePlays }; },
+  registerHitRaw(d) { registerHit(d); },
+  // The advert slots as loaded, and a switch to draw the world without them.
+  get adverts() { return advertArt.map(({ slot, img, feet }) => ({ id: slot.id, x: slot.x, y: slot.y, w: slot.w, h: slot.h, loaded: !!img, footY: ADVERT_FOOT_Y, feet: feet?.length ?? 0, fit: slot.fit ?? 1 })); },
+  hideAdverts(hide) { if (hide && advertArt.length) { advertStash = advertArt; advertArt = []; } else if (!hide && advertStash) { advertArt = advertStash; advertStash = null; } },
+  get streetScale() { return tune.streetScale; },
+  // Boss-intro subtitles: scrub them to `t` seconds into the line (test hook),
+  // and read what the clock says and where the bar is.
+  subsAt(t) { cutscene.voAt = audioCtx ? audioCtx.currentTime - t : 0; cutscene.voT = t; },
+  get subs() { return { voAt: cutscene.voAt, t: cutscene.voAt == null ? null : reachOlodoSubT(),
+    barTop: VIEW_H - CUT.barH * cutscene.letterbox, lines: REACH_OLODO_SUBS.length, audio: audioCtx?.state ?? null }; },
   // The arena's full width, so a harness can tell "he ran out of road" from "the
   // feature stopped him" without hardcoding 5600 in every suite that measures
   // travel. (ragerushverify already reached for this and got undefined.)
   get worldW() { return WORLD_W; },
+  /* Level 02 (request 399): which world is live, its art, solids and band. */
+  get activeLevel() { return activeLevel; },
+  get l2() {
+    return {
+      art: { state: l2Art.state, error: l2Art.error, gpb: !!l2Art.gpb, mp: !!l2Art.mp, fp: l2Art.fp.map((i) => !!i) },
+      pillars: L2_PILLARS.map((p) => ({ id: p.id, x: p.x, w: p.w, y: p.y })),
+      fp: L2.fp.map((p) => ({ left: l2X(p.left), w: l2X(p.w), screenX: fpScreenX(p) })),
+      mpScreenX: L2_PILLARS.map((p) => p.drawX - cameraX),
+      fpParallax: L2.fpParallax, scale: L2.scale, artY: L2.artY, artBottom: L2_ART_BOTTOM,
+      band: { top: L2_PLAY.laneTop, bottom: L2_PLAY.laneBottom, playerTop: L2_PLAY.playerTop },
+      entry: { ...L2_ENTRY_SPOT }, sections: SECTIONS.map((x) => ({ gateX: x.gateX, quota: x.quota, final: !!x.final, boss: !!x.boss })),
+      clearT: l2ClearT, cleared: gameOver.cleared, camY: camYRange(),
+    };
+  },
+  applyLevel(n) { applyLevel(n); return activeLevel; },
+  restartLevel() { startLevelEntry(); return { level: activeLevel, weapons: weapons.length }; },
   get playerTune() { return { ...PLAYER }; },
   get rushTarget() { return rushTargetRef; },
   get rushConfig() { return RUSH; },
@@ -19359,6 +22510,10 @@ window.__ror = {
     moves: Object.fromEntries(Object.entries(SENIOR_MOVES).map(([k, m]) => [k, { ...m }])) }; },
   get sections() { return SECTIONS.map((s) => ({ ...s })); },
   seniorOf() { return enemies.find((e) => e.kind === 'senior') ?? null; },
+  sarsOf() { return enemies.find((e) => e.kind === 'sars') ?? null; },
+  get sarsConfig() { return { ...SARS, moves: Object.fromEntries(Object.entries(SARS_MOVES).map(([key, move]) => [key, { ...move }])) }; },
+  throwSarsKnife(e) { return throwSarsKnife(e ?? enemies.find((entry) => entry.kind === 'sars')); },
+  dropSarsKnife(e) { return dropSarsKnife(e ?? enemies.find((entry) => entry.kind === 'sars')); },
   /* Everything his decision hangs on, plus the scores he last produced — so a
    * harness can assert WHY he chose, not merely that he chose something. */
   seniorState(e) {
@@ -19389,10 +22544,15 @@ window.__ror = {
   },
   seniorEnrage(e) { seniorEnrage(e ?? enemies.find((x) => x.kind === 'senior')); },
   arenaBounds() { return arenaBounds(); },
+  enemyLaneAt(x) {
+    const band = laneBandAt(x);
+    return { top: Math.max(band.laneTop, playerTopAt(x)), bottom: band.laneBottom };
+  },
   /* Land a synthetic blow through the REAL path, so a harness measures the hit
    * tiers the game actually applies rather than a re-implementation of them. */
   hitEnemyRaw(e, win) { hitEnemy(e, win); },
   giveToken(e) { attackTokens.add(e); },
+  vehicleBetween(a, b) { return vehicleBetween(a, b)?.id ?? null; },   // request 344
   hasToken(e) { return attackTokens.has(e); },
   /* `toSection` benches the mob and leaves it benched — it moves the camera and
    * the gate, it does not populate. Anything asking "who does this section
@@ -19742,6 +22902,29 @@ window.__ror = {
   // renders of one frame (shoot a body, hide it, diff the two to get its
   // silhouette) cannot use step() â€” that would move the world between them.
   redraw() { draw(); },
+  /* Floor reflections (request 400): the live config (on, res, squash, fade,
+   * per-level alpha/tint/ripple) and whether each level's wet map has loaded. */
+  reflect: REFLECT,
+  /* The street's memory (request 403): config, what it believes right now, and
+   * each man's part in the plan. */
+  streetSmarts: STREET_SMARTS,
+  get streetMind() {
+    const R = streetRead();
+    return { ...R, heat: { ...streetMind.heat }, events: streetMind.events, lastLesson: streetMind.lastLesson,
+      tokens: attackTokens.size, cap: liveTokenCap(), pincer: { on: streetPlan.on, phase: streetPlan.phase, launched: streetPlan.launched },
+      men: enemies.filter((e) => !e.boss && !e.benched).map((e) => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y),
+        mode: e.mode, state: e.state, side: e.side, role: e.streetRole, attackLane: e.attackLane, crossing: !!e.cross, entering: !!e.spawnEntry,
+        from: e.entryFrom, route: e.entryRoute, hp: Math.round(e.hp) })) };
+  },
+  resetStreetMind() { streetMindReset(); },
+  /* Seed a lesson without fighting for it (a harness can then test what the
+   * street DOES with it): `w` of heat for `move`, landed on `side` of Darki. */
+  teachStreet(move, side, w) {
+    streetMind.heat[move] = (streetMind.heat[move] || 0) + w;
+    streetMind.side[side > 0 ? '1' : '-1'][move] = (streetMind.side[side > 0 ? '1' : '-1'][move] || 0) + w;
+    return streetRead();
+  },
+  get wetMaps() { return { 1: typeof wetArt[1] === 'object', 2: typeof wetArt[2] === 'object' }; },
   /* Swap the world-plate draw for one frame. `plateverify` passes the old
    * five-argument call here to prove the sliced version puts the same pixels in
    * the same places; pass null to restore. Nothing in the game sets this. */
@@ -20176,6 +23359,9 @@ function loop(ts) {
   window.__ror.frames++;
   const dt = Math.min(0.05, (ts - last) / 1000 || 0);
   last = ts;
+  keepAudioContextAlive(dt);           // menus and fight alike (request 348)
+  keepAwake('entry', levelEntry.active);   // no dimming under the narrated entry (request 349)
+  if (frontEnd && !frontEnd.active) keepAwake('video', false);   // the front end's reason ends with it
   if (frontEnd?.active) {
     frontEnd.pollGamepad();
     frontEnd.update(dt);
@@ -20342,7 +23528,12 @@ async function loadWorld() {
       loadSpriteFrames(AYEFALL_SHEET),        // …unarmed: stance/hit/fall/get-up/death
       loadSpriteFrames(AYESTRUGGLE_SHEET),    // …unarmed: struggling while carried
       loadSpriteFrames(AYEUWALK_SHEET),       // UNARMED Aye: his walk
-      loadSpriteFrames(AYEUATTACK_SHEET),     // UNARMED Aye: his side kick
+      loadSpriteFrames(AYEUATTACK_SHEET),
+      loadSpriteFrames(SARS_WALK_SHEET),
+      loadSpriteFrames(SARS_ATTACK_SHEET),
+      loadSpriteFrames(SARS_THROW_SHEET),
+      loadSpriteFrames(SARS_REACT_SHEET),
+      loadSpriteFrames(SARS_KNIFE_SHEET),     // UNARMED Aye: his side kick
       loadSpriteFrames(MACHETE_SHEET),        // the weapon itself, as a world object
       loadSpriteFrames(BATPICKUP_SHEET),      // the floating bat pickup (request 303)
       loadSpriteFrames(BATWALK_SHEET),        // Darki + bat: walk
@@ -20353,9 +23544,13 @@ async function loadWorld() {
       loadSpriteFrames(MACHETEWALK_SHEET),    // …walk
       loadSpriteFrames(MACHETECOMBO_SHEET),   // …chop + double-tap combo
       loadSpriteFrames(MACHETERUSH_SHEET),    // …rush slash
+      loadSpriteFrames(MACHETETORNADO_SHEET), // …rage tornado (request 370)
       loadSpriteFrames(MACHETEJUMP_SHEET),    // …jump / landing
       loadSpriteFrames(MACHETESTRIKE_SHEET),  // …air strike
-      loadSpriteFrames(WEAPONTHROW_SHEET),    // the generic weapon throw
+      loadSpriteFrames(WEAPONTHROW_SHEET),    // the throw, bat in hand
+      loadSpriteFrames(MACHETETHROW_SHEET),   // …machete in hand (request 343)
+      loadSpriteFrames(BATJUMP_SHEET),        // Darki + bat: jump / landing (request 343)
+      loadSpriteFrames(BATSTRIKE_SHEET),      // Darki + bat: jump kick (request 356)
       loadSpriteFrames(OLODO_STANCE_SHEET),   // BOSS: MC_Olodo's emote stance
       loadSpriteFrames(OLODO_SPECIAL_SHEET),  // BOSS: MC_Olodo's fist combo
       loadSpriteFrames(OLODO_HOOK_SHEET),     // BOSS: MC_Olodo's spinning hook kick
@@ -20378,8 +23573,10 @@ async function loadWorld() {
       gingerCarrySprite, gingerFallSprite, gingerDeathSprite,
       seniorSprite, seniorWalkSprite, seniorFallSprite, seniorCarrySprite,
       shavedWalkSprite, shavedArmedSprite, shavedAttackSprite,
-      shavedSharpenSprite, ayeFallSprite, ayeStruggleSprite, ayeUWalkSprite, ayeUAttackSprite, macheteSprite, batPickupSprite, batWalkSprite, batIdleSprite, batSwingSprite, batRushSprite,
-      macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite,
+      shavedSharpenSprite, ayeFallSprite, ayeStruggleSprite, ayeUWalkSprite, ayeUAttackSprite,
+      sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite, sarsKnifeSprite, macheteSprite, batPickupSprite, batWalkSprite, batIdleSprite, batSwingSprite, batRushSprite,
+      macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteTornadoSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite,
+      macheteThrowSprite, batJumpSprite, batStrikeSprite,
       olodoStanceSprite, olodoSpecialSprite, olodoHookSprite, olodoFallSprite] = assets;
     // Both knockdown sheets split at the moment he lands, because the SIM splits
     // there: 'hit' is physics (he is in the air until jumpY says otherwise) and
@@ -20391,6 +23588,27 @@ async function loadWorld() {
     /* The jump sheet's four clips already came off its JSON (resolveAnims keeps
      * every named section); this is the one thing that cannot — the air kick is
      * an ATTACKS entry and has to be pointed at them. */
+    sarsReactSprite.anims.hit = sarsReactSprite.anims.policeHitReaction;
+    /* His guard loop: SOURCE frames 0-4 of the attack sheet, the planted knife
+     * stance every move opens on — back foot fixed, lead foot within ~9 cell px,
+     * a sway on the spot rather than a shuffle. Since the full-rate rebuild
+     * (request 437) those land in atlas cells 0,18,1,19,2 (the atlas is ordered by
+     * first appearance across sections; src 1 and 3 first appear in the spin
+     * kick). Ping-ponged at 10 fps: the same 0.8 s sway as before, twice the steps. */
+    sarsAttackSprite.anims.idle = { frames: [0, 18, 1, 19, 2, 19, 1, 18], fps: 10, loop: true };
+    const sarsFall = sarsReactSprite.anims.policeKnockDownFall.frames;
+    const sarsFallSplit = Math.ceil(sarsFall.length / 2);
+    // Every source frame at the source's 30 fps (request 437; it shipped at half
+    // the frames and 15 fps). Split by halves so the timings stay those of
+    // SARS_FALLDOWN_DUR (12/30) and SARS_GETUP_DUR (24/30), which were written
+    // against this full-rate take.
+    const sarsFps = sarsReactSprite.anims.policeKnockDownFall.fps || 30;
+    sarsReactSprite.anims.fallAir = { frames: sarsFall.slice(0, sarsFallSplit), fps: sarsFps, loop: false };
+    sarsReactSprite.anims.fallDown = { frames: sarsFall.slice(sarsFallSplit), fps: sarsFps, loop: false };
+    const sarsRecover = sarsReactSprite.anims.policeGetupReArm.frames;
+    sarsReactSprite.anims.getUp = { frames: sarsRecover.slice(0, Math.ceil(sarsRecover.length / 2)), fps: sarsFps, loop: false };
+    sarsReactSprite.anims.deathAir = { frames: sarsFall.slice(0, sarsFallSplit), fps: sarsFps, loop: false };
+    sarsReactSprite.anims.deathDown = { frames: sarsFall.slice(sarsFallSplit), fps: sarsFps, loop: false };
     bindJumpKickAnims();
     bindSeniorMoves();               // …and the senior's four, off his own sheet
     bindDarkiWeaponAnims();          // …and the machete's moves and the throw, off theirs
@@ -20462,6 +23680,7 @@ async function loadWorld() {
     // rescale). Set before initDevPanel so it's the panel's Reset target; a
     // saved override still wins (hence the TUNE_KEY bump when the art changes).
     if (bg.main && bg.main.width) tune.streetScale = WORLD_W / bg.main.width;
+    advertArt = await inPrepLane(() => loadAdverts());   // the billboards (drawAdverts)
     /* MOBILE PLATE COMPENSATION (see mobile/gen-mobile-assets.js): the Android
      * build ships the sky and residential plates at half resolution so the
      * renderer's memory budget holds; the draw scale doubles for both. The
@@ -20495,7 +23714,8 @@ async function loadWorld() {
     /* The status plate's art (frontend/ui/hp-frame.png). Not awaited: drawHud
      * falls back to the drawn HUD until it lands, so a fight can start before
      * the picture does. */
-    loadImage('frontend/ui/hp-frame.png').then((i) => { HP_PLATE.img = i; }).catch(() => {});
+    loadImage('frontend/ui/hp-sword.png').then((i) => { HP_PLATE.img = i; }).catch(() => {});   // request 410
+    loadImage('frontend/ui/splash-hits.png').then((i) => { COMBO_SPLASH.img = i; }).catch(() => {});   // request 416
     loadImage('sprites/exec-darki.png').then((i) => { execAttackerImg = i; }).catch(() => {});
     loadImage('sprites/exec-olodo.png').then((i) => { execVictimImg = i; }).catch(() => {});
     // â€¦and every COMPOSITE pairing's single sheet, driven off the table rather
@@ -20530,13 +23750,14 @@ async function loadWorld() {
     // touch laptops alike) skips it — the phone's screen area is too scarce for
     // a fixed glass panel and the debug overlay is a desktop workflow.
     const COARSE = window.matchMedia('(pointer: coarse)').matches;
-    if (!(navigator.maxTouchPoints > 0) && !COARSE) initAssetPanel();
+    if (DEV_TOOLS && !(navigator.maxTouchPoints > 0) && !COARSE) initAssetPanel();
     amSyncPanel();
     worldLoaded = WORLD_STEPS;
     worldReady = true;
   } catch (err) {
     worldError = err;
     console.error(err);
+    showLoadFailure(err, 'world');
   }
 }
 
@@ -20631,16 +23852,32 @@ function fontState() {
       canvas, ctx,
       // The handover gate. The front end walks its own screens freely and only
       // consults these when it is about to leave for gameplay.
-      isWorldReady: () => worldReady,
+      isWorldReady: () => worldReady && levelArtReady(),
       worldProgress: () => Math.min(1, worldLoaded / WORLD_STEPS),
       worldError: () => (worldError ? worldError.message : null),
-      onGameplayStart: ({ difficulty, settings, transitionFrame, gameplayStartDuration, playIntroVoice }) => {
+      onGameplayStart: ({ difficulty, settings, transitionFrame, gameplayStartDuration, playIntroVoice, stopIntroVoice: stopVo, introVoiceTime: voT, level }) => {
+        introVoiceTime = voT ?? null;
+        applyLevel(level ?? frontEnd?.level ?? 1);   // Level 02's world, or Level 01's street (request 399)
         applyGameplaySettings(difficulty, settings);
+        // A fresh start from the menus is a GAME start; RETRY reloads the page and
+        // flags itself first, so the same level_start can tell the two apart.
+        let retried = false;
+        {
+          try { retried = sessionStorage.getItem('rr.retry') === '1'; sessionStorage.removeItem('rr.retry'); } catch {}
+          if (!retried) rrTrack('game_start', { level: frontEnd?.level ?? 1, difficulty });
+          rrGameEvent('level_start', { level: frontEnd?.level ?? 1, difficulty, retry: retried });
+        }
         input.jumpPressed = input.leftJabPressed = input.kickPressed = false;
         input.comboPressed = input.upperPressed = input.grabPressed = input.executePressed = false;
         player.bufferedAttack = null;
         startIntroVoice = playIntroVoice ?? null;
+        stopIntroVoice = stopVo ?? null;
         startLevelEntry(transitionFrame, gameplayStartDuration);
+        {
+          // RESTART / RETRY: back into the arena (or boss room) he left (request 442).
+          const cp = takeRetryCheckpoint();   // always consumed, so a stale one cannot outlive its retry
+          if (cp && retried) resumeAtCheckpoint(cp);
+        }
         startMusic();                         // BG1 begins under the narrated walk-in
       },
       /* Back from CONTROLS/OPTIONS with the fight still frozen. Whatever the
@@ -20683,7 +23920,7 @@ function fontState() {
     };
     startWorld();
   } catch (err) {
-    loadingEl.textContent = `ASSET ERROR — ${err.message}`;
     console.error(err);
+    showLoadFailure(err, 'boot');
   }
 })();

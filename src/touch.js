@@ -107,7 +107,18 @@
     const sh = Math.min(window.screen.width || 0, window.screen.height || 0);
     if (sh > 0 && sw / sh > 16 / 9 + 0.01) {
       const bleed = document.createElement('style');
-      bleed.textContent = '.game-shell{width:100vw !important;height:100vh !important;aspect-ratio:auto !important;}';
+      /* In the app the window IS the screen, so filling it is exact. In a
+       * BROWSER it is not (address bar, split screen, not yet fullscreen), and
+       * filling it stretched the picture. There the shell keeps the view's own
+       * shape — the same VIEW_W game.js derives from the screen — and
+       * letterboxes; once fullscreen (webshell.js) the two shapes agree. */
+      if (window.RR_WEB && window.RR_WEB.native === false) {
+        const viewW = Math.min(2200, Math.round((720 * sw / sh) / 2) * 2);
+        const vh = window.CSS && CSS.supports && CSS.supports('height', '100dvh') ? '100dvh' : '100vh';
+        bleed.textContent = `.game-shell{width:min(100vw, calc(${vh} * ${viewW} / 720)) !important;height:auto !important;aspect-ratio:${viewW} / 720 !important;}`;
+      } else {
+        bleed.textContent = '.game-shell{width:100vw !important;height:100vh !important;aspect-ratio:auto !important;}';
+      }
       document.head.appendChild(bleed);
     }
   }
@@ -118,7 +129,11 @@
    * aspect. `base` is the control's design diameter in reference pixels; the
    * rendered size follows the viewport's short edge, then the player's scale.
    * Everything persists under one versioned key. */
-  const HUD_KEY = 'ror.hud.v1';
+  /* v2 (request 357): a layout saved on the phone outlives every APK update,
+   * and one left scattered there was overriding the shipped placement below.
+   * A new key restores HUD_DEFAULTS everywhere once; the old one is dropped. */
+  const HUD_KEY = 'ror.hud.v2';
+  try { localStorage.removeItem('ror.hud.v1'); } catch {}
   const REF_SHORT = 412;                    // reference short edge (design px)
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -252,6 +267,26 @@
 
   let wrap = null, region = null, panel = null, controls = {};
   let editing_sel = null, drag = null;
+  /* THE EDITOR DRAG IS RELATIVE, AND IT HAS A SLOP (request 435).
+   *
+   * It used to set the control's centre to the fingertip on every pointermove,
+   * so the first sub-pixel wobble of a thumb that only meant to TOUCH a button
+   * (to select it, or to reach the size slider) jumped the button's centre onto
+   * the contact point — "it snaps out of position before I even move". Now:
+   * a touch selects and does nothing else; the control only starts moving once
+   * the finger has travelled DRAG_SLOP px, and then it moves BY the finger's
+   * travel, keeping the spot you grabbed it by under your thumb. */
+  const DRAG_SLOP = 12;                     // CSS px of travel before a touch becomes a move
+  const startDrag = (id, e) => ({ id, x: e.clientX, y: e.clientY, ox: HUDS[id].x, oy: HUDS[id].y, live: false });
+  // Where the drag puts the control now, or null while it is still a touch.
+  function dragTo(e) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.live) {
+      if (Math.hypot(dx, dy) < DRAG_SLOP) return null;
+      drag.live = true;                       // …and from here it tracks the whole travel,
+    }                                         // so the grabbed spot stays under the thumb
+    return { x: clamp01(drag.ox + dx / window.innerWidth), y: clamp01(drag.oy + dy / window.innerHeight) };
+  }
   /* Which key each control is currently holding down — see the press handler. */
   const held_code = {};
 
@@ -357,7 +392,7 @@
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault(); e.stopPropagation();
         try { el.setPointerCapture(e.pointerId); } catch {}
-        if (editing) { selectControl(id); drag = { id, x: e.clientX, y: e.clientY }; return; }
+        if (editing) { selectControl(id); drag = startDrag(id, e); return; }
         el.style.filter = 'brightness(1.5)';
         if (c.type === 'key') {
           /* REMEMBERED, not recomputed. `codeFor` can answer differently from
@@ -381,9 +416,10 @@
       el.addEventListener('lostpointercapture', up);
       el.addEventListener('pointermove', (e) => {
         if (!editing || !drag || drag.id !== id) return;
+        const at = dragTo(e);
+        if (!at) return;                       // still a touch, not a move
         const s = HUDS[id];
-        s.x = clamp01((e.clientX) / window.innerWidth);
-        s.y = clamp01((e.clientY) / window.innerHeight);
+        s.x = at.x; s.y = at.y;
         /* clamp so the whole body stays in a usable region */
         const size = s.base * s.scale * (shortEdge() / REF_SHORT);
         const w = size * (c.pill || 1);
@@ -641,7 +677,7 @@
       if (editing) {
         /* dragging the stick in the editor moves it like any control */
         if (movePointer !== null) return;
-        movePointer = e.pointerId; drag = { id: 'stick', x: e.clientX, y: e.clientY };
+        movePointer = e.pointerId; drag = startDrag('stick', e);
         selectControl('stick');
         try { region.setPointerCapture(e.pointerId); } catch {}
         return;
@@ -661,9 +697,10 @@
     region.addEventListener('pointermove', (e) => {
       if (e.pointerId !== movePointer) return;
       if (editing) {
+        const at = drag && drag.id === 'stick' ? dragTo(e) : null;
+        if (!at) return;
         const s = HUDS.stick;
-        s.x = clamp01(e.clientX / window.innerWidth);
-        s.y = clamp01(e.clientY / window.innerHeight);
+        s.x = at.x; s.y = at.y;
         placeStickAtHome();
         parkPanel();                         // the bar yields to the stick too
         return;
@@ -884,7 +921,7 @@
        * on a screen that is navigated. */
       const over = !!(R && R.missionOver);
       /* Controls live on the fight only: paused, the menu owns the screen. */
-      const show = !!(R && R.worldReady && !R.frontActive && !isPaused && !over);
+      const show = !!(R && R.worldReady && !R.frontActive && !R.levelEntryActive && !isPaused && !over);
       wrap.style.display = (show || editing) ? 'block' : 'none';
       /* Gestures ride the interactive menus AND the pause menu (taps and
        * swipes both drive its navigation), never the cinematics. */

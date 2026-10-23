@@ -1,0 +1,60 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "darki_machete_throw_1024x750_sheet",
+  "image": "darki-machete-throw.png",
+  "frameWidth": 512,
+  "frameHeight": 375,
+  "sheet": {
+    "cols": 5,
+    "rows": 5,
+    "frames": 21,
+    "imageWidth": 2560,
+    "imageHeight": 1875
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "sec_muxm4j3m_02he",
+        "role": "custom",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "fps": 30,
+        "fpsMode": "sheet",
+        "loop": false,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "play once forward",
+        "name": "machete throw"
+      }
+    ]
+  },
+  "note": "Custom sections only — each `section` is a named, described tag the AI agent should map to a gameplay action and play with its own loop/pingPong/reverse toggles.",
+  "defaultAnimation": {
+    "start": 0,
+    "end": 20,
+    "fps": 30,
+    "loop": true
+  },
+  "playbackGuide": "This config describes how to set up the sprite sheet exactly as configured in the Sorceress Sprite Analyzer. When an `animation` object is present, `animation.sections` is the authoritative list of named animation sections. Each section has a `role` (start | middle | end | custom), the `frames` it covers, its own `fps`, and three playback toggles: `loop` (repeat), `pingPong` (play forward then reversed, omitting shared endpoints, for a seamless back-and-forth), and `reverse` (play the frames backwards). The `playback` string restates those toggles in words. Sections may overlap. Custom sections also carry a `name` and `description` — treat these as gameplay tags (e.g. a \"kick\" section to play when the character kicks). The canonical phased flow is: play `start` once, then the `middle` section honoring its loop/pingPong, then `end` once; `animation.phases` lists which of those exist and `animation.start`/`middle`/`end` mirror them for older consumers. If no sections are defined use `defaultAnimation`. Frame numbers index the sheet left-to-right, top-to-bottom, 0-based."
+}
