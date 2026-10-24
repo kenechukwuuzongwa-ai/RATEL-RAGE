@@ -277,6 +277,18 @@
    * the finger has travelled DRAG_SLOP px, and then it moves BY the finger's
    * travel, keeping the spot you grabbed it by under your thumb. */
   const DRAG_SLOP = 12;                     // CSS px of travel before a touch becomes a move
+  /* THE EDITOR'S SOUNDS (request 453), through the front end's cue engine so
+   * they share the menus' SFX level: a control picked up, put down, the slider
+   * notches (throttled, so a fast drag is a ripple, not a buzz), and the bar's
+   * buttons. Silent and harmless if the front end is not up. */
+  const sfx = (kind, opt) => { try { window.__rorUiSfx?.(kind, opt); } catch {} };
+  let notchAt = 0;
+  const notch = (v, lo, hi) => {
+    const t = performance.now();
+    if (t - notchAt < 55) return;
+    notchAt = t;
+    sfx('notch', { p: (v - lo) / (hi - lo) });
+  };
   const startDrag = (id, e) => ({ id, x: e.clientX, y: e.clientY, ox: HUDS[id].x, oy: HUDS[id].y, live: false });
   // Where the drag puts the control now, or null while it is still a touch.
   function dragTo(e) {
@@ -392,7 +404,7 @@
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault(); e.stopPropagation();
         try { el.setPointerCapture(e.pointerId); } catch {}
-        if (editing) { selectControl(id); drag = startDrag(id, e); return; }
+        if (editing) { selectControl(id); drag = startDrag(id, e); sfx('pick'); return; }
         el.style.filter = 'brightness(1.5)';
         if (c.type === 'key') {
           /* REMEMBERED, not recomputed. `codeFor` can answer differently from
@@ -405,7 +417,7 @@
       });
       const up = (e) => {
         el.style.filter = '';
-        if (editing) { drag = null; hudSave(); return; }
+        if (editing) { if (drag && drag.id === id && drag.live) sfx('drop'); drag = null; hudSave(); return; }
         if (c.type === 'key') {
           send(held_code[id] || c.code, false);
           held_code[id] = null;
@@ -697,6 +709,7 @@
         if (movePointer !== null) return;
         movePointer = e.pointerId; drag = startDrag('stick', e);
         selectControl('stick');
+        sfx('pick');
         try { region.setPointerCapture(e.pointerId); } catch {}
         return;
       }
@@ -759,6 +772,7 @@
     });
     const off = (e) => {
       if (e.pointerId !== movePointer) return;
+      if (editing && drag && drag.live) sfx('drop');
       movePointer = null; drag = null;
       if (editing) { hudSave(); return; }
       breakRush();                               // releasing stops the rush
@@ -817,20 +831,24 @@
     panel.querySelector('#ror-hud-size').addEventListener('input', (e) => {
       if (!editing_sel) return;
       HUDS[editing_sel].scale = Number(e.target.value);
+      notch(HUDS[editing_sel].scale, 0.6, 1.8);
       liveEdit();
     });
     panel.querySelector('#ror-hud-opac').addEventListener('input', (e) => {
       if (!editing_sel) return;
       HUDS[editing_sel].opacity = Number(e.target.value);
+      notch(HUDS[editing_sel].opacity, 0.25, 1);
       liveEdit();
     });
     panel.querySelector('#ror-hud-vis').addEventListener('click', () => {
       if (!editing_sel) return;
       HUDS[editing_sel].visible = !HUDS[editing_sel].visible;
+      sfx(HUDS[editing_sel].visible ? 'forward' : 'back');
       liveEdit();
     });
     panel.querySelector('#ror-hud-reset').addEventListener('click', () => {
       if (!window.confirm('Reset the control layout to its defaults?')) return;
+      sfx('back');
       HUDS = HUD_DEFAULTS();
       editing_sel = null;
       hudSave();
@@ -843,6 +861,7 @@
      * refuse the clipboard, and chrome://inspect can always read the log. */
     panel.querySelector('#ror-hud-copy').addEventListener('click', () => {
       const code = layoutCode();
+      sfx('forward');
       console.info('[ratel-hud] paste this over HUD_DEFAULTS in src/touch.js:\n' + code);
       let copied = false;
       try { navigator.clipboard.writeText(code); copied = true; } catch {}
@@ -852,9 +871,11 @@
     });
     panel.querySelector('#ror-hud-save').addEventListener('click', () => {
       hudSave();
+      sfx('save');
       flash('Saved');
     });
     panel.querySelector('#ror-hud-done').addEventListener('click', () => {
+      sfx('forward');
       hudSave();
       closeEditor();
     });

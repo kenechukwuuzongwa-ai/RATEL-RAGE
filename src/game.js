@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v80';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v81';
 import { createAftermath } from './aftermath.js?v=ratelrage-jimoh-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-level2-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -3221,7 +3221,7 @@ function togglePause() {
   // owns the pause until a choice is made.
   if (outro.active || bossBeaten() || gameOver.active) return;
   paused = !paused;
-  if (paused) { stopControllerRumble(); pauseChoice = 0; }
+  if (paused) { stopControllerRumble(); pauseChoice = 0; frontEnd?.ui.uiSfx?.('pause'); }   // request 453
   pauseAd = paused ? pauseAdRow() : null;   // the board row is decided once, as the menu opens
   if (paused) flushAds();
   clearPauseInput();
@@ -5029,6 +5029,7 @@ const ctxLife = {};
 let ctxResumes = 0;
 function keepAudioContextAlive(dt) {
   if (keepContextAlive(audioCtx, ctxLife, dt)) ctxResumes++;
+  frontEnd?.ui.keepSfxAlive?.(dt);          // …and the menu's, which the pause menu and the editor play through (request 453)
 }
 
 // Next sample from a reshuffled bag: even distribution, never the same clip twice
@@ -17067,6 +17068,7 @@ function startOutro(x, y) {
   outro.active = true;
   outro.phase = 0; outro.t = 0;
   setBars(outro, 0); outro.wash = 0; outro.card = 0; outro.slammed = false; outro.close = 0;
+  Object.assign(scoreSfx, { last: -1, lastT: -1, landed: false, stamped: false, landT: 0 });
   /* REQUEST 338: the score is frozen here, the moment he is down, and Darki
    * speaks over the body — "Don't Play!" — before his crew is allowed to break.
    * The taunt beat holds the rout until the line has finished (the fall beat
@@ -17192,6 +17194,41 @@ function paceDefeatedCrew(e, dt) {
   stepOutroAnim(e, dt);
 }
 
+/* THE SCORE COUNTER'S SOUND (request 453). drawOutroSummary counts the total up
+ * over SCORE_COUNT.dur from SCORE_COUNT.at on the summary clock; this follows the
+ * SAME clock and the same curve, so the ticks are the number moving: one per
+ * visible change, at most every SCORE_COUNT.gap seconds, rising in pitch as it
+ * climbs. Then the total lands (tally) and the rank is stamped. */
+const SCORE_COUNT = { at: 0.3, dur: 1.1, gap: 0.045, stampAfter: 0.16 };
+const scoreSfx = { last: -1, lastT: -1, landed: false, stamped: false, landT: 0 };
+function outroSummaryT() {
+  if (!outro.active || outro.card <= 0.01) return null;
+  const name = outroPhase();
+  const cardDur = OUTRO.phases.find((p) => p[0] === 'card')?.[1] ?? 0.85;
+  if (name !== 'card' && name !== 'file') return null;
+  return (name === 'card' ? outro.t : cardDur + outro.t) - OUTRO.closeDur;
+}
+function updateScoreCounterSfx() {
+  const st = outroSummaryT();
+  if (st == null || st < SCORE_COUNT.at) return;
+  const F = run.final;
+  if (!F) return;
+  const k = Math.min(1, (st - SCORE_COUNT.at) / SCORE_COUNT.dur);
+  const ease = 1 - Math.pow(1 - k, 3);
+  const shown = Math.round(F.total * ease);
+  if (k < 1) {
+    if (shown !== scoreSfx.last && st - scoreSfx.lastT >= SCORE_COUNT.gap) {
+      scoreSfx.last = shown; scoreSfx.lastT = st;
+      frontEnd?.ui.uiSfx?.('tick', { p: k });
+    }
+    return;
+  }
+  if (!scoreSfx.landed) { scoreSfx.landed = true; scoreSfx.landT = st; frontEnd?.ui.uiSfx?.('tally'); return; }
+  if (!scoreSfx.stamped && st - scoreSfx.landT >= SCORE_COUNT.stampAfter) {
+    scoreSfx.stamped = true;
+    frontEnd?.ui.uiSfx?.('stamp', { rank: F.rank });
+  }
+}
 function updateOutro(dt) {
   swallowInput();
   mobClock += dt;
@@ -17201,6 +17238,7 @@ function updateOutro(dt) {
   if (aftermath.owningFrame) { aftermath.update(dt); return; }
   outro.t += dt;
   evidence.t += dt;
+  updateScoreCounterSfx();
   const [name, phaseDur] = OUTRO.phases[outro.phase];
   const dur = name === 'taunt' ? outro.tauntHold : phaseDur;
 
@@ -20856,7 +20894,7 @@ function drawOutro() {
     /* THE SCORECARD (request 338): the run's numbers, the total they make and
      * its rank — frozen when MC_Olodo went down (run.final). */
     const F = run.final || computeScore();
-    const shown = Math.round(F.total * ease(Math.max(0, Math.min(1, (summaryT - 0.3) / 1.1))));
+    const shown = Math.round(F.total * ease(Math.max(0, Math.min(1, (summaryT - SCORE_COUNT.at) / SCORE_COUNT.dur))));
     ctx.textAlign = 'right';
     ui.setDisplay(800, 40, 1);
     ctx.fillStyle = C.paper;
@@ -22606,6 +22644,8 @@ window.__ror = {
   dropMedpackAt(x, y) { medpacks.push({ x, y: clampLane(y), t: 0 }); return medpacks.length; },
   get gameOver() { return { active: gameOver.active, t: gameOver.t, items: menuItems().map((i) => i.label), choice: pauseChoice }; },
   get bossBeaten() { return bossBeaten(); },
+  get scoreSfx() { return { ...scoreSfx, summaryT: outroSummaryT() }; },          // request 453
+  get uiSfxCount() { return frontEnd?.ui.uiSfxCount ?? {}; },
   get outroPhase() { return outro.active ? outroPhase() : null; },
   get voicePlays() { return { ...voicePlays }; },
   registerHitRaw(d) { registerHit(d); },

@@ -1824,6 +1824,90 @@ export function createFrontEnd({
     };
   }
 
+  /* ------------------------------------------------ synthesised UI cues ---
+   * Request 453: the score counter, the pause menu opening, and the touch
+   * button editor had no sound. These are short tones built on the same context
+   * and the same master x SFX level as every other UI cue, so they need no
+   * files to download and they sit in the same mix.
+   *
+   * THE CEILING is the forward nav click (peaks ~0.55 at full sliders, see
+   * CUES). Every peak below is set under it; the stacked chord of `tally` is
+   * the loudest and stays near it, because the total landing is the one beat
+   * here meant to be heard over the music.
+   *
+   *   tick   one step of the score counting up; `p` 0..1 raises the pitch
+   *   tally  the total has landed
+   *   stamp  the rank lands (`rank` 'S' adds a sparkle)
+   *   pause  the pause menu opens
+   *   pick / drop   the button editor: a control picked up / put down
+   *   notch  a SIZE or OPACITY slider step; `p` 0..1 is its position
+   *   save   the editor's SAVE */
+  function tone(t0, { f, f2 = f, dur, type = 'sine', peak, attack = 0.004 }, level) {
+    const ac = sfx.ac;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t0);
+    if (f2 !== f) o.frequency.exponentialRampToValueAtTime(Math.max(20, f2), t0 + dur);
+    const a = peak * level;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(a, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(ac.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function noiseBurst(t0, { dur, peak, band = 1200, q = 0.9 }, level) {
+    const ac = sfx.ac, n = Math.ceil(ac.sampleRate * dur);
+    const buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = buf; bp.type = 'bandpass'; bp.frequency.value = band; bp.Q.value = q;
+    g.gain.setValueAtTime(peak * level, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(bp).connect(g).connect(ac.destination);
+    src.start(t0); src.stop(t0 + dur + 0.02);
+  }
+  const uiSfxCount = {};
+  function uiSfx(kind, opt) {
+    opt = opt || {};
+    uiSfxCount[kind] = (uiSfxCount[kind] || 0) + 1;      // counted even when silent, for the harnesses
+    const ac = sfx.ac;
+    if (!ac) return false;
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    const level = clamp(settings.master * settings.sfx, 0, 1);
+    if (level <= 0) return false;
+    const t = ac.currentTime + 0.005, p = clamp(opt.p ?? 0, 0, 1);
+    switch (kind) {
+      case 'tick': tone(t, { f: 900 + 900 * p, dur: 0.035, type: 'square', peak: 0.07, attack: 0.002 }, level); break;
+      case 'tally':
+        for (const [f, at] of [[784, 0], [1175, 0.04], [1568, 0.08]]) tone(t + at, { f, dur: 0.6, peak: 0.12, attack: 0.006 }, level);
+        tone(t, { f: 196, f2: 120, dur: 0.16, type: 'triangle', peak: 0.26 }, level);
+        break;
+      case 'stamp':
+        noiseBurst(t, { dur: 0.13, peak: 0.32, band: 900 }, level);
+        tone(t, { f: 120, f2: 55, dur: 0.24, peak: 0.42 }, level);
+        if (opt.rank === 'S') tone(t + 0.06, { f: 2093, f2: 2637, dur: 0.32, type: 'triangle', peak: 0.09 }, level);
+        break;
+      case 'pause':
+        tone(t, { f: 660, f2: 440, dur: 0.1, type: 'triangle', peak: 0.24 }, level);
+        tone(t + 0.07, { f: 330, dur: 0.12, type: 'triangle', peak: 0.16 }, level);
+        break;
+      case 'pick': tone(t, { f: 880, f2: 1180, dur: 0.07, peak: 0.2 }, level); break;
+      case 'drop': tone(t, { f: 560, f2: 300, dur: 0.1, type: 'triangle', peak: 0.28 }, level); break;
+      case 'notch': tone(t, { f: 520 + 760 * p, dur: 0.03, peak: 0.13, attack: 0.002 }, level); break;
+      case 'save':
+        tone(t, { f: 660, dur: 0.1, peak: 0.18 }, level);
+        tone(t + 0.08, { f: 990, dur: 0.16, peak: 0.18 }, level);
+        break;
+      default: return false;
+    }
+    return true;
+  }
+  /* The touch layer (src/touch.js) is a plain script: it reaches the same cues
+   * through here, so the button editor sounds like the menus it opens from. */
+  if (typeof window !== 'undefined') {
+    window.__rorUiSfx = (kind, opt) => (kind === 'forward' ? (navForward(), true) : kind === 'back' ? (navBack(), true) : uiSfx(kind, opt));
+  }
+
   /* ------------------------------------------------- the voice-over clips --
    *
    * THE NARRATION DOES NOT STREAM ON ANDROID.
@@ -7398,6 +7482,12 @@ export function createFrontEnd({
     wrapLines,
     drawControlBar, drawGrain, drawVignette, captureBackdrop,
     pressPulse, navForward, navBack, hitTest, pointerPos,
+    uiSfx,                                  // request 453: the synthesised cues above
+    get uiSfxCount() { return { ...uiSfxCount }; },
+    /* The menu's context has to be kept alive WHILE THE FIGHT RUNS too: its own
+     * update() is not running then, and every pause-menu and editor cue plays
+     * through it. game.js calls this every frame (request 453). */
+    keepSfxAlive(dt) { keepContextAlive(sfx.ac, sfxCtxLife, dt); },
     /* DARKI'S FACE, cropped out of the idle sheet at boot (buildAvatar) and
      * already used by the menu and the pause panel. Shared so the fight's
      * status plate can put him in its portrait ring rather than the grey
