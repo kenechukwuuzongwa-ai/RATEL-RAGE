@@ -474,6 +474,7 @@
    * as a real pointer sequence, so menu buttons keep behaving exactly as they
    * did — the gesture layer only claims MOVEMENT, never clicks. */
   let gest = null, gp = null, gStart = { x: 0, y: 0 }, gT = 0, gStep = 0, gConsumed = false;
+  let gHold = false;   // request 451: this finger is holding an options ▼/▲ (press now, release on lift)
 
   const tapKey = (code) => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
@@ -523,9 +524,16 @@
       gStart = { x: e.clientX, y: e.clientY };
       gT = performance.now(); gStep = 0; gConsumed = false;
       try { gest.setPointerCapture(e.pointerId); } catch {}
+      gHold = !!window.__ror?.menuHoldAt?.(e.clientX, e.clientY);
+      if (gHold) {
+        const canvas = document.getElementById('game');
+        const base = { clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true, view: window,
+          pointerId: 991, pointerType: 'touch', isPrimary: true };
+        canvas?.dispatchEvent(new PointerEvent('pointerdown', { ...base, buttons: 1, button: 0 }));
+      }
     });
     gest.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== gp || gConsumed) return;
+      if (e.pointerId !== gp || gConsumed || gHold) return;   // a held arrow is not a swipe
       const dx = e.clientX - gStart.x, dy = e.clientY - gStart.y;
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2) {
         gConsumed = true;
@@ -543,6 +551,12 @@
     });
     const gOff = (e) => {
       if (e.pointerId !== gp) return;
+      if (gHold) {                                   // let go of the arrow: the repeat stops
+        gHold = false; gp = null;
+        window.dispatchEvent(new PointerEvent('pointerup', { clientX: e.clientX, clientY: e.clientY, bubbles: true,
+          pointerId: 991, pointerType: 'touch', isPrimary: true, buttons: 0, button: 0 }));
+        return;
+      }
       const moved = Math.hypot(e.clientX - gStart.x, e.clientY - gStart.y);
       if (!gConsumed && moved < 14 && (performance.now() - gT) < 500) {
         /* WHAT A TAP MEANS, in priority order.
@@ -569,7 +583,11 @@
       gp = null;
     };
     gest.addEventListener('pointerup', gOff);
-    gest.addEventListener('pointercancel', (e) => { if (e.pointerId === gp) gp = null; });
+    gest.addEventListener('pointercancel', (e) => {
+      if (e.pointerId !== gp) return;
+      gp = null;
+      if (gHold) { gHold = false; window.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 991 })); }
+    });
     document.body.appendChild(gest);
   }
 

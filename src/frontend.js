@@ -1309,6 +1309,16 @@ export function createFrontEnd({
    * the control by matching this against their index. */
   let selection = 0;
   let optionPage = null;
+  /* THE SLIDER ADJUSTER (request 451). On a phone the four directions are all
+   * taken — swipe right enters, swipe left goes back, up/down moves the cursor —
+   * so a slider could only ever be tapped UP (confirm stepped it +5%) and never
+   * brought back down. Tapping a slider row now pops out ▼/▲ buttons beside it:
+   * each tap is one step, holding repeats, and while it is open up/down (keys,
+   * pad, or the right-half vertical swipe) move the VALUE instead of the cursor.
+   * Back (swipe left, Escape, Circle) closes it before it ever leaves the page. */
+  let adjustRow = -1;
+  let adjHold = null;                 // { dir, t } while an arrow is held down
+  const ADJ = { w: 66, h: 56, gap: 12 };
   let optionRows = [];
   let difficulty = 'NORMAL';
   let message = '';
@@ -2385,6 +2395,7 @@ export function createFrontEnd({
     }
     if (next === 'menu') {
       optionPage = null;
+      adjustRow = -1;
       returnPhase = 'menu';
       pausedOrigin = false;
       setAmbiencePlaying(true);
@@ -2518,7 +2529,8 @@ export function createFrontEnd({
      * intro plays again on the way forward — it is skippable with Cross, and the
      * alternative was a BACK that silently discards the briefing flow. */
     if (phase === 'levelTitle') { navBack(); go('briefing'); return; }
-    if (optionPage) { optionPage = null; selection = 0; navBack(); return; }
+    if (optionPage && adjustRow >= 0) { selection = adjustRow; adjustRow = -1; adjHold = null; navBack(); return; }
+    if (optionPage) { optionPage = null; adjustRow = -1; selection = 0; navBack(); return; }
     navBack();
     if (phase === 'menu') { showMessage('QUIT IS CONTROLLED BY THE GAME HOST'); return; }
     if (phase === 'difficulty') toMenu();
@@ -2562,6 +2574,7 @@ export function createFrontEnd({
    * something was dismissed. The back cue is now reserved for actually
    * LEAVING a screen (see back()), so it means exactly one thing. */
   function move(delta) {
+    if (optionPage && adjustRow >= 0) { selection = adjustRow; adjustOption(-delta); return; }   // up = louder
     const n = listLength();
     if (!n) return;
     const next = (selection + delta + n) % n;
@@ -2684,7 +2697,18 @@ export function createFrontEnd({
     }
     if (phase === 'characters') { navForward(); go('character'); return; }
     if (phase === 'options') {
-      if (optionPage) { adjustOption(1); return; }
+      if (optionPage) {
+        const row = optionRows[selection];
+        if (row?.type === 'slider') {
+          adjustRow = adjustRow === selection ? -1 : selection;
+          pressPulse(`opt:${selection}`);
+          navForward();
+          return;
+        }
+        adjustRow = -1;
+        adjustOption(1);
+        return;
+      }
       const item = currentItems()[selection].label;
       navForward();
       if (item === 'RESET SETTINGS') {
@@ -2697,6 +2721,7 @@ export function createFrontEnd({
       } else {
         optionPage = item;
         optionRows = optionSpec(item);
+        adjustRow = -1;
         selection = 0;
       }
       return;
@@ -2899,6 +2924,10 @@ export function createFrontEnd({
       return;
     }
 
+    if (adjHold) {
+      if (adjustRow < 0 || !optionPage) adjHold = null;
+      else { adjHold.t -= dt; if (adjHold.t <= 0) { adjHold.t = HOLD_RATE; selection = adjustRow; adjustOption(adjHold.dir); } }
+    }
     axis(repeatV, dt, 'up', 'down', held('up'), held('down'), move, true);
     /* Left/right does one of two jobs and never both: it slides an option row's
      * value, or — on a screen whose list is laid out ACROSS rather than down —
@@ -2952,6 +2981,7 @@ export function createFrontEnd({
     if (Math.abs(p.x - lastPointer.x) < 0.5 && Math.abs(p.y - lastPointer.y) < 0.5) return;
     lastPointer = p;
     const hit = hitTest(p);
+    if (adjustRow >= 0) return;                    // the adjuster owns the cursor until it is closed
     if (!hit || hit.index === selection) return;   // hovering in place makes no sound
     selection = hit.index;
     navForward();                                  // hovering is moving, not going back
@@ -2989,12 +3019,21 @@ export function createFrontEnd({
     if (inputLock > 0 || pressGate.action) return;
     const hit = hitTest(pointerPos(e));
     if (!hit) return;
+    if (String(hit.id).startsWith('optadj:') && adjustRow >= 0) {   // ▼/▲: one step now, more while held
+      const dir = hit.id === 'optadj:up' ? 1 : -1;
+      selection = adjustRow;
+      adjustOption(dir);
+      adjHold = { dir, t: HOLD_DELAY };
+      pointerDownIndex = -1;
+      return;
+    }
     selection = hit.index;
     pointerDownIndex = hit.index;
     pressPulse(hit.id);
   }
 
   function onPointerUp(e) {
+    adjHold = null;
     if (darkiTool.on) { darkiToolPointerUp(); return; }
     if (!active() || pointerDownIndex < 0) return;
     const hit = hitTest(pointerPos(e));
@@ -3011,7 +3050,8 @@ export function createFrontEnd({
   canvas.addEventListener('pointermove', onPointerMove, true);
   canvas.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('pointerup', onPointerUp, true);
-  canvas.addEventListener('pointerleave', () => { pointerDownIndex = -1; });
+  canvas.addEventListener('pointerleave', () => { pointerDownIndex = -1; adjHold = null; });
+  window.addEventListener('pointercancel', () => { adjHold = null; }, true);
   /* Not passive: the wheel is the scale control while the tool is open, and the
    * page must not scroll under it. Nothing is consumed when it is closed. */
   canvas.addEventListener('wheel', (e) => {
@@ -5244,6 +5284,42 @@ export function createFrontEnd({
     return '—';
   }
 
+  /* The pop-out ▼/▲ pair for the row being adjusted (request 451). Sized for a
+   * thumb, beside the bar it moves, pushed AFTER the rows so the hit test (which
+   * reads from the top of the stack) always finds them first. */
+  function drawAdjuster(i) {
+    const row = optionRows[i];
+    const x = 100, w = 1080, h = 50, y = 186 + i * 62;
+    const sx = x + w - 300;
+    const cy = y + h / 2;
+    const min = row.min ?? 0, max = row.max ?? 1, v = settings[row.key];
+    const pair = [
+      { id: 'optadj:down', dir: -1, bx: sx - ADJ.gap * 2 - ADJ.w * 2, off: v <= min + 1e-9 },
+      { id: 'optadj:up', dir: 1, bx: sx - ADJ.gap - ADJ.w, off: v >= max - 1e-9 },
+    ];
+    for (const b of pair) {
+      const by = cy - ADJ.h / 2;
+      const held = adjHold && adjHold.dir === b.dir;
+      ctx.save();
+      roundRectPath(ctx, b.bx, by, ADJ.w, ADJ.h, 10);
+      ctx.fillStyle = held ? C.orange : 'rgba(18,20,26,0.92)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = b.off ? 'rgba(255,255,255,0.18)' : C.orange;
+      ctx.stroke();
+      // the arrow
+      const ax = b.bx + ADJ.w / 2, ay = cy, k = 12;
+      ctx.beginPath();
+      if (b.dir > 0) { ctx.moveTo(ax - k, ay + k * 0.55); ctx.lineTo(ax + k, ay + k * 0.55); ctx.lineTo(ax, ay - k * 0.75); }
+      else { ctx.moveTo(ax - k, ay - k * 0.55); ctx.lineTo(ax + k, ay - k * 0.55); ctx.lineTo(ax, ay + k * 0.75); }
+      ctx.closePath();
+      ctx.fillStyle = b.off ? 'rgba(255,255,255,0.25)' : (held ? '#14161b' : C.cream);
+      ctx.fill();
+      ctx.restore();
+      hitboxes.push({ x: b.bx, y: by, w: ADJ.w, h: ADJ.h, index: i, id: b.id });
+    }
+  }
+
   function drawOptions() {
     stage({ darken: 0.46 });
     beginScreen();
@@ -5304,10 +5380,14 @@ export function createFrontEnd({
           ctx.textBaseline = 'alphabetic';
         }
       }
+      if (adjustRow >= 0 && optionRows[adjustRow]?.type !== 'slider') adjustRow = -1;
+      if (adjustRow >= 0) drawAdjuster(adjustRow);
     }
     endScreen();
     drawControlBar(optionPage
-      ? [{ icon: 'dpad', label: 'ADJUST' }, { icon: 'circleBtn', label: 'BACK', color: '#ff8f8f' }]
+      ? (adjustRow >= 0
+        ? [{ icon: 'dpad', label: 'TAP THE ARROWS OR SWIPE UP / DOWN' }, { icon: 'circleBtn', label: 'DONE', color: '#ff8f8f' }]
+        : [{ icon: 'dpad', label: 'TAP A SLIDER TO ADJUST' }, { icon: 'circleBtn', label: 'BACK', color: '#ff8f8f' }])
       : MENU_HINTS);
     messagePlate();
     drawGrain();
@@ -6854,6 +6934,7 @@ export function createFrontEnd({
   function returnToPause() {
     navBack();
     optionPage = null;
+    adjustRow = -1;
     returnPhase = 'menu';
     pausedOrigin = false;
     prevPhase = phase;
@@ -6921,6 +7002,7 @@ export function createFrontEnd({
     resetGestureGuide() { endGestureGuide(); try { sessionStorage.removeItem(GESTURE_GUIDE.seen); } catch {} guide.st = 'off'; guide.t = 0; guide.alpha = 0; },
     get dossierTarget() { return dossier().target; },
     get optionPage() { return optionPage; },
+    get adjustRow() { return adjustRow; },        // request 451: the slider whose ▼/▲ are out (-1 = none)
     get inputLock() { return inputLock; },
     /* `title` is the splash entrance sfx. It rides here because the ONE thing a
      * screenshot can never show about it is that it did not fire on arrival —

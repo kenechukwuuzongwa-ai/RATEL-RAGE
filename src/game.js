@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v78';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v79';
 import { createAftermath } from './aftermath.js?v=ratelrage-jimoh-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-level2-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -21864,6 +21864,16 @@ window.__ror = {
    * "activate whatever is selected". Both menus push their rows through the
    * same ui.button(), so one probe answers for the front end, the pause list
    * and the level-select cards alike. */
+  /* …and is it one that is HELD rather than tapped (request 451)? The options
+   * ▼/▲ repeat while pressed, so the touch layer forwards their press and
+   * release as they happen instead of as one instant tap. */
+  menuHoldAt(clientX, clientY) {
+    const ui = frontEnd?.ui;
+    if (!ui) return false;
+    try { const h = ui.hitTest(ui.pointerPos({ clientX, clientY })); return !!h && String(h.id).startsWith('optadj:'); }
+    catch { return false; }
+  },
+  get optionAdjustRow() { return window.__rorMenu?.adjustRow ?? -1; },
   menuHitAt(clientX, clientY) {
     const ui = frontEnd?.ui;
     if (!ui) return false;
