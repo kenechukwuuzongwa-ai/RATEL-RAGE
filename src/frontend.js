@@ -1360,6 +1360,15 @@ export function createFrontEnd({
   let gameplayStartVoStarted = false;
   let audioUnlocked = false;
   let introVideo = null;
+  /* LEVEL 02'S INTRO SCORE (request 452): "RAtelRAge Level evidence examination
+   * soundtrack", under the cut's own narration. On the MUSIC slider, and at a
+   * gain MEASURED to sit under the voice: decoded in the browser
+   * (_chromakey/req452/loudness.js) the cut's narration runs ~-13.6 dB and the
+   * score ~-17.3 dB while sounding, so 0.38 (-8.4 dB) puts the score ~12 dB
+   * below the voice when MUSIC and VOICE are at the same setting. 176 s against
+   * a 65 s cut, so it never loops; it fades in, and leaves with the picture. */
+  const L2_INTRO_MUSIC = { src: '../frontend/audio/level2-evidence-score.mp3', gain: 0.38, fadeIn: 1.5 };
+  let introMusic = null, introMusicT = 0;
   let introLoadPromise = null;
   let introFallbackT = 0;
   let voiceRetryT = 0;          // cadence of the intro voice's autoplay retries
@@ -2026,6 +2035,20 @@ export function createFrontEnd({
     cueCount.back++; cueCount.order.push('B'); playCue('back');
   };
 
+  const introMusicLevel = () => clamp(settings.master * settings.music * L2_INTRO_MUSIC.gain, 0, 1);
+  function ensureIntroMusic() {
+    if (introMusic) return introMusic;
+    introMusic = new Audio(new URL(L2_INTRO_MUSIC.src, import.meta.url));
+    introMusic.preload = 'auto';
+    introMusic.loop = false;
+    return introMusic;
+  }
+  function stopIntroMusic() {
+    if (!introMusic) return;
+    introMusic.pause();
+    try { introMusic.currentTime = 0; } catch {}
+    introMusicT = 0;
+  }
   function applyAudioSettings() {
     if (ambience) ambience.volume = clamp(settings.master * settings.ambience * 0.62, 0, 1);
     if (voice) voice.volume = clamp(settings.master * settings.voice, 0, 1);
@@ -6279,6 +6302,7 @@ export function createFrontEnd({
       introVideo.setAttribute('playsinline', '');
       introVideo.setAttribute('aria-hidden', 'true');
       introLoadProgress = 0.15;
+      if (isL2()) ensureIntroMusic().load();      // the score loads behind the cut (request 452)
     }
     // CAN PLAY, not just a first frame (request 360): the intro starts on a player that can keep going.
     if (introVideo.readyState >= 3) { introLoadProgress = 1; return; }
@@ -6324,6 +6348,7 @@ export function createFrontEnd({
    * phone gets the decoder and its memory back for the fight, and the next run
    * builds a fresh element that loads at 0:00 behind the loading screen. */
   function releaseIntroVideo() {
+    stopIntroMusic();                     // every way out of the cinematic comes through here (request 452)
     if (!introVideo) return;
     introVideo.pause();
     introVideo.removeAttribute('src');
@@ -6352,6 +6377,13 @@ export function createFrontEnd({
       introVideo.muted = !isL2();
       if (isL2()) introVideo.volume = clamp(settings.master * settings.voice, 0, 1);
       const videoPlay = introVideo.play();
+      if (isL2()) {                                 // the score, faded in under the narration (update)
+        const m = ensureIntroMusic();
+        introMusicT = 0;
+        m.volume = 0;
+        try { if (m.currentTime > 0.05) m.currentTime = 0; } catch {}
+        m.play()?.catch?.(() => {});
+      }
       /* An unmuted start can still meet the autoplay policy; the picture and
        * the subtitles must go on regardless, so retry it muted. */
       if (videoPlay?.catch) videoPlay.catch(() => {
@@ -6685,6 +6717,16 @@ export function createFrontEnd({
     if (introClosing && introVideo && isL2()) {
       introVideo.volume = clamp(settings.master * settings.voice, 0, 1) * (1 - barCut.depth);
     }
+    /* The score: faded in from its first frame, held at its measured level under
+     * the narration (live with the MUSIC slider), and out with the bars. */
+    if (introMusic && !introMusic.paused) {
+      if (phase !== 'intro') stopIntroMusic();
+      else {
+        introMusicT += dt;
+        const fade = Math.min(1, introMusicT / L2_INTRO_MUSIC.fadeIn);
+        introMusic.volume = introMusicLevel() * fade * (introClosing ? (1 - barCut.depth) : 1);
+      }
+    }
 
     /* Ahead of the pendingGameplay hold below, because the press being answered
      * may BE the one that asks for the handover — the beat has to finish on the
@@ -6979,6 +7021,8 @@ export function createFrontEnd({
         entrySrc: gameplayStartVo ? String(gameplayStartVo.src || gameplayStartVo.url || '') : null,
         video: introVideo ? { t: introVideo.currentTime, muted: introVideo.muted, volume: introVideo.volume,
           paused: introVideo.paused, ended: introVideo.ended, ready: introVideo.readyState, src: introVideo.dataset.rorSrc } : null,
+        music: introMusic ? { t: +introMusic.currentTime.toFixed(2), volume: +introMusic.volume.toFixed(4), paused: introMusic.paused,
+          level: +introMusicLevel().toFixed(4), gain: L2_INTRO_MUSIC.gain, src: String(introMusic.src) } : null,
         introTime: introTime(),
         briefY: { ...briefY },
         reveal: { body: dossier().body.map((_, i) => +briefReveal('body', i).toFixed(4)), call: dossier().call.map((_, i) => +briefReveal('call', i).toFixed(4)) },
