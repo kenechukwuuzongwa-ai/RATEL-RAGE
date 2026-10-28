@@ -184,8 +184,9 @@ const camYRange = () => {
 /* And where its left column may live, given the bound in force on the right:
  * a wave gate while one holds, else the end of the street. */
 const camXRange = (rightBound) => {
-  const lo = PLAYAREA.minX;
-  const hi = Math.min(rightBound, PLAYAREA.maxX + 1) - viewW();
+  // inside the strong room the frame keeps its door in shot (request 454)
+  const lo = l2InRoom() ? L2M_STAGE.camLeft : PLAYAREA.minX;
+  const hi = Math.min(rightBound, levelRightEdge()) - viewW();
   return { lo, hi: Math.max(lo, hi) };
 };
 
@@ -282,25 +283,61 @@ const VEHICLE_ART = [
  * the same snapped origin, so the pillars can never drift against the floor).
  * FP has its own, faster parallax (L2.fpParallax), anchored so each pillar is
  * exactly where the PSD puts it when it crosses the middle of the screen. */
+/* REQUEST 454: THE PSD WAS EXTENDED to a 13813 x 724 canvas (sections 4-5, the
+ * strong-room door, the evidence bay and its workstation). The ORIGINAL mapping is
+ * kept exactly — same uniform scale (9259 / 6700), same vertical offset — so the
+ * first 6700 columns land on the same world pixels as before and every existing
+ * arena, pillar and clamp is unchanged; the new columns simply continue east to
+ * L2_WORLD_W. The plate is now GPB copy under GPB (the PSD order), split at art
+ * col 6912 (_chromakey/req454/l2prep.js) so neither half passes a phone's
+ * 8192 px texture limit. */
 const L2 = Object.freeze({
   artW: 6700,
+  fullW: 13813,
   scale: WORLD_W / 6700,
   artY: 645 - 490 * (WORLD_W / 6700),          // ≈ -32.15
   fpParallax: 1.32,
-  gpb: { src: 'layers/level2/gpb.png', w: 7239, h: 724 },
+  gpb: { srcA: 'layers/level2/gpb-a.png', srcB: 'layers/level2/gpb-b.png', split: 6912, w: 13813, h: 724 },
+  /* The strong room (request 454). `door` is the one moving layer: it sits UNDER
+   * `room` in the PSD (Interior, the keypad pillar, the Pillar layer without its
+   * front pillar, the masked bay patch), which is drawn over it, so the door only
+   * ever shows inside the doorway opening (art cols 12145..12258, rows ~201..~572).
+   * In the PSD it hangs at its RAISED rest (bottom row ~355, the doorway open under
+   * it); `closedDy` brings its hazard edge down onto the threshold, `openDy` lifts
+   * it clear of the opening. `pillarFront` is that layer's front pillar — its base
+   * runs below the canvas (row 751), nearer than the floor, so it draws over actors. */
+  door: { src: 'layers/level2/door.png', left: 12139, top: -28, w: 124, h: 390, closedDy: 218, openDy: -170,
+    holeL: 12145, holeR: 12258, threshold: 572 },
+  room: { src: 'layers/level2/room.png', left: 11753, top: 0, w: 2060, h: 724 },
+  pillarFront: { src: 'layers/level2/pillar-front.png', left: 11976, top: -194, w: 177, h: 945 },
+  /* The workstation (masked desk + laptop + router), depth-sorted at its feet. The
+   * laptop's screen, in desk-image pixels, for the power-on glow. */
+  desk: { src: 'layers/level2/desk.png', left: 13074, top: 471, w: 144, h: 116,
+    screen: [[89, 1], [116, 4], [108, 27], [78, 24]], keys: [62, 30] },
+  /* The keypad on its pillar ("Weathered Industrial Pillar with Keypad copy",
+   * 11930,-9 94x580), measured off the layer: the unit's face. */
+  keypad: { x0: 11948, x1: 11976, y0: 430, y1: 481, foot: 571 },
   /* MP: one image, three placements (left/top in PSD pixels). The solid FOOT is
    * the base flange measured off the layer's alpha (cols 43..179 of 223 on its
    * last rows), pulled in 10 px a side so a shoulder can brush the steel. */
-  mp: { src: 'layers/level2/mp.png', w: 223, h: 665, footL: 53, footR: 169, base: 664,
-    at: [{ left: 966, top: -79 }, { left: 3751, top: -54 }, { left: 4762, top: -64 }] },
+  mp: { src: 'layers/level2/mp.png', w: 224, h: 665, footL: 53, footR: 169, base: 664,
+    at: [{ left: 966, top: -79 }, { left: 3751, top: -54 }, { left: 4762, top: -64 },
+      { left: 8113, top: -54 }, { left: 9124, top: -64 }, { left: 10374, top: -54 }] },
   fp: [
-    { src: 'layers/level2/fp-1.png', left: 1593, top: -140, w: 588, h: 882 },
+    { src: 'layers/level2/fp-1.png', left: 1593, top: -140, w: 587, h: 883 },
     { src: 'layers/level2/fp-2.png', left: 2618, top: -2, w: 557, h: 837 },
-    { src: 'layers/level2/fp-3.png', left: 5241, top: -111, w: 616, h: 946 },
+    { src: 'layers/level2/fp-3.png', left: 5241, top: -111, w: 566, h: 945 },
+    { src: 'layers/level2/fp-4.png', left: 6760, top: -111, w: 566, h: 945 },
+    { src: 'layers/level2/fp-5.png', left: 9553, top: -111, w: 566, h: 945 },
   ],
 });
 const l2X = (ax) => ax * L2.scale;
 const l2Y = (ay) => L2.artY + ay * L2.scale;
+/* Level 02's world now runs past Level 01's (request 454). */
+const L2_WORLD_W = Math.round(l2X(L2.fullW));
+const levelW = () => (activeLevel === 2 ? L2_WORLD_W : WORLD_W);
+/* The camera's exclusive right edge (levelRightEdge() on the street). */
+const levelRightEdge = () => (activeLevel === 2 ? L2_WORLD_W : PLAYAREA.maxX + 1);
 /* The camera's floor here: the GPB's last row. */
 const L2_ART_BOTTOM = l2Y(724);
 /* THE MIDDLE PILLARS ARE SOLID AT THEIR FOOT, AND ONLY THERE. Same contract as a
@@ -313,6 +350,86 @@ const L2_PILLARS = L2.mp.at.map((p, i) => ({
   y: l2Y(p.top + L2.mp.base), h: l2X(L2.mp.h), clearH: 1e6,
   drawX: l2X(p.left), drawY: l2Y(p.top),
 }));
+/* THE STRONG-ROOM DOOR'S LIVE OFFSET (request 454), in art px from the PSD's
+ * raised rest: closedDy has its hazard edge on the threshold, openDy lifts it
+ * clear of the opening. Only the mission moves it (l2DoorTo); it travels at a
+ * fixed rate, so it reads as one heavy shutter rather than a cut. */
+const L2_DOOR_SPEED = 260;     // art px / s — ~1.5 s from shut to open
+const l2Door = { dy: L2.door.closedDy, target: L2.door.closedDy };
+const l2DoorTo = (open) => { l2Door.target = open ? L2.door.openDy : L2.door.closedDy; };
+const l2DoorIsOpen = () => l2Door.dy <= L2.door.openDy + 6;
+const l2DoorIsShut = () => l2Door.dy >= L2.door.closedDy - 2;
+/* THE WORKSTATION IS SOLID, like a middle pillar, but it is a desk and not a
+ * post: its footprint runs from the back legs (desk-image row ~85) to the front
+ * ones (row 116), so the band behind its foot row is that deep (`backGap`)
+ * instead of the pillars' few px. Depth-sorted at its front feet. */
+const L2_DESK = {
+  id: 'desk', desk: true,
+  x: l2X(L2.desk.left + 6), w: l2X(L2.desk.w - 12),
+  y: l2Y(L2.desk.top + L2.desk.h), h: l2X(L2.desk.h), clearH: 1e6,
+  backGap: l2X(32),
+  drawX: l2X(L2.desk.left), drawY: l2Y(L2.desk.top),
+};
+const L2_SOLIDS = [...L2_PILLARS, L2_DESK];
+/* THE STRONG-ROOM MISSION'S STAGING, world px (request 454). Every mark is read
+ * off the PSD geometry above rather than typed against a screenshot:
+ *   keypad   the unit's face is art x 11948..11976, rows 430..481; Darki keys it
+ *            from the west with the wall-switch sheet's extended finger, which
+ *            reaches ~0.73 x his height forward and ~0.65 x up.
+ *   doorway  the hole is art x 12145..12258 on threshold row 572; the strong
+ *            room's west wall runs back from the front pillar (art 11976..12153),
+ *            so walking east along the threshold row IS walking through it.
+ *   laptop   keys at desk-image (62, 30); he stands just behind the desk's
+ *            solid band, the depth at which his reach lands on the keyboard.
+ * `trigger` is where the last arena's wall stands once it is clear: reaching it
+ * starts the scene. `roomLeft` is the room's west wall for bodies in play (just
+ * past the doorway), `camLeft` keeps the door on screen. */
+const L2M_STAGE = Object.freeze({
+  trigger: l2X(11830),
+  /* measured on the rendered take (req454/shots): fingertip on the key block */
+  keypad: { x: l2X(11962) - 120, y: 719 },
+  doorway: { x: l2X(12201), y: l2Y(L2.door.threshold) + 6 },
+  inside: { x: l2X(12360), y: 792 },
+  /* just BEHIND the desk (outside its solid band; the desk draws over his legs),
+   * which is the depth at which his reach lands on the keyboard (req454/shots) */
+  laptop: { x: l2X(L2.desk.left + 62) - 73, y: l2Y(L2.desk.top + L2.desk.h) - l2X(32) - 2 },
+  /* Where an entrant waits for the door: behind the front pillar, out of sight. */
+  queue: { x: l2X(12060), y: l2Y(L2.door.threshold) + 4 },
+  roomLeft: l2X(12290),
+  camLeft: l2X(11880),
+  walk: 190,                      // px/s — Darki's scripted pace (his walk sheet's stride)
+});
+/* THE DEFENSE, tunable in one place (request 454: "these values must be
+ * adjustable"). Waves are rosters drawn from the ordinary enemy pool, so every
+ * man keeps his class's own health, moves, hitboxes and difficulty scaling.
+ *   transferSecs   the evidence copy; advances only while gameplay runs
+ *   computerHp     the workstation's own health (not Darki's)
+ *   computerDmgMul a raider's blow on the laptop = his move's damage x this
+ *                  (then the difficulty tier's dmgTaken, like a blow on Darki)
+ *   maxInRoom      hard cap on bodies in the room at once — no pile-up
+ *   nextWaveAt     the door opens for the next wave once this few are left
+ *   entryGap       seconds between men stepping through the doorway
+ *   raiders        how many of each wave go for the laptop; the rest go for Darki
+ *   raidAggroX     a raider turns on Darki only when he is this close to him
+ *   loopFrom       once the list is spent, waves repeat from this index */
+const L2_DEFENSE = {
+  transferSecs: 300,
+  computerHp: 600,
+  computerDmgMul: 1.6,
+  maxInRoom: 6,
+  nextWaveAt: 1,
+  entryGap: 1.0,
+  raidAggroX: 190,
+  loopFrom: 3,
+  waves: [
+    { ginger: 3, raiders: 1 },
+    { ginger: 2, shaved: 2, raiders: 2 },
+    { ginger: 2, senior: 1, shaved: 1, raiders: 2 },
+    { shaved: 2, sars: 2, raiders: 2 },
+    { ginger: 2, sars: 2, senior: 1, raiders: 2 },
+    { shaved: 3, sars: 2, raiders: 3 },
+  ],
+};
 /* Darki's band on the facility floor. The back edge is the street's (645 —
  * the offset above puts the floor's back edge there); the near edge keeps the
  * street's own gutter under it: Level 01 stops his feet 63 world rows above the
@@ -340,18 +457,24 @@ const L2_ENTRY_SPOT = Object.freeze({ startX: -230, markX: 420, walkY: 664 });
 /* Level 02's arenas. No boss has been delivered for this level, so the last
  * section is a fight like the others and clearing it ends the level (final).
  * Every route is the camera edge: there is no wall opening in this building. */
+/* REQUEST 454 carries the floor on through the PSD's new sections 4-5 to the
+ * strong room: the old last arena keeps its numbers and two more follow it, the
+ * last a SARS / Aye arena whose wall is the keypad pillar. Clearing it no longer
+ * ends the level — reaching the keypad starts the strong-room mission. */
 const SECTIONS_L2 = [
   { gateX: 2900, quota: 5, seniors: 0, entryRoute: 'edge' },
   { gateX: 5300, quota: 7, seniors: 1, shaved: 2, entryRoute: 'edge' },
   { gateX: 7500, quota: 8, seniors: 1, shaved: 2, sars: 3, entryRoute: 'edge' },
-  { gateX: WORLD_W, quota: 10, seniors: 0, shaved: 5, sars: 5, entryRoute: 'edge', final: true },
+  { gateX: WORLD_W, quota: 10, seniors: 0, shaved: 5, sars: 5, entryRoute: 'edge' },
+  { gateX: 12900, quota: 9, seniors: 1, shaved: 3, sars: 2, entryRoute: 'edge' },
+  { gateX: L2M_STAGE.trigger, quota: 10, seniors: 0, shaved: 5, sars: 5, entryRoute: 'edge', final: true },
 ];
 /* WHICH LEVEL IS BEING FOUGHT. Written once per entry by onGameplayStart (from
  * the front end, which owns the level choice) and read by the handful of places
  * Level 02 differs: the art, the band, the solids, the sections, the entry. */
 let activeLevel = 1;
 /* The things a body can collide with on this level. */
-const solidBodies = () => (activeLevel === 2 ? L2_PILLARS : VEHICLE_ART);
+const solidBodies = () => (activeLevel === 2 ? L2_SOLIDS : VEHICLE_ART);
 
 /* The authored spots, captured here so the mover's R (reset) always returns to
  * these numbers no matter how far a play session has dragged things. */
@@ -422,8 +545,11 @@ const VEHICLE_CLEAR_EASE = 14;
 const vehicleClearedBy = (body, v) =>
   (-(body.jumpY || 0)) >= (v.clearH || v.h) - VEHICLE_CLEAR_EASE;
 
+/* A body's own behind-band, where it has one (the Level 02 workstation is a
+ * deep desk, not a post — see L2_DESK). */
+const solidBackGap = (v) => v.backGap ?? VEHICLE_BEHIND_GAP;
 function vehicleBlocks(v, x, y, half) {
-  return y > v.y - VEHICLE_BEHIND_GAP && y < v.y + VEHICLE_FRONT_DEPTH
+  return y > v.y - solidBackGap(v) && y < v.y + VEHICLE_FRONT_DEPTH
     && x > v.x - 22 && x < v.x + v.w + 22;
 }
 
@@ -437,7 +563,7 @@ function vehicleBlocks(v, x, y, half) {
  * vehicle, or null. */
 function vehicleBetween(a, b) {
   for (const v of solidBodies()) {
-    const back = v.y - VEHICLE_BEHIND_GAP;
+    const back = v.y - solidBackGap(v);
     if ((a.y < back) === (b.y < back)) continue;           // same side of it
     if (Math.max(a.x, b.x) < v.x || Math.min(a.x, b.x) > v.x + v.w) continue;
     if (vehicleClearedBy(a, v) || vehicleClearedBy(b, v)) continue;
@@ -475,8 +601,10 @@ function resolveVehicleCollision(body, halfW) {
      * few pixels away, so slipping behind a vehicle is the cheap escape when
      * you are already near its row. See VEHICLE_BEHIND_GAP. */
     const dy = body.y - v.y;
-    const outY = dy >= 0 ? (v.y + VEHICLE_FRONT_DEPTH + 1) - body.y
-      : (v.y - VEHICLE_BEHIND_GAP - 1) - body.y;
+    // (a deep body — the desk — is left by whichever face is nearer)
+    const front = v.backGap ? dy >= -solidBackGap(v) / 2 : dy >= 0;
+    const outY = front ? (v.y + VEHICLE_FRONT_DEPTH + 1) - body.y
+      : (v.y - solidBackGap(v) - 1) - body.y;
     if (Math.abs(outX) <= Math.abs(outY)) {
       body.x += outX;
       body.vx = 0;
@@ -1232,6 +1360,34 @@ const FALL_SHEET = {            // launch 3/3: crash + get-up â€” 4x3, 12 f
   drawH: hurtDrawH(410),       // frame 0 = last airborne frame, 410 src px
   bodyFrame: 0,
   workH: HURT_WORK_H,
+};
+
+/* LEVEL 02's STRONG-ROOM SCENE (request 454): Darki keying the door code on the
+ * pillar keypad, and working the evidence-bay laptop. Both supplied sheets face
+ * right, play once and hold the last frame; both are planted poses, so the
+ * anchor is frozen to frame 0's feet (`anchorFrame`) — his boots never slide
+ * while only his arm moves. Loaded with the Level 02 art (loadLevel2Art), not at
+ * boot: Level 01 never draws them. Prepared 2:1 (_chromakey/req454/sprprep.js);
+ * drawH is cap-matched like every other Darki sheet (_chromakey/req457/measure.js). */
+const WALLSWITCH_SHEET = {
+  src: 'sprites/darki-wall-switch.png',
+  metaSrc: 'sprites/darki-wall-switch.json',
+  cols: 6, rows: 6,
+  faces: 1,
+  drawH: capMatched(SHEET.drawH, 38),
+  bodyFrame: 0,
+  anchorFrame: 0,
+  workH: 344,
+};
+const SYSTEM_SHEET = {
+  src: 'sprites/darki-system.png',
+  metaSrc: 'sprites/darki-system.json',
+  cols: 6, rows: 6,
+  faces: 1,
+  drawH: capMatched(SHEET.drawH, 38),
+  bodyFrame: 0,
+  anchorFrame: 0,
+  workH: 386,
 };
 
 const GINGER_SHEET = {          // street enemy: idle + hit sections
@@ -3127,7 +3283,7 @@ const CLEARED_MENU = [
   { label: 'REPLAY LEVEL', icon: 'restore' },
   { label: 'MAIN MENU', icon: 'power' },
 ];
-const gameOver = { active: false, t: 0, stats: null, art: null, cleared: false };
+const gameOver = { active: false, t: 0, stats: null, art: null, cleared: false, reason: null };
 /* The board row (request 446) sits just above QUIT TO MENU, only while this pause offers one. */
 const pauseList = () => {
   if (!pauseAd) return PAUSE_MENU;
@@ -3183,8 +3339,9 @@ let pauseChoice = 0;
  * able to release a direction on its own. */
 const pauseKey = { up: false, down: false };
 const pausePad = { up: false, down: false };
-const pausePadPrev = { accept: false, back: false, start: false };
-const pauseLatch = { up: 0, down: 0, accept: 0, back: 0 };
+const pausePadPrev = { accept: false, back: false, start: false, left: false, right: false, mute: false };
+// left/right/mute drive the posts carousel (request 454); the list itself ignores them
+const pauseLatch = { up: 0, down: 0, accept: 0, back: 0, left: 0, right: 0, mute: 0 };
 const pauseRepeat = { dir: 0, t: 0 };
 // (hover has no separate visual state: hovering MOVES the selection, so focus is it)
 let pausePointerDown = -1;
@@ -3207,6 +3364,7 @@ function clearPauseInput() {
   pausePadPrev.accept = down(0);
   pausePadPrev.back = down(1);
   pausePadPrev.start = down(9);
+  pausePadPrev.left = down(14); pausePadPrev.right = down(15); pausePadPrev.mute = down(3);
   pausePad.up = down(12);
   pausePad.down = down(13);
   pauseRepeat.dir = pausePad.down ? 1 : pausePad.up ? -1 : 0;
@@ -3221,8 +3379,10 @@ function togglePause() {
   // owns the pause until a choice is made.
   if (outro.active || bossBeaten() || gameOver.active) return;
   paused = !paused;
+  l2VoicePause(paused);                         // a strong-room line holds its place (request 454)
   if (paused) { stopControllerRumble(); pauseChoice = 0; frontEnd?.ui.uiSfx?.('pause'); }   // request 453
-  pauseAd = paused ? pauseAdRow() : null;   // the board row is decided once, as the menu opens
+  pauseAd = paused ? pauseAdRow() : null;   // the posts are captured once, as the menu opens (request 454)
+  if (!paused) adDeckClose();
   if (paused) flushAds();
   clearPauseInput();
   // Every transient press is dropped on BOTH edges. Going in, so a button held
@@ -3251,11 +3411,8 @@ function activatePauseChoice() {
   const item = menuItems()[pauseChoice]?.label;
   frontEnd?.ui.pressPulse(`pause:${pauseChoice}`);
   if (item === 'RESUME') { frontEnd?.ui.navForward(); togglePause(); return; }
-  if (pauseAd && item === pauseAd.label && !gameOver.active) {   // the board row (request 446)
-    frontEnd?.ui.navForward();
-    queueAdCount(pauseAd.slot, 't');
-    flushAds();
-    openExternal(pauseAd.url);
+  if (pauseAd && item === pauseAd.label && !gameOver.active) {   // VISIT POSTS: focus the carousel (request 454)
+    adDeckFocus(true);
     return;
   }
   frontEnd?.ui.navForward();
@@ -3302,6 +3459,25 @@ function updatePauseInput(dt) {
    * hidden — and must stay deaf too, or an Enter press would resume the fight
    * behind the editor. */
   if (window.__rorTouch?.editing) return;
+  /* THE POSTS CAROUSEL HAS THE FOCUS (request 454): left/right browse, accept
+   * opens the active post's link, M toggles a video's sound, and back (or
+   * up/down) hands the focus back to the list — the game stays paused, and
+   * nothing here reaches the fight. */
+  if (adDeck.focus && !gameOver.active) {
+    if (pauseTakeLatch('left')) adDeckMove(-1);
+    if (pauseTakeLatch('right')) adDeckMove(1);
+    if (pauseTakeLatch('mute')) adDeckToggleMute();
+    if (pauseTakeLatch('accept')) adDeckOpenLink();
+    const up = pauseTakeLatch('up'), down = pauseTakeLatch('down');
+    if (pauseTakeLatch('back') || up || down) adDeckFocus(false);
+    pauseRepeat.dir = pauseHeld('down') ? 1 : pauseHeld('up') ? -1 : 0;
+    pauseRepeat.t = frontEnd?.ui.HOLD_DELAY ?? 0.40;
+    return;
+  }
+  // On the VISIT POSTS row, right steps into the carousel too.
+  const onPosts = pauseAd && menuItems()[pauseChoice]?.label === pauseAd.label && !gameOver.active;
+  if (pauseTakeLatch('right') && onPosts) { adDeckFocus(true); return; }
+  pauseTakeLatch('left'); pauseTakeLatch('mute');
   const holdDelay = frontEnd?.ui.HOLD_DELAY ?? 0.40;
   const holdRate = frontEnd?.ui.HOLD_RATE ?? 0.115;
   const dir = pauseHeld('down') ? 1 : pauseHeld('up') ? -1 : 0;
@@ -3338,6 +3514,9 @@ function updatePauseInput(dt) {
 function pauseKeyAction(code) {
   if (code === 'ArrowUp' || code === 'KeyW') return 'up';
   if (code === 'ArrowDown' || code === 'KeyS') return 'down';
+  if (code === 'ArrowLeft' || code === 'KeyA') return 'left';      // the posts carousel (request 454)
+  if (code === 'ArrowRight' || code === 'KeyD') return 'right';
+  if (code === 'KeyM') return 'mute';
   if (code === 'Enter') return 'accept';
   if (code === 'Escape' || code === 'Backspace' || code === 'KeyP') return 'back';
   return null;
@@ -3658,6 +3837,13 @@ function pollPausePad(gp) {
   const start = btn(9);                        // Start / Options
   if (accept && !pausePadPrev.accept) pauseLatch.accept = 1;
   if ((back && !pausePadPrev.back) || (start && !pausePadPrev.start)) pauseLatch.back = 1;
+  // the posts carousel (request 454): d-pad / stick left-right, Triangle for a video's sound
+  const lx = gp.axes[0] || 0;
+  const left = btn(14) || lx < -0.55, right = btn(15) || lx > 0.55, mute = btn(3);
+  if (left && !pausePadPrev.left) pauseLatch.left = 1;
+  if (right && !pausePadPrev.right) pauseLatch.right = 1;
+  if (mute && !pausePadPrev.mute) pauseLatch.mute = 1;
+  pausePadPrev.left = left; pausePadPrev.right = right; pausePadPrev.mute = mute;
   pausePadPrev.accept = accept;
   pausePadPrev.back = back;
   pausePadPrev.start = start;
@@ -3927,6 +4113,8 @@ let hitLiftSprite = null;      // â€¦and the launch chain: off the ground,
 let hitAirSprite = null;       //    tumbling,
 let fallSprite = null;         //    then the crash and the get-up
 let blockSprite = null;        // Darki's guard (held: raise / hold / drop)
+let wallSwitchSprite = null;   // Level 02: keying the strong-room code (request 454)
+let systemSprite = null;       // Level 02: working the evidence-bay laptop
 let gingerSprite = null;
 let gingerWalkSprite = null;
 let gingerJabSprite = null;    // enemy punch attack (Agbero_Jab)
@@ -4678,7 +4866,7 @@ function spillPlayerWeapon(dir) {
 // Where a flying weapon may be: the world, a closed gate, the boss arena.
 function thrownBounds() {
   const { left, right } = arenaBounds();
-  return { left: Math.max(20, left - 40), right: Math.min(WORLD_W - 20, right + 40) };
+  return { left: Math.max(20, left - 40), right: Math.min(levelW() - 20, right + 40) };
 }
 
 function updateWeapons(dt) {
@@ -5648,6 +5836,12 @@ const DARKI_VOICE = Object.freeze({
   reachOlodo: { src: 'sounds/voices/voice-reach-olodo.mp3', dur: 21.690, gain: 1.00 },
   // over MC_Olodo's body (request 338) — ASSETS/SOUNDCUES/voiceovers/Dont Play.mp3
   dontPlay:   { src: 'sounds/voices/voice-dont-play.mp3', dur: 1.435, gain: 1.08 },
+  /* LEVEL 02's STRONG ROOM (request 454) — ASSETS/SOUNDCUES/"after crosing the
+   * door voiceover.mp3" and "after using the computer .mp3", copied unchanged.
+   * The scene waits on each clip's own end (l2StartVoice); `dur` is only the
+   * stand-in when a clip cannot play, and the decoded buffer's length wins. */
+  l2Door:     { src: 'sounds/voices/voice-l2-after-door.mp3', dur: 19.5, gain: 1.04 },
+  l2Computer: { src: 'sounds/voices/voice-l2-after-computer.mp3', dur: 7.1, gain: 1.04 },
 });
 const voiceBuffers = Object.create(null);
 const voicePlays = { combo5: 0, grab: 0, hardway: 0, reachOlodo: 0, dontPlay: 0 };
@@ -5698,11 +5892,13 @@ function playDarkiVoice(name, opt = {}) {
       if (voiceSource !== src) return;
       voiceSource = null;
       voicePlaying = false;
+      opt.onEnd?.();                           // a scene waiting on THIS line (request 454)
       const next = queuedVoice;
       queuedVoice = null;
       if (next) playDarkiVoice(next.name, next.opt);
     };
-    src.start();
+    // `offset`: resume a line paused part-way (l2VoicePause), from the same sample
+    src.start(0, Math.max(0, Math.min(opt.offset || 0, src.buffer.duration - 0.01)));
     return true;
   } catch {
     stopDarkiVoice();
@@ -6444,7 +6640,8 @@ function endEnemyEntrance(e, grace = ENEMY.entryGrace) {
  * `state = 'walk'` â€” so a blow landed on an arriving Agbero set him to 'hit'
  * and the entrance wiped it on the same frame. He took the damage, made the
  * noise, and kept strolling in. */
-const enemyEntranceHolds = (e) => e.state === 'walk' && !e.grabbed && !e.carried && e.hp > 0;
+const enemyEntranceHolds = (e) => (e.state === 'walk' || (e.entryRoute === 'door' && e.state === 'guard'))
+  && !e.grabbed && !e.carried && e.hp > 0;   // (a door entrant waits in his guard — request 454)
 
 function updateWallEntrance(e, dt) {
   e.state = 'walk';
@@ -6530,6 +6727,7 @@ function updateWallEntrance(e, dt) {
 }
 
 function updateEnemyEntrance(e, dt) {
+  if (e.entryRoute === 'door') { updateDoorEntrance(e, dt); return; }   // Level 02's strong room (request 454)
   if (e.entryRoute === 'wall' && e.entryPhase !== 'road') {
     updateWallEntrance(e, dt);
     return;
@@ -6737,6 +6935,8 @@ function startLevelEntry(transitionFrame = null, duration = LEVEL_ENTRY.fallback
    * the one function every route into a level goes through (first play, the
    * post-mission choice, the test hook), so a new route cannot forget it. */
   endMission();
+  resetL2Mission();                // the strong room starts shut and dark (request 454)
+  gameOver.reason = null;
   comboVoiceSection = -1;
   execution = null;
   section = 0; waveKills = 0; levelKills = 0;
@@ -6838,7 +7038,14 @@ function finishLevelEntry() {
 const RETRY_CHECKPOINT_KEY = 'rorRetryCheckpoint';
 function saveRetryCheckpoint() {
   const atBoss = !!(boss && (waveState === 'boss' || waveState === 'bossIntro'));
-  const cp = atBoss ? { level: activeLevel, section: BOSS_SECTION, boss: true }
+  /* Level 02's strong room (request 454): once the defense has begun, its start
+   * IS the checkpoint — the infiltration is not replayed. A restart inside the
+   * scene (before the defense) goes back to the keypad and plays it again. */
+  const l2 = activeLevel === 2 && (waveState === 'l2defense' || waveState === 'l2won') ? 'defense'
+    : activeLevel === 2 && (waveState === 'l2scene' || (waveState === 'complete' && SECTIONS[section]?.final)) ? 'keypad'
+    : null;
+  const cp = l2 ? { level: 2, section, boss: false, mission: l2 }
+    : atBoss ? { level: activeLevel, section: BOSS_SECTION, boss: true }
     : waveState === 'entry' || section <= 0 ? null
     : { level: activeLevel, section, boss: false };
   try {
@@ -6854,6 +7061,7 @@ function takeRetryCheckpoint() {
     sessionStorage.removeItem(RETRY_CHECKPOINT_KEY);
   } catch { return null; }
   if (!cp || cp.level !== activeLevel) return null;
+  if (cp.mission) return activeLevel === 2 && (cp.mission === 'defense' || cp.mission === 'keypad') ? cp : null;
   if (cp.boss) return SECTIONS[BOSS_SECTION]?.boss ? cp : null;
   const last = SECTIONS[SECTIONS.length - 1]?.boss ? SECTIONS.length - 2 : SECTIONS.length - 1;
   return Number.isInteger(cp.section) && cp.section > 0 && cp.section <= last ? cp : null;
@@ -6864,7 +7072,18 @@ function resumeAtCheckpoint(cp) {
   levelEntry.voiceStarted = true;          // the opening line belongs to the first attempt
   setBars(levelEntry, 0);
   levelEntry.blackout = 0;
-  if (cp.boss) {
+  if (cp.mission) {
+    // Level 02's strong room (request 454): the defense's start, or the cleared keypad arena
+    section = SECTIONS.length - 1;
+    waveKills = SECTIONS[section].quota;
+    if (cp.mission === 'defense') startL2Defense({ fromCheckpoint: true });
+    else {
+      waveState = 'complete';
+      player.x = L2M_STAGE.trigger - 420;
+      player.y = clampLane(L2M_STAGE.keypad.y);
+      player.anim = 'idle'; player.animTime = 0;
+    }
+  } else if (cp.boss) {
     section = BOSS_SECTION;
     waveKills = 0;
     startBossIntro();
@@ -6880,7 +7099,7 @@ function resumeAtCheckpoint(cp) {
     spawnWave();
     fightBanner = 1.1;
   }
-  cameraX = clampCamX(player.x - viewW() * 0.42, PLAYAREA.maxX + 1);
+  cameraX = clampCamX(player.x - viewW() * 0.42, levelRightEdge());
   cameraY = bandFramingY(player.y);
   rrTrack('checkpoint_restart', { level: activeLevel, section, boss: !!cp.boss, difficulty: chosenDifficulty });
 }
@@ -7123,6 +7342,11 @@ function onEnemyDefeated(e) {
    * a body leaving the street here needs no bookkeeping at all beyond the
    * level tally. */
   if (inBossStage()) { levelKills++; maybeDropMedpack(e); benchEnemy(e); return; }
+  /* …nor are the strong room's waves (request 454): they come through the door
+   * on the defense's own schedule (updateL2Defense), not off a section quota. */
+  if (waveState === 'l2scene' || waveState === 'l2defense' || waveState === 'l2won') {
+    levelKills++; maybeDropMedpack(e); benchEnemy(e); return;
+  }
   waveKills++;
   levelKills++;
   maybeDropMedpack(e);
@@ -10030,6 +10254,8 @@ function spriteFor(anim) {
   if (anim === 'hitAir') return hitAirSprite;
   if (anim === 'fall') return fallSprite;
   if (anim === 'block') return blockSprite;
+  if (anim === 'wallSwitch') return wallSwitchSprite ?? idleSprite;   // Level 02's strong-room scene
+  if (anim === 'computer') return systemSprite ?? idleSprite;
   // 'hurt'/'ko' are the between-states: a reaction normally owns the body and
   // names its own sheet above, so these only show if one ends a frame early.
   if (anim === 'idle' || anim === 'hurt' || anim === 'ko') return idleSprite;
@@ -14425,9 +14651,12 @@ function koPlayer() {
  * which turns aggressive when Darki runs out of room. */
 function arenaBounds() {
   const half = PLAYER.hitW / 2;
-  let left = half, right = WORLD_W - half;
+  let left = half, right = levelW() - half;
   if (waveState === 'fighting') right = Math.min(right, currentGate() - 60);
   else if (waveState === 'boss') { left = BOSS_ARENA.left; right = BOSS_ARENA.right + 40; }
+  // Level 02 (request 454): the keypad pillar is the wall until the scene, then the room's walls.
+  else if (activeLevel === 2 && waveState === 'complete') right = Math.min(right, L2M_STAGE.trigger - 40);
+  else if (waveState === 'l2defense') left = L2M_STAGE.roomLeft;
   return { left, right };
 }
 
@@ -14446,11 +14675,15 @@ function clampEnemyToArena(enemy) {
 
 function clampPlayerToArena() {
   const half = PLAYER.hitW / 2;
-  player.x = Math.max(half, Math.min(WORLD_W - half, player.x));
+  player.x = Math.max(half, Math.min(levelW() - half, player.x));
   player.y = clampPlayerLane(player.y, player.x);   // region-aware: Darki never crosses the red line
   if (waveState === 'fighting')
     player.x = Math.min(player.x, currentGate() - 60);
   else if (waveState === 'boss') player.x = Math.max(BOSS_ARENA.left, Math.min(player.x, BOSS_ARENA.right + 40));
+  else if (activeLevel === 2 && (waveState === 'complete' || waveState === 'l2defense')) {
+    const b = arenaBounds();
+    player.x = Math.max(b.left, Math.min(b.right, player.x));
+  }
   resolveVehicleCollision(player, half);            // the parked line is solid: he walks around
 }
 
@@ -14551,7 +14784,7 @@ function laneDodge(enemy, moveDir, ignorePlayer = false) {
      * collision plus a stride of margin, not off the old symmetric box: an
      * enemy that swerves around a vehicle he could now simply walk past reads
      * as broken pathing. */
-    if (enemy.y < v.y - VEHICLE_BEHIND_GAP - 44
+    if (enemy.y < v.y - solidBackGap(v) - 44
       || enemy.y > v.y + VEHICLE_FRONT_DEPTH + 44) continue;
     if (!blocker || Math.abs(ox) < Math.abs(blocker.x - enemy.x)) blocker = { x: cx };
   }
@@ -15856,7 +16089,7 @@ function stepEnemyAI(enemy, dt) {
       enemy.state = 'walk';
       enemy.x += enemy.direction * enemy.speed * enemy.amble * dt;
       enemy.facing = enemy.direction;
-      if (enemy.x < 160 || enemy.x > WORLD_W - 160) enemy.direction *= -1;
+      if (enemy.x < 160 || enemy.x > levelW() - 160) enemy.direction *= -1;
       break;
     default: {                            // 'menace' â€” hold a safe standoff, do footwork
       /* AN UNARMED AYE KEEPS AN EYE ON HIS BLADE. Re-asked on a timer rather
@@ -16924,7 +17157,7 @@ function updateCutscene(dt) {
 
   // ---- camera + framing furniture ----
   cameraX = damp(cameraX, bossCamX(), 3.2, dt);
-  cameraX = clampCamX(cameraX, PLAYAREA.maxX + 1);   // ...and inside the play area
+  cameraX = clampCamX(cameraX, levelRightEdge());   // ...and inside the play area
   cameraY = clampCamY(damp(cameraY, BOSS_CAM_Y(), 3, dt));
   const barsOut = name === 'ready' && cutscene.t > 0.30;
   rampBars(cutscene, barsOut ? 0 : 1, dt);
@@ -17335,7 +17568,7 @@ function updateOutro(dt) {
 
   // ---- framing furniture ----
   cameraX = damp(cameraX, bossCamX(), 3.2, dt);   // the boss room stays locked
-  cameraX = clampCamX(cameraX, PLAYAREA.maxX + 1);
+  cameraX = clampCamX(cameraX, levelRightEdge());
   cameraY = clampCamY(damp(cameraY, BOSS_CAM_Y(), 3, dt));
   const carded = name === 'card' || name === 'file';
   // The bars come in THIN for the action beats and only close all the way under
@@ -18010,7 +18243,7 @@ function updateCamera(dt) {
   if (waveState === 'boss') {
     // Locked, not exempt: the locked shot obeys the same play bounds as the
     // follow shot, so the boss room cannot frame outside the play area either.
-    cameraX = clampCamX(damp(cameraX, bossCamX(), tune.camFollow, dt), PLAYAREA.maxX + 1);
+    cameraX = clampCamX(damp(cameraX, bossCamX(), tune.camFollow, dt), levelRightEdge());
     cameraY = clampCamY(damp(cameraY, BOSS_CAM_Y(), 3, dt));
     return;
   }
@@ -18059,12 +18292,12 @@ function updateCamera(dt) {
   const idealX = focusX - viewW() * camBias;
   const errX = idealX - cameraX;
   /* The right bound in force: a wave gate while one holds, else the end of the
-   * authored street (PLAYAREA.maxX + 1 — maxX is the last authored column, so
+   * authored street (levelRightEdge() — maxX is the last authored column, so
    * as a frame EDGE it is exclusive). Computed before the target so the target
    * itself can be clamped to it: easing toward a column the play area forbids
    * only to have the clamp undo it is exactly the stutter this prevents. */
-  const rightBound = Math.min(waveState === 'fighting' ? currentGate() : WORLD_W,
-    PLAYAREA.maxX + 1);
+  const rightBound = Math.min(waveState === 'fighting' ? currentGate() : levelW(),
+    levelRightEdge());
   const targetX = clampCamX(Math.abs(errX) <= tune.camDeadX
     ? cameraX
     : idealX - Math.sign(errX) * tune.camDeadX, rightBound);
@@ -18109,6 +18342,620 @@ function followCamY() {
   return tune.camTopY + (dynamicY - tune.camTopY) * blend;
 }
 
+/* ======================================== LEVEL 02: THE STRONG ROOM (454) ==
+ *
+ * One continuous sequence on the live floor, not three separate cutscenes:
+ *
+ *   toKeypad -> keying (wall-switch sheet) -> doorOpening -> enter (through the
+ *   doorway on its threshold row) -> doorClosing -> vo1 (idle, the first line)
+ *   -> toLaptop -> typing (system sheet) -> the screen powers on, he turns into
+ *   his guard -> vo2, WITH the door opening and wave 1 walking in -> control.
+ *
+ * Every beat that waits on speech waits on the VOICE ITSELF: the clip's own
+ * `onended` (playDarkiVoice's onEnd). Only when a line cannot play at all
+ * (muted, audio blocked) does the scene fall back to the clip's decoded length.
+ * A pause stops the line and resumes it from the same sample.
+ *
+ * Then the defense (waveState 'l2defense'): the transfer runs for
+ * L2_DEFENSE.transferSecs of live play, the workstation has its own health,
+ * and the waves come through the door — which opens for them and shuts once the
+ * doorway is clear. 'l2won' is the transfer complete; the level clear follows. */
+
+/* The two lines' subtitles, from Whisper word stamps on the supplied clips
+ * (_chromakey/req454/vo1-words.json, vo2-words.json). "Jimbo" / "Jimo's" are the
+ * transcriber's spelling of Jimoh. Seconds from each clip's first sample. */
+const L2_DOOR_SUBS = [
+  { at: 0.00, end: 1.26, words: [['The', 0.00], ['police', 0.32], ['server.', 0.68]] },
+  { at: 1.76, end: 3.94, words: [['Every', 1.76], ['case', 2.18], ['ever', 2.84], ['registered', 3.42]] },
+  { at: 3.94, end: 6.62, words: [['with', 3.94], ['the', 4.44], ['Nigeria', 4.66], ['Police', 5.28], ['Force', 5.90]] },
+  { at: 6.62, end: 8.62, words: [['lies', 6.62], ['within', 7.20], ['its', 7.78], ['records.', 8.04]] },
+  { at: 9.22, end: 11.16, words: [['If', 9.22], ['I', 9.54], ['can', 9.68], ['access', 9.90], ['those', 10.32], ['files,', 10.64]] },
+  { at: 11.72, end: 14.22, words: [["I'll", 11.72], ['drag', 11.98], ['Jimoh', 12.36], ['and', 12.92], ['his', 13.36], ['associates', 13.58]] },
+  { at: 14.22, end: 15.60, words: [['out', 14.22], ['of', 14.88], ['the', 15.06], ['shadows', 15.18]] },
+  { at: 16.10, end: 19.04, words: [['and', 16.10], ['expose', 16.54], ['their', 17.14], ['evil', 17.62], ['to', 18.10], ['the', 18.46], ['world.', 18.60]] },
+];
+const L2_COMPUTER_SUBS = [
+  { at: 0.00, end: 1.58, words: [['The', 0.00], ['evidence', 0.30], ['is', 0.58], ['downloading,', 0.94]] },
+  { at: 1.94, end: 3.54, words: [['but', 1.94], ["Jimoh's", 2.08], ['dogs', 2.60], ['are', 2.92], ['coming.', 3.16]] },
+  { at: 3.90, end: 4.62, words: [['Let', 3.90], ['them', 4.06], ['come.', 4.26]] },
+  { at: 4.88, end: 6.72, words: [['Not', 4.88], ['one', 5.00], ['shall', 5.34], ['touch', 5.66], ['this', 5.94], ['machine.', 6.26]] },
+];
+const L2_VO_SUBS = { l2Door: L2_DOOR_SUBS, l2Computer: L2_COMPUTER_SUBS };
+
+const l2m = {
+  phase: null, t: 0, path: 0, inside: false,
+  letterbox: 0, barFrom: 0, barTo: 0, barU: 1,
+  vo: null, voLive: false, voDone: false, voAt: null, voT: 0, voDur: 0, voHeld: false, voOffset: 0,
+  screen: 0, powered: false, progress: 0,
+  compHp: L2_DEFENSE.computerHp, compShown: L2_DEFENSE.computerHp, compFlash: 0,
+  waveNo: 0, waveT: 0, queue: [], releaseT: 0, wonT: 0,
+};
+/* Inside the strong room the camera keeps its door in shot (camXRange). */
+function l2InRoom() {
+  return activeLevel === 2 && (waveState === 'l2defense' || waveState === 'l2won'
+    || (waveState === 'l2scene' && l2m.inside));
+}
+function resetL2Mission() {
+  Object.assign(l2m, {
+    phase: null, t: 0, path: 0, inside: false, vo: null, voLive: false, voDone: false, voAt: null,
+    voT: 0, voDur: 0, voHeld: false, voOffset: 0, screen: 0, powered: false, progress: 0,
+    compHp: L2_DEFENSE.computerHp, compShown: L2_DEFENSE.computerHp, compFlash: 0,
+    waveNo: 0, waveT: 0, queue: [], releaseT: 0, wonT: 0,
+  });
+  setBars(l2m, 0);
+  l2Door.dy = l2Door.target = L2.door.closedDy;
+}
+
+/* The door travels; nothing else moves it. */
+function l2StepDoor(dt) {
+  const d = l2Door.target - l2Door.dy;
+  l2Door.dy += Math.sign(d) * Math.min(Math.abs(d), L2_DOOR_SPEED * dt);
+}
+
+/* ---- the lines ---- */
+function l2StartVoice(name) {
+  l2m.vo = name; l2m.voDone = false; l2m.voT = 0; l2m.voOffset = 0; l2m.voHeld = false;
+  l2m.voDur = voiceBuffers[name]?.duration ?? DARKI_VOICE[name].dur;
+  const spoke = playDarkiVoice(name, { interrupt: true, pan: false,
+    onEnd: () => { if (l2m.vo === name) l2m.voDone = true; } });
+  l2m.voLive = spoke;
+  l2m.voAt = spoke ? (audioCtx?.currentTime ?? 0) : null;
+}
+/* Seconds into the line: the audio clock while it really plays, else the scene's. */
+function l2VoiceT() {
+  if (l2m.voLive && l2m.voAt != null && audioCtx && audioCtx.state === 'running')
+    return audioCtx.currentTime - l2m.voAt;
+  return l2m.voT;
+}
+/* Over when the clip says so. The decoded length only stands in when the clip is
+ * not playing at all — or, as a guard, when a playing clip has gone silent well
+ * past its own end (an audio context the OS took away mid-line). */
+function l2VoiceFinished() {
+  if (!l2m.vo) return true;
+  if (l2m.voLive) return l2m.voDone || l2m.voT > l2m.voDur + 2.5;
+  return l2m.voT >= l2m.voDur;
+}
+/* A pause holds the line on the sample it reached; unpausing picks it up there. */
+function l2VoicePause(on) {
+  if (waveState !== 'l2scene' || !l2m.vo || l2m.voDone || !l2m.voLive) return;
+  if (on) {
+    if (l2m.voHeld) return;
+    l2m.voOffset = Math.max(0, l2VoiceT());
+    l2m.voHeld = true;
+    stopDarkiVoice();
+  } else if (l2m.voHeld) {
+    l2m.voHeld = false;
+    const name = l2m.vo;
+    const spoke = playDarkiVoice(name, { interrupt: true, pan: false, offset: l2m.voOffset,
+      onEnd: () => { if (l2m.vo === name) l2m.voDone = true; } });
+    l2m.voLive = spoke;
+    l2m.voAt = spoke ? (audioCtx?.currentTime ?? 0) - l2m.voOffset : null;
+    l2m.voT = l2m.voOffset;
+  }
+}
+
+/* ---- Darki's scripted feet ---- */
+function l2SetPose(a) {
+  if (player.anim !== a) { player.anim = a; player.animTime = 0; }
+}
+/* Straight to a mark at his walking pace (the boss-room push's), landing exactly. */
+function l2WalkTo(tx, ty, dt) {
+  const dx = tx - player.x, dy = ty - player.y, d = Math.hypot(dx, dy);
+  const step = L2M_STAGE.walk * dt;
+  if (d <= Math.max(step, 0.5)) {
+    player.x = tx; player.y = ty; player.vx = 0; player.depthV = 0;
+    return true;
+  }
+  player.x += (dx / d) * step;
+  player.y += (dy / d) * step;
+  player.vx = (dx / d) * L2M_STAGE.walk;
+  player.depthV = (dy / d) * L2M_STAGE.walk;
+  if (Math.abs(dx) > 1) player.facing = Math.sign(dx);
+  l2SetPose('walk');
+  advancePlayerAnim(dt);
+  return false;
+}
+/* A one-shot interaction take: plays once at its own rate and holds its last
+ * frame. Returns true once the last frame has been on screen. */
+function l2PlayOnce(dt) {
+  const spec = playerAnimSpec(spriteFor(player.anim), player.anim);
+  player.animTime += dt * spec.fps;
+  const step = Math.floor(player.animTime);
+  player.frame = spec.frames[Math.min(step, spec.frames.length - 1)];
+  return step >= spec.frames.length;
+}
+function l2Next(phase) { l2m.phase = phase; l2m.t = 0; }
+
+/* Reaching the keypad pillar after the last arena starts the scene. */
+function startL2Scene() {
+  if (waveState === 'l2scene') return;
+  parkPlayerForScene();
+  dropCarry({ drop: true });
+  attackTokens.clear();
+  for (const e of mobs()) if (!e.benched) benchEnemy(e);
+  stopDarkiVoice(); queuedVoice = null;
+  resetL2Mission();
+  waveState = 'l2scene';
+  player.rageActive = false; player.rage = Math.min(player.rage, RAGE_MAX * 0.99);
+  l2Next('toKeypad');
+  rrGameEvent('checkpoint', { level: 2, section, mission: 'strongroom', difficulty: chosenDifficulty });
+}
+
+function updateL2Scene(dt) {
+  swallowInput();
+  mobClock += dt;
+  l2m.t += dt;
+  l2m.voT += dt;
+  l2StepDoor(dt);
+  const S = L2M_STAGE;
+  switch (l2m.phase) {
+    case 'toKeypad':
+      if (l2WalkTo(S.keypad.x, S.keypad.y, dt)) { player.facing = 1; l2SetPose('wallSwitch'); l2Next('keying'); }
+      break;
+    case 'keying':
+      if (l2PlayOnce(dt)) { l2DoorTo(true); l2SetPose('idle'); l2Next('doorOpening'); }
+      break;
+    case 'doorOpening':
+      advancePlayerAnim(dt);
+      if (l2DoorIsOpen()) { l2m.path = 0; l2Next('enter'); }
+      break;
+    case 'enter': {
+      const wp = l2m.path === 0 ? S.doorway : S.inside;
+      if (l2WalkTo(wp.x, wp.y, dt)) {
+        if (l2m.path === 0) l2m.path = 1;
+        else { l2m.inside = true; player.facing = 1; l2SetPose('idle'); l2DoorTo(false); l2Next('doorClosing'); }
+      }
+      break;
+    }
+    case 'doorClosing':
+      advancePlayerAnim(dt);
+      if (l2DoorIsShut()) { l2StartVoice('l2Door'); l2Next('vo1'); }
+      break;
+    case 'vo1':
+      advancePlayerAnim(dt);
+      if (l2VoiceFinished()) { l2m.vo = null; l2Next('toLaptop'); }
+      break;
+    case 'toLaptop':
+      if (l2WalkTo(S.laptop.x, S.laptop.y, dt)) { player.facing = 1; l2SetPose('computer'); l2Next('typing'); }
+      break;
+    case 'typing':
+      if (l2PlayOnce(dt)) {
+        // the screen comes on; he squares round to the door on the same frame
+        l2m.powered = true;
+        player.facing = -1;
+        l2SetPose('combatidle');
+        l2StartVoice('l2Computer');
+        stageL2Wave();                          // the door opens for them (l2DoorTraffic)
+        l2Next('vo2');
+      }
+      break;
+    case 'vo2':
+      advancePlayerAnim(dt);
+      if (l2VoiceFinished()) finishL2Scene();
+      break;
+  }
+  if (l2m.powered) l2m.screen = Math.min(1, l2m.screen + dt * 1.6);
+  // wave 1 walks in under the line — AI off, so nobody can land a blow yet
+  if (l2m.phase === 'vo2') l2DoorTraffic(dt);
+  for (const e of mobs()) {
+    if (e.benched || !e.spawnEntry || e.entryRoute !== 'door') continue;
+    e.prevX = e.x; e.prevY = e.y;
+    updateDoorEntrance(e, dt);
+    stepEnemyFrame(e, dt);
+  }
+  // the bars: in for the scene, out across the last beat of the line
+  const left = l2m.phase === 'vo2' ? l2m.voDur - l2VoiceT() : Infinity;
+  rampBars(l2m, left <= BAR_DUR + 0.05 ? 0 : 1, dt);
+  updateL2SceneCamera(dt);
+}
+
+/* THE GAMEPLAY CAMERA, steered — no new angle. Before the doorway it frames
+ * Darki with the door; once inside it follows him; under the second line it
+ * swings left to the door as it opens and wave 1 steps through, and is back on
+ * Darki and the workstation as control returns. */
+function updateL2SceneCamera(dt) {
+  const S = L2M_STAGE, vw = viewW();
+  let want;
+  if (!l2m.inside) want = (player.x + S.doorway.x) / 2 - vw / 2;
+  else if (l2m.phase === 'vo2') {
+    const t = l2VoiceT(), back = l2m.voDur - 2.2;
+    want = t > 0.35 && t < back ? S.doorway.x - vw * 0.28 : player.x - vw * 0.66;
+  } else want = player.x - vw * (l2m.phase === 'typing' ? 0.66 : 0.5);
+  const lo = l2m.inside ? S.camLeft : PLAYAREA.minX;
+  const hi = levelRightEdge() - vw;
+  want = Math.max(lo, Math.min(hi, want));
+  cameraX = Math.max(lo, Math.min(hi, damp(cameraX, want, 2.4, dt)));
+  cameraY = clampCamY(damp(cameraY, followCamY(), 3, dt));
+}
+
+function finishL2Scene() {
+  l2m.vo = null;
+  setBars(l2m, 0);
+  startL2Defense();
+}
+
+/* The defense begins — from the scene, or straight from a checkpoint retry
+ * (`fromCheckpoint`: no infiltration replayed; Darki at his laptop, screen on,
+ * the transfer from zero, the door about to open for wave 1). */
+function startL2Defense({ fromCheckpoint = false } = {}) {
+  if (fromCheckpoint) {
+    resetL2Mission();
+    for (const e of mobs()) if (!e.benched) benchEnemy(e);
+    l2m.inside = true; l2m.powered = true; l2m.screen = 1;
+    Object.assign(player, { x: L2M_STAGE.laptop.x, y: L2M_STAGE.laptop.y, vx: 0, depthV: 0, facing: -1 });
+    player.anim = 'combatidle'; player.animTime = 0;
+  }
+  waveState = 'l2defense';
+  l2m.phase = null;
+  l2m.progress = 0;
+  l2m.compHp = l2m.compShown = L2_DEFENSE.computerHp;
+  l2m.waveT = 0;
+  if (fromCheckpoint || !l2m.queue.length && !mobs().some(isWaveAlive)) stageL2Wave();
+  // anyone already through the door joins the fight now, with a beat of grace
+  for (const e of mobs()) if (!e.benched && e.spawnEntry && e.entryRoute === 'door' && e.entryPhase === 'arrived') endEnemyEntrance(e, 0.6);
+  fightBanner = 1.1;
+}
+
+/* ---- the waves ---- */
+function l2WaveRoster(n) {
+  const W = L2_DEFENSE.waves, from = Math.min(L2_DEFENSE.loopFrom, W.length - 1);
+  return W[n < W.length ? n : from + ((n - W.length) % (W.length - from))];
+}
+/* Fill the next wave from the benched pool, by class; a class the pool has run
+ * short of is made up with Agberos. Never more in the room than maxInRoom. */
+function stageL2Wave() {
+  const R = l2WaveRoster(l2m.waveNo++);
+  const live = mobs().filter(isWaveAlive).length;
+  let room = Math.max(0, L2_DEFENSE.maxInRoom - live);
+  const free = mobs().filter((e) => e.benched && !e.execVictim && !e.grabbed && !e.carried);
+  const picked = [];
+  const take = (kind, n) => {
+    for (const e of free) {
+      if (n <= 0 || room <= 0) break;
+      if (e.kind !== kind || picked.includes(e)) continue;
+      picked.push(e); n--; room--;
+    }
+    return n;
+  };
+  let short = 0;
+  for (const kind of ['sars', 'shaved', 'senior', 'ginger']) short += take(kind, R[kind] ?? 0);
+  if (short > 0) take('ginger', short);
+  const raiders = Math.min(R.raiders ?? 0, picked.length);
+  picked.forEach((e, i) => stageDoorEntrant(e, i, i >= picked.length - raiders));
+  l2m.waveT = 0;
+  return picked.length;
+}
+/* A fresh body waiting behind the front pillar for the door — out of sight, and
+ * never dropped into the room: he walks in through the doorway. */
+function stageDoorEntrant(e, i, raider) {
+  if (e.kind === 'shaved') {
+    for (const m of weapons) if (!m.owner && m.from === e) m.from = null;
+    armWithMachete(e);
+  }
+  placeEnemy(e, L2M_STAGE.queue.x);
+  const S = L2M_STAGE, B = L2_PLAY;
+  e.x = S.queue.x - (i % 3) * 8; e.y = S.queue.y;
+  e.prevX = e.x; e.prevY = e.y;
+  e.spawnEntry = true; e.entryRoute = 'door'; e.entryPhase = 'queued'; e.entryPlane = 'main';
+  e.entryProgress = 0; e.entryScale = 1; e.entryFrom = 1; e.spawnDelay = 0;
+  const lane = [0.3, 0.75, 0.5, 0.15, 0.9, 0.6][i % 6];
+  e.spawnTargetX = S.roomLeft + 140 + ((i * 113) % 480);
+  e.spawnTargetY = B.laneTop + 40 + lane * (B.laneBottom - B.laneTop - 80);
+  e.raider = raider; e.raiding = false; e.raidMode = null;
+  e.raidSpot = L2_RAID.spots[(e.id + i) % L2_RAID.spots.length];
+  e.mode = 'guard'; e.state = 'guard'; e.vx = 0; e.facing = 1;
+  e.atkCooldown = Math.max(e.atkCooldown, 1.0);
+  attackTokens.delete(e);
+  l2m.queue.push(e);
+}
+const l2DoorwayBusy = () => mobs().some((e) => !e.benched && e.spawnEntry && e.entryRoute === 'door'
+  && e.entryPhase === 'through' && e.x < L2M_STAGE.roomLeft + 40);
+/* The door opens while anyone is waiting behind it, lets them through one at a
+ * time, and shuts only once the doorway itself is empty — it never comes down
+ * on a body, and nobody is let through a door that is not open. */
+function l2DoorTraffic(dt) {
+  l2m.releaseT = Math.max(0, l2m.releaseT - dt);
+  l2m.queue = l2m.queue.filter((e) => !e.benched && e.spawnEntry && e.entryPhase === 'queued');
+  if (l2m.queue.length) {
+    l2DoorTo(true);
+    const inside = mobs().filter((e) => isWaveAlive(e) && !(e.spawnEntry && e.entryPhase === 'queued')).length;
+    if (l2DoorIsOpen() && l2m.releaseT <= 0 && inside < L2_DEFENSE.maxInRoom) {
+      const e = l2m.queue.shift();
+      e.entryPhase = 'through'; e.mode = 'arrival'; e.state = 'walk';
+      l2m.releaseT = L2_DEFENSE.entryGap;
+    }
+  } else if (!l2DoorwayBusy()) l2DoorTo(false);
+}
+/* A door entrant's walk: along the threshold row through the opening, then out
+ * across the floor to his mark. Waiting while queued; standing once arrived
+ * (the AI takes him only once control is Darki's). */
+function updateDoorEntrance(e, dt) {
+  const S = L2M_STAGE;
+  if (e.entryPhase === 'queued') { e.state = 'guard'; e.mode = 'guard'; e.vx = 0; e.facing = 1; return; }
+  if (e.entryPhase === 'arrived') {
+    e.state = 'guard'; e.vx = 0;
+    e.facing = Math.sign(player.x - e.x) || -1;
+    if (waveState === 'l2defense') endEnemyEntrance(e, 0.6);
+    return;
+  }
+  e.state = 'walk'; e.mode = 'arrival';
+  const inDoor = e.x < S.roomLeft + 30;
+  const tx = inDoor ? S.roomLeft + 40 : e.spawnTargetX;
+  const ty = inDoor ? S.doorway.y : e.spawnTargetY;
+  const speed = e.speed * 0.86;
+  const dx = tx - e.x, dy = ty - e.y;
+  const sx = Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
+  const sy = Math.sign(dy) * Math.min(Math.abs(dy), speed * 0.55 * dt);
+  e.x += sx; e.y += sy;
+  e.vx = dt > 0 ? sx / dt : 0;
+  e.facing = Math.sign(dx) || 1;
+  if (!inDoor && Math.abs(dx) <= 4 && Math.abs(dy) <= 3) e.entryPhase = 'arrived';
+}
+/* Frame-stepping only (the scene owns everyone's movement): the same router the
+ * enemy loop uses, so a man walks in on his own stride and footfalls. */
+function stepEnemyFrame(e, dt) {
+  const { spec, name } = enemyAnim(e);
+  e.anim = name;
+  if (e.animSpec !== spec) { e.animSpec = spec; e.animTime = 0; }
+  e.animTime += dt * spec.fps;
+  const k = Math.floor(e.animTime);
+  e.frame = spec.loop === false && k >= spec.frames.length
+    ? spec.frames[spec.frames.length - 1] : spec.frames[k % spec.frames.length];
+  stepFootfalls(e, name, spec, k, dt);
+}
+
+/* ---- the raiders: men who go for the workstation instead of Darki ----
+ * The laptop's strike point is its screen's right edge; the spots are outside
+ * the desk's solid footprint (east of it, and in front of it), each within every
+ * class's reach and depth window of that point, so a blow on the laptop is
+ * judged by the same reach/reachY test as a blow on Darki. */
+const L2_RAID = (() => {
+  const d = L2_DESK, hitX = l2X(L2.desk.left + 116), hitY = d.y - d.backGap / 2;
+  const east = d.x + d.w + 22 + 26;
+  return { hitX, hitY, spots: [
+    { x: east, y: hitY - 12 }, { x: east, y: hitY + 12 }, { x: hitX - 26, y: d.y + VEHICLE_FRONT_DEPTH + 10 },
+  ] };
+})();
+function l2RaidMove(e) {
+  if (e.kind === 'sars') return combatRng() < 0.6 ? 'jab' : 'spinKick';
+  if (e.kind === 'shaved') return isArmed(e) ? 'machete' : 'ayeKick';
+  if (e.kind === 'senior') return 'jab';
+  return combatRng() < 0.35 ? 'kick' : 'jab';
+}
+function l2EndRaid(e) {
+  e.raiding = false; e.raidMode = null;
+  if (e.mode === 'raid' || e.mode === 'attack' || e.mode === 'recover') e.mode = 'menace';
+  e.moveName = null; e.state = 'walk';
+}
+/* Returns true when it drove the man this frame; false hands him to the mob AI
+ * (Darki is on him, or he is mid-commitment against Darki). */
+function stepRaider(e, dt) {
+  const close = Math.abs(player.x - e.x) < L2_DEFENSE.raidAggroX && Math.abs(player.y - e.y) < 120
+    && player.state !== 'ko';
+  if (e.raiding && e.mode === 'menace') { e.raidMode = 'go'; e.mode = 'raid'; }   // back up off the floor: start over
+  if (!e.raiding) {
+    if (e.mode !== 'menace' && e.mode !== 'patrol' && e.mode !== 'idle') return false;
+    if (close) return false;
+    e.raiding = true; e.raidMode = 'go'; e.mode = 'raid'; e.moveName = null;
+    attackTokens.delete(e);
+  }
+  if (close && e.raidMode !== 'attack') { l2EndRaid(e); return false; }
+  e.atkCooldown = Math.max(0, e.atkCooldown - dt);
+  e.stateTimer -= dt;
+  const sp = e.raidSpot ?? L2_RAID.spots[0];
+  const faceDesk = Math.sign(L2_RAID.hitX - e.x) || -1;
+  switch (e.raidMode) {
+    case 'go': {
+      const dx = sp.x - e.x, dy = sp.y - e.y;
+      e.x += Math.sign(dx) * Math.min(Math.abs(dx), e.speed * dt);
+      e.y += Math.sign(dy) * Math.min(Math.abs(dy), e.speed * 0.75 * dt);
+      e.state = 'walk'; e.mode = 'raid';
+      e.facing = Math.abs(dx) > 2 ? Math.sign(dx) : faceDesk;
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 5) { e.raidMode = 'wait'; e.atkCooldown = Math.max(e.atkCooldown, 0.5); }
+      break;
+    }
+    case 'wait':
+      e.state = 'guard'; e.mode = 'raid'; e.facing = faceDesk; e.vx = 0;
+      if (Math.abs(sp.x - e.x) > 30 || Math.abs(sp.y - e.y) > 24) { e.raidMode = 'go'; break; }
+      if (e.atkCooldown <= 0) {
+        e.moveName = l2RaidMove(e);
+        e.raidMode = 'windup'; e.stateTimer = enemyMove(e).windup; e.didHit = false;
+      }
+      break;
+    case 'windup':
+      e.state = 'guard'; e.mode = 'raid'; e.facing = faceDesk;
+      if (e.stateTimer <= 0) {
+        const M = enemyMove(e);
+        e.raidMode = 'attack'; e.mode = 'attack'; e.stateTimer = M.active;
+        if (e.moveName === 'machete') { stopSwingSfx(e); e.swingSfx = playCueSustained('macheteSwing', e.x); }
+        else playSwing(M.swing, e.x);
+      }
+      break;
+    case 'attack': {
+      const M = enemyMove(e);
+      e.state = 'walk'; e.mode = 'attack'; e.facing = faceDesk;
+      const into = M.active - e.stateTimer;
+      if (!e.didHit && into >= M.connectAt && into <= M.connectUntil
+          && Math.abs(L2_RAID.hitX - e.x) < M.reach && Math.abs(L2_RAID.hitY - e.y) < M.reachY) {
+        l2HitComputer(M.damage * L2_DEFENSE.computerDmgMul);
+        e.didHit = true;
+      }
+      if (e.stateTimer <= 0) { e.raidMode = 'recover'; e.mode = 'recover'; e.stateTimer = M.recover; }
+      break;
+    }
+    case 'recover':
+      e.state = 'walk'; e.mode = 'recover'; e.facing = faceDesk;
+      if (e.stateTimer <= 0) {
+        const C = enemyCfg(e);
+        e.atkCooldown = Math.max(0.35, (C.cooldownMin + combatRng() * C.cooldownVar) / diffDial().pressure);
+        e.raidMode = 'wait'; e.mode = 'raid'; e.moveName = null;
+      }
+      break;
+    default:
+      e.raidMode = 'go';
+  }
+  e.direction = e.facing;
+  return true;
+}
+
+function l2HitComputer(dmg) {
+  if (waveState !== 'l2defense') return;
+  l2m.compHp = Math.max(0, l2m.compHp - dmg * diffDial().dmgTaken);
+  l2m.compFlash = 0.35;
+  playCue('blockHit', L2_RAID.hitX, 0.8, 1.15);
+  spawnEmbers(L2_RAID.hitX, L2_DESK.drawY + 8, 6, '#9fe8ff', 30);
+  if (l2m.compHp <= 0) { gameOver.reason = 'computer'; startGameOver(); }
+}
+
+/* The defense's clock, waves and door, every live frame (never while paused —
+ * update() does not run then). */
+function updateL2Defense(dt) {
+  l2StepDoor(dt);
+  l2m.screen = Math.min(1, l2m.screen + dt * 1.6);
+  l2m.compFlash = Math.max(0, l2m.compFlash - dt);
+  l2m.compShown += (l2m.compHp - l2m.compShown) * Math.min(1, dt * 8);
+  if (waveState === 'l2won') {
+    player.invuln = Math.max(player.invuln, 0.5);
+    attackTokens.clear();
+    l2DoorTo(false);
+    l2m.wonT += dt;
+    if (l2m.wonT >= 2.8 && !gameOver.active) startLevelClear();
+    return;
+  }
+  l2m.progress = Math.min(1, l2m.progress + dt / L2_DEFENSE.transferSecs);
+  l2m.waveT += dt;
+  const inRoom = mobs().filter((e) => isWaveAlive(e) && !(e.spawnEntry && e.entryPhase === 'queued')).length;
+  if (!l2m.queue.length && l2m.waveT > 2.5
+      && (inRoom <= L2_DEFENSE.nextWaveAt || (l2m.waveT > 40 && inRoom < L2_DEFENSE.maxInRoom)))
+    stageL2Wave();
+  l2DoorTraffic(dt);
+  if (l2m.progress >= 1) {
+    waveState = 'l2won';
+    l2m.wonT = 0;
+    l2m.queue.forEach(benchEnemy);
+    l2m.queue = [];
+    rrGameEvent('mission_complete', { level: 2, mission: 'strongroom', hp: Math.ceil(l2m.compHp), difficulty: chosenDifficulty });
+  }
+}
+
+/* The workstation, depth-sorted at its front feet, from the same snapped origin
+ * as the plate. Powered on, its screen lights and throws a little light of its
+ * own on the desk — a local glow; the level's grade is untouched. A blow on it
+ * flickers the screen red. */
+function drawLevel2Desk() {
+  const img = l2Art.desk, D = L2.desk;
+  if (!img) return;
+  const ox = snapWorldX(-cameraX), oy = snapWorldY(L2.artY);
+  const x = ox + L2_DESK.drawX, y = oy + (L2_DESK.drawY - L2.artY);
+  if (x > viewW() + 40 || x + l2X(D.w) < -40) return;
+  ctx.drawImage(gradedArt(img, 'l2'), x, y, l2X(D.w), l2X(D.h));
+  const on = l2m.screen;
+  if (on <= 0 || reflecting) return;
+  const P = D.screen.map(([px, py]) => [x + l2X(px), y + l2X(py)]);
+  const flick = 0.92 + 0.08 * Math.sin(mobClock * 31) * Math.sin(mobClock * 7.3);
+  const hurt = l2m.compFlash > 0 && Math.sin(mobClock * 60) > -0.2;
+  const cx = P.reduce((a, p) => a + p[0], 0) / 4, cy = P.reduce((a, p) => a + p[1], 0) / 4;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(cx, cy + 6, 2, cx, cy + 6, l2X(70));
+  g.addColorStop(0, hurt ? `rgba(255,70,60,${0.30 * on})` : `rgba(110,210,255,${0.28 * on * flick})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(cx - l2X(70), cy - l2X(70) + 6, l2X(140), l2X(140));
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath();
+  P.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+  ctx.closePath();
+  ctx.fillStyle = hurt ? `rgba(255,80,70,${0.85 * on})` : `rgba(120,220,255,${0.78 * on * flick})`;
+  ctx.fill();
+  // the copy, on the screen itself: a bar along its lower edge
+  if (!hurt && l2m.progress > 0) {
+    const [a, b] = [P[3], P[2]];
+    const k = Math.max(0, Math.min(1, l2m.progress));
+    ctx.strokeStyle = `rgba(230,255,240,${0.9 * on})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(a[0] + (b[0] - a[0]) * 0.1, a[1] + (b[1] - a[1]) * 0.1 - 3);
+    ctx.lineTo(a[0] + (b[0] - a[0]) * (0.1 + 0.8 * k), a[1] + (b[1] - a[1]) * (0.1 + 0.8 * k) - 3);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* THE MISSION HUD, top centre and compact: the transfer and the workstation's
+ * health, visible for the whole defense. */
+function drawL2MissionHud() {
+  if (waveState !== 'l2defense' && waveState !== 'l2won') return;
+  const w = 380, x = (VIEW_W - w) / 2, y = 14;
+  ctx.save();
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(6,9,16,0.72)';
+  ctx.fillRect(x - 12, y - 4, w + 24, 64);
+  ctx.fillStyle = '#ff5442';
+  ctx.fillRect(x - 12, y - 4, w + 24, 2);
+  const bar = (label, val, frac, by, col, flash) => {
+    ctx.font = uiFont(800, 11);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#cfd8ea';
+    ctx.fillText(label, x, by);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffe45e';
+    ctx.fillText(val, x + w, by);
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(x, by + 5, w, 8);
+    ctx.fillStyle = flash ? '#ffffff' : col;
+    ctx.fillRect(x, by + 5, w * Math.max(0, Math.min(1, frac)), 8);
+  };
+  const p = l2m.progress;
+  const left = Math.max(0, Math.ceil(L2_DEFENSE.transferSecs * (1 - p)));
+  bar(waveState === 'l2won' ? 'EVIDENCE SECURED' : 'EVIDENCE TRANSFER',
+    `${Math.floor(p * 100)}%   ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, p, y + 12, '#6fd6ff', false);
+  const hf = l2m.compShown / L2_DEFENSE.computerHp;
+  bar('WORKSTATION', `${Math.ceil(l2m.compHp)} / ${L2_DEFENSE.computerHp}`, hf, y + 42,
+    hf > 0.35 ? '#7be0a4' : '#ff4d4d', l2m.compFlash > 0.2);
+  ctx.restore();
+  if (waveState === 'l2won') {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = display(900, 56);
+    ctx.fillStyle = '#ffe45e';
+    ctx.fillText('EVIDENCE SECURED', VIEW_W / 2, VIEW_H / 2 - 6);
+    ctx.restore();
+  }
+}
+
+/* The scene's furniture: the same bars as every other scene, and the line's
+ * subtitles in the bottom one. */
+function drawL2Scene() {
+  drawLetterbox(l2m.letterbox);
+  const subs = l2m.vo && L2_VO_SUBS[l2m.vo];
+  const depth = CUT.barH * l2m.letterbox;
+  if (!subs || depth < 6) return;
+  drawSubtitleScroll(ctx, subs, l2VoiceT(),
+    { x: 0, y: VIEW_H - depth, w: VIEW_W, h: depth },
+    { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad });
+}
+
 function update(dt) {
   advanceFx(dt);                            // sparks/shake run even while frozen
   if (hitStopTimer > 0) { hitStopTimer -= dt; return; } // hit stop: freeze the sim
@@ -18138,6 +18985,8 @@ function update(dt) {
   if (cutscene.active) { updateCutscene(dt); return; }
   // â€¦and his outro owns it for good once he is down.
   if (outro.active) { updateOutro(dt); return; }
+  // …and Level 02's strong-room scene owns it until the second line ends (request 454).
+  if (waveState === 'l2scene') { updateL2Scene(dt); return; }
   /* MC_OLODO IS GOING DOWN (request 338): from the killing blow the player has
    * no more say — nothing pressed now can cut his fall or the ending short, and
    * nobody left on the street can land a blow on Darki while it plays. */
@@ -18422,6 +19271,9 @@ function update(dt) {
      * only evidence that the question is worth asking.) */
     if (!canOccupy(player.x, player.y, halfW, bodyH)) {
       const inside = clampToPlayarea(player.x, player.y, halfW, bodyH);
+      /* Level 02 is wider than the street (request 454): its walls are its own
+       * world's edges, applied by clampPlayerToArena; only the depth band is shared. */
+      if (activeLevel === 2) inside.hitX = 0;
 
       if (inside.hitX !== 0) {              // the hard side walls, both ends
         player.x = inside.x;
@@ -18446,12 +19298,13 @@ function update(dt) {
   // here, because it is a state change rather than a clamp.)
   clampPlayerToArena();   // the parked line resolves inside here on every path
   if (waveState === 'cleared' && player.x >= currentGate()) advanceSection();
-  /* LEVEL 02 CLEARED: the AREA CLEARED plate holds over the live floor for a
-   * beat, then the level's end screen (the game-over machinery's other face). */
-  if (activeLevel === 2 && waveState === 'complete' && !gameOver.active) {
-    l2ClearT += dt;
-    if (l2ClearT >= 2.6) startLevelClear();
-  }
+  /* LEVEL 02's LAST ARENA CLEARED (request 454): the level no longer ends here.
+   * Walking up to the keypad pillar starts the strong-room scene; the defense
+   * that follows it ends the level (updateL2Defense -> startLevelClear). */
+  if (activeLevel === 2 && waveState === 'complete' && !gameOver.active
+      && player.x >= L2M_STAGE.trigger - 140 && player.state === 'normal' && !player.react
+      && !player.attack && !player.carrying && player.grounded && !execution) startL2Scene();
+  if (activeLevel === 2 && (waveState === 'l2defense' || waveState === 'l2won') && !gameOver.active) updateL2Defense(dt);
 
   if (player.jumpY >= 0) {
     /* THE TOUCHDOWN EDGE. `player.grounded` still holds LAST frame's answer at
@@ -18597,7 +19450,8 @@ function update(dt) {
      * only reads as intended if the tail HOLDS — wrapping would replay the
      * launch halfway up, or bounce him through a second landing on the spot. */
     const oneShot = player.anim === 'jumpRise' || player.anim === 'jumpFall'
-      || player.anim === 'airKickFall' || player.anim === 'land';
+      || player.anim === 'airKickFall' || player.anim === 'land'
+      || player.anim === 'wallSwitch' || player.anim === 'computer';   // the strong-room takes (request 454)
     if (player.grounded) player.airPeak = 0;
     if (spec.byHeight && !player.grounded)
       player.frame = airPoseFrame(spec);
@@ -18755,8 +19609,10 @@ function update(dt) {
     } else if (enemy.boss) {
       updateBossFight(dt);                 // …and his two gears: retreat, crew, return
       stepBossAI(enemy, dt);               // MC_Olodo: stance footwork + fist combo
-    } else if (bossEnding) {
-      paceDefeatedCrew(enemy, dt);          // the fight ended on Olodo's killing blow
+    } else if (bossEnding || waveState === 'l2won') {
+      paceDefeatedCrew(enemy, dt);          // the fight ended on Olodo's killing blow (or the transfer finished)
+    } else if (waveState === 'l2defense' && enemy.raider && stepRaider(enemy, dt)) {
+      // a raider going for the workstation (request 454) — stepRaider drove him
     } else {
       stepEnemyAI(enemy, dt);              // Streets-of-Rage mob AI
     }
@@ -19121,16 +19977,24 @@ function drawWorldPlate(img, dx, dy, scale) {
  * Level 01 players never pay for it — and the handover waits for it
  * (isWorldReady below). A layer that fails stays null and simply is not drawn;
  * the failure is logged and surfaced as l2Art.error. */
-const l2Art = { state: 'idle', gpb: null, mp: null, fp: [], error: null };
+const l2Art = { state: 'idle', gpbA: null, gpbB: null, mp: null, fp: [], door: null, room: null, pillarFront: null, desk: null, error: null };
 function loadLevel2Art() {
   if (l2Art.state !== 'idle') return;
   l2Art.state = 'loading';
   const decoded = (src) => loadImage(src).then((img) => (img.decode ? img.decode().catch(() => {}).then(() => img) : img));
-  Promise.allSettled([decoded(L2.gpb.src), decoded(L2.mp.src), ...L2.fp.map((p) => decoded(p.src))])
+  Promise.allSettled([decoded(L2.gpb.srcA), decoded(L2.gpb.srcB), decoded(L2.mp.src),
+    decoded(L2.door.src), decoded(L2.room.src), decoded(L2.pillarFront.src), decoded(L2.desk.src),
+    loadSpriteFrames(WALLSWITCH_SHEET, 'wallSwitch'), loadSpriteFrames(SYSTEM_SHEET, 'computer'),
+    ...L2.fp.map((p) => decoded(p.src))])
     .then((r) => {
       const v = r.map((x) => (x.status === 'fulfilled' ? x.value : null));
-      [l2Art.gpb, l2Art.mp] = v;
-      l2Art.fp = v.slice(2);
+      [l2Art.gpbA, l2Art.gpbB, l2Art.mp, l2Art.door, l2Art.room, l2Art.pillarFront, l2Art.desk,
+        wallSwitchSprite, systemSprite] = v;
+      l2Art.fp = v.slice(9);
+      // Each sheet is one take, played ONCE (the analyzer's section says loop: false;
+      // its defaultAnimation says loop: true, which is what the loader keyed 'walk' off).
+      if (wallSwitchSprite) wallSwitchSprite.anims.wallSwitch = { ...(wallSwitchSprite.anims.wallSwitchInterraction ?? wallSwitchSprite.anims.walk), loop: false };
+      if (systemSprite) systemSprite.anims.computer = { ...(systemSprite.anims.systemInterraction ?? systemSprite.anims.walk), loop: false };
       const bad = r.filter((x) => x.status === 'rejected').map((x) => x.reason?.message);
       if (bad.length) { l2Art.error = bad.join('; '); console.error('[ror level 2] art failed:', l2Art.error); }
       l2Art.state = 'ready';
@@ -19174,7 +20038,24 @@ function gradedArt(img, tier) {
 function drawLevel2Back() {
   ctx.fillStyle = '#07090d';               // under the shake overscan, never seen otherwise
   ctx.fillRect(-12, cameraY - 12, VIEW_W / (tune.zoom || 1) + 24, VIEW_H / (tune.zoom || 1) + 24);
-  if (l2Art.gpb) drawWorldPlate(l2Art.gpb, snapWorldX(-cameraX), snapWorldY(L2.artY), L2.scale);
+  const ox = snapWorldX(-cameraX), oy = snapWorldY(L2.artY);
+  if (l2Art.gpbA) drawWorldPlate(l2Art.gpbA, ox, oy, L2.scale);
+  if (l2Art.gpbB) drawWorldPlate(l2Art.gpbB, ox + l2X(L2.gpb.split), oy, L2.scale);
+  /* THE STRONG-ROOM DOOR, between the plate and the room that frames it (the PSD
+   * order). Clipped to its doorway so a raised door can never show above the
+   * frame's top edge where the room plate stops (art row 0). */
+  const rx = ox + l2X(L2.room.left);
+  if (rx > viewW() + 40 || rx + l2X(L2.room.w) < -40) return;
+  const D = L2.door;
+  if (l2Art.door) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ox + l2X(D.holeL - 3), oy + l2X(150), l2X(D.holeR - D.holeL + 6), l2X(D.threshold + 20 - 150));
+    ctx.clip();
+    ctx.drawImage(l2Art.door, ox + l2X(D.left), oy + l2X(D.top + l2Door.dy), l2X(D.w), l2X(D.h));
+    ctx.restore();
+  }
+  if (l2Art.room) ctx.drawImage(l2Art.room, rx, oy + l2X(L2.room.top), l2X(L2.room.w), l2X(L2.room.h));
 }
 /* One middle pillar, from the SAME snapped origin as the GPB, so the two can
  * never drift apart. Called by the actor pass at the pillar's foot row. */
@@ -19194,6 +20075,12 @@ function fpScreenX(p) {
 }
 function drawLevel2Front() {
   const vw = viewW();
+  /* The strong room's front pillar: the same plane as the room it belongs to
+   * (1:1 with the camera, never the FP parallax — it touches the door frame). */
+  if (l2Art.pillarFront) {
+    const P = L2.pillarFront, x = snapWorldX(-cameraX) + l2X(P.left);
+    if (x < vw + 40 && x + l2X(P.w) > -40) ctx.drawImage(gradedArt(l2Art.pillarFront, 'l2'), x, snapWorldY(l2Y(P.top)), l2X(P.w), l2X(P.h));
+  }
   L2.fp.forEach((p, i) => {
     const img = l2Art.fp[i] && gradedArt(l2Art.fp[i], 'l2');
     if (!img) return;
@@ -19515,19 +20402,122 @@ function updateAds(dt) {
   ADS.flushT += dt;
   if (ADS.flushT >= 30) { ADS.flushT = 0; flushAds(); }
 }
-/* The pause menu's board row, decided when the pause opens: VISIT <brand> for a
- * live advert that has a link, ADVERTISE ON THIS BOARD for the house art. */
+/* THE PAUSE MENU'S POSTS (request 454). The board row was VISIT <brand> for the
+ * one board seen last; it is now VISIT POSTS, and it opens a carousel of every
+ * billboard IN THE CAMERA'S VIEW when the pause opened — captured once, in the
+ * order the boards stand left to right, so navigating never reshuffles it.
+ *   - a live booking shows its artwork (or its video, when the booking carries
+ *     one), its brand, and a link icon to ITS link — only a real http(s) one;
+ *   - a house-art board shows its own face and, where it is for sale, the link
+ *     to its booking page.
+ * Only the active card's video plays, muted until the speaker is toggled; every
+ * video is paused when its card is left and released when the pause closes. */
+const adDeck = { cards: [], i: 0, focus: false, muted: true, videos: new Map(), hits: [], drag: null, slide: 0 };
+const AD_LINK = (u) => (typeof u === 'string' && /^https?:\/\/[^\s<>"']+$/i.test(u) ? u : null);
+const AD_VIDEO = (live) => {
+  const v = typeof live?.video === 'string' ? live.video
+    : (live?.kind === 'video' || live?.type === 'video') ? live.url : null;
+  return v && /^https?:\/\//i.test(v) ? v : null;
+};
+/* Which boards' faces intersect the frame right now, in the space drawAdverts
+ * draws them in (x relative to the camera, y in world rows under cameraY). */
+function adDeckCapture() {
+  if (activeLevel !== 1 || !advertArt.length) return [];
+  const scale = tune.streetScale, ox = -cameraX * tune.streetParallax + tune.streetX, oy = tune.streetY;
+  const vw = viewW(), top = cameraY, bottom = cameraY + viewH();
+  const found = [], bookings = new Set();
+  for (const { slot, img, gap } of advertArt) {
+    if (!img || !slot.face) continue;
+    const k = scale * (slot.fit ?? 1);
+    const x = ox + (slot.x + slot.w * (1 - (slot.fit ?? 1)) / 2) * scale;
+    const t = oy + ADVERT_FOOT_Y * scale - (slot.h - gap) * k;
+    const fx = x + slot.face.x * k, fy = t + slot.face.y * k, fw = slot.face.w * k, fh = slot.face.h * k;
+    if (Math.min(fx + fw, vw) - Math.max(fx, 0) <= 0 || Math.min(fy + fh, bottom) - Math.max(fy, top) <= 0) continue;
+    const live = ADS.endpoint ? adLiveOf(slot.id) : null;
+    if (live) {
+      if (bookings.has(live.id)) continue;               // one booking on two boards is one post
+      bookings.add(live.id);
+      found.push({ at: fx, slot: slot.id, booking: live.id, title: String(live.brand || 'SPONSOR').toUpperCase().slice(0, 30),
+        desc: typeof live.desc === 'string' ? live.desc.slice(0, 120) : '', img: ADS.art.get(live.id) || null,
+        video: AD_VIDEO(live), link: AD_LINK(live.link), face: null, board: img });
+    } else {
+      found.push({ at: fx, slot: slot.id, booking: null,
+        title: slot.qrRect ? 'ADVERTISE ON THIS BOARD' : 'ON THIS STREET',
+        desc: slot.qrRect && ADS.endpoint ? 'This board is open for bookings.' : '',
+        img: null, video: null, face: slot.face, board: img,
+        link: slot.qrRect && ADS.endpoint ? AD_LINK(ADS.slots.get(slot.id)?.page || `${ADS.endpoint}/b/${slot.id}`) : null });
+    }
+  }
+  return found.sort((a, b) => a.at - b.at);
+}
+function adDeckOpen() {
+  adDeckClose();
+  adDeck.cards = adDeckCapture();
+  adDeck.i = 0; adDeck.focus = false; adDeck.drag = null; adDeck.slide = 0;
+}
+/* Leaving the pause: every video stopped and its resources let go. */
+function adDeckClose() {
+  for (const v of adDeck.videos.values()) {
+    try { v.pause(); v.removeAttribute('src'); v.load(); } catch {}
+  }
+  adDeck.videos.clear();
+  adDeck.cards = []; adDeck.focus = false; adDeck.drag = null;
+}
+function adDeckVideo(card) {
+  if (!card?.video || typeof document === 'undefined') return null;
+  let v = adDeck.videos.get(card.video);
+  if (!v) {
+    v = document.createElement('video');
+    v.crossOrigin = 'anonymous'; v.muted = true; v.loop = true; v.playsInline = true;
+    v.setAttribute('playsinline', ''); v.preload = 'auto';
+    v.src = card.video;
+    adDeck.videos.set(card.video, v);
+  }
+  return v;
+}
+/* Exactly one video may run: the active card's, while the carousel has focus. */
+function adDeckSyncVideo() {
+  const active = adDeck.cards[adDeck.i];
+  for (const [url, v] of adDeck.videos) if (!(adDeck.focus && active?.video === url) && !v.paused) { try { v.pause(); } catch {} }
+  if (adDeck.focus && active?.video) {
+    const v = adDeckVideo(active);
+    v.muted = adDeck.muted;
+    if (v.paused) v.play?.().catch(() => {});
+  }
+}
+function adDeckMove(d) {
+  const n = adDeck.cards.length;
+  if (n < 2) return;
+  adDeck.i = (adDeck.i + d + n) % n;
+  adDeck.slide = d * 40;
+  frontEnd?.ui.navForward();
+  adDeckSyncVideo();
+}
+function adDeckFocus(on) {
+  if (on && !adDeck.cards.length) return;
+  adDeck.focus = on;
+  if (on) frontEnd?.ui.navForward(); else frontEnd?.ui.navBack();
+  adDeckSyncVideo();
+}
+/* The landing page opens OUTSIDE the game (a new tab, or the host's external
+ * browser); the session stays here, paused. */
+function adDeckOpenLink() {
+  const card = adDeck.cards[adDeck.i];
+  if (!card?.link) return false;
+  frontEnd?.ui.pressPulse('deck:link');
+  queueAdCount(card.slot, 't');
+  flushAds();
+  openExternal(card.link);
+  return true;
+}
+function adDeckToggleMute() {
+  adDeck.muted = !adDeck.muted;
+  adDeckSyncVideo();
+}
 let pauseAd = null;
 function pauseAdRow() {
-  if (!ADS.endpoint || !ADS.last || performance.now() - ADS.last.at > ADS_ROW_HOLD_MS) return null;
-  const id = ADS.last.id;
-  const live = adLiveOf(id);
-  if (live) {
-    if (!/^https?:\/\//i.test(live.link || '')) return null;
-    const brand = String(live.brand || 'SPONSOR').toUpperCase().slice(0, 18).trim();
-    return { label: `VISIT ${brand}`, icon: 'play', url: live.link, slot: id };
-  }
-  return { label: 'ADVERTISE ON THIS BOARD', icon: 'play', url: ADS.slots.get(id)?.page || `${ADS.endpoint}/b/${id}`, slot: id };
+  adDeckOpen();
+  return adDeck.cards.length ? { label: 'VISIT POSTS', icon: 'play' } : null;
 }
 function openExternal(url) {
   try { if (window.RatelHost?.openUrl) { window.RatelHost.openUrl(url); return; } } catch {}
@@ -19647,6 +20637,8 @@ function darkiSheetKey(anim) {
   if (anim === 'carry') return 'Carry';
   if (anim === 'throwEnemy') return 'Throw';
   if (anim === 'rush') return 'Rush';
+  if (anim === 'wallSwitch') return 'WallSwitch';
+  if (anim === 'computer') return 'Computer';
   if (anim === 'uppercut') return 'Uppercut';
   if (anim === 'hitReact') return 'HitReact';
   if (anim === 'hitLift') return 'HitLift';
@@ -19945,6 +20937,7 @@ function actorList() {
    * behind the shaft. */
   if (activeLevel === 2) {
     for (const p of L2_PILLARS) actors.push({ depth: p.y, tie: -50, draw: () => drawLevel2Pillar(p) });
+    if (l2Art.desk) actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk() });   // the workstation (request 454)
   }
   for (const v of activeLevel === 2 ? [] : VEHICLE_ART) {
     const sx = v.x - cameraX;
@@ -20716,6 +21709,17 @@ function drawWaveHud() {
     ctx.fillText('GO', VIEW_W - 74, gy);
     ctx.font = display(900, 46 + pulse * 8);
     ctx.fillText('→', VIEW_W - 20, gy + 2);
+  } else if (waveState === 'l2defense' || waveState === 'l2won') {
+    drawL2MissionHud();                  // the transfer and the workstation (request 454)
+  } else if (waveState === 'complete' && activeLevel === 2) {
+    /* The last arena is down, the level is not: GO on to the strong-room keypad. */
+    const pulse = 0.5 + 0.5 * Math.sin(mobClock * 6);
+    ctx.textAlign = 'right';
+    ctx.font = display(900, 44);
+    ctx.fillStyle = `rgba(255,228,94,${0.55 + 0.45 * pulse})`;
+    ctx.fillText('GO', VIEW_W - 74, VIEW_H / 2);
+    ctx.font = display(900, 46 + pulse * 8);
+    ctx.fillText('→', VIEW_W - 20, VIEW_H / 2 + 2);
   } else if (waveState === 'complete') {
     ctx.textAlign = 'center';
     ctx.font = display(900, 56);
@@ -21128,38 +22132,19 @@ function drawPauseOverlay() {
     });
   }
 
-  /* Fight status, right â€” the list/detail split the OPTIONS screen uses. */
-  const px = 528, py = 196, pw = 694, ph = 300;
-  ui.glass(px, py, pw, ph, 10);
-  const ix = px + 28, iw = pw - 56;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ui.setFont(700, 11, 4);
-  ctx.fillStyle = C.gold;
-  ctx.fillText('FIGHT STATUS', ix, py + 38);
-
-  const hpFrac = player.maxHp > 0 ? player.hp / player.maxHp : 0;
-  pauseMeter(ui, 'DARKI', `${Math.ceil(player.hp)} / ${player.maxHp}`, hpFrac,
-    ix, py + 80, iw, hpFrac > 0.35 ? C.green : C.red);
-  pauseMeter(ui, player.rageActive ? 'RAGE  —  ACTIVE' : 'RAGE',
-    `${Math.round((player.rage / RAGE_MAX) * 100)}%`, player.rage / RAGE_MAX,
-    ix, py + 136, iw, player.rageActive ? C.orange : C.gold);
-
-  const bossStage = inBossStage() || waveState === 'complete';
-  const quota = SECTIONS[section] ? SECTIONS[section].quota : 0;
-  pauseInfoRow(ui, 'OBJECTIVE',
-    activeLevel === 2
-      ? (waveState === 'complete' ? 'AREA CLEARED' : `CLEAR THE FACILITY  —  ${waveKills} / ${quota}`)
-      : bossStage ? 'BOSS  /  MC OLODO' : `CLEAR THE BLOCK  —  ${waveKills} / ${quota}`,
-    ix, py + 200, iw);
-  pauseInfoRow(ui, 'ARENA', `${Math.min(section + 1, SECTIONS.length)} OF ${SECTIONS.length}`,
-    ix, py + 232, iw);
-  pauseInfoRow(ui, 'DIFFICULTY', chosenDifficulty, ix, py + 264, iw);
+  /* The right side was the FIGHT STATUS card; it is gone (request 454 — the run
+   * statistics behind it are untouched) and the space is the posts carousel's. */
+  drawAdDeck(ui, 528, 196, 694, 372);
 
   ctx.restore();
   ctx.restore();
 
-  ui.drawControlBar([
+  ui.drawControlBar(adDeck.focus ? [
+    { icon: 'dpad', label: 'BROWSE' },
+    { icon: 'cross', label: 'OPEN LINK', color: '#8fb4ff' },
+    ...(adDeck.cards[adDeck.i]?.video ? [{ icon: 'triangleBtn', label: adDeck.muted ? 'SOUND ON' : 'SOUND OFF', color: '#7be0a4' }] : []),
+    { icon: 'circleBtn', label: 'BACK', color: '#ff8f8f' },
+  ] : [
     { icon: 'dpad', label: 'NAVIGATE' },
     { icon: 'cross', label: 'SELECT', color: '#8fb4ff' },
     { icon: 'circleBtn', label: 'RESUME', color: '#ff8f8f' },
@@ -21173,6 +22158,179 @@ function drawPauseOverlay() {
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
+}
+
+/* THE POSTS CAROUSEL (request 454), in the pause panel's own glass and type.
+ * One card at a time: the media (a video's live frame, the booking's artwork, or
+ * the board's own face), arrows either side, the brand and its line, the link
+ * icon (only where a real link exists), page dots and a count. Hidden outright
+ * when no board was in view. Its hit rects live in adDeck.hits (virtual px). */
+function drawAdDeck(ui, px, py, pw, ph) {
+  adDeck.hits = [];
+  const cards = adDeck.cards;
+  if (!cards.length) return;
+  const C = ui.C, n = cards.length, card = cards[adDeck.i];
+  const focus = adDeck.focus;
+  adDeck.slide *= 0.78;
+  if (Math.abs(adDeck.slide) < 0.5) adDeck.slide = 0;
+  ui.glass(px, py, pw, ph, 10, focus ? { border: 'rgba(255,190,80,0.85)' } : {});
+  const ix = px + 28, iw = pw - 56;
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ui.setFont(700, 11, 4);
+  ctx.fillStyle = C.gold;
+  ctx.fillText('POSTS ON THIS STREET', ix, py + 34);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = C.muted;
+  ctx.fillText(`${adDeck.i + 1} / ${n}`, ix + iw, py + 34);
+
+  // the media
+  const mx = ix, my = py + 48, mw = iw, mh = 206;
+  ctx.fillStyle = 'rgba(4,6,10,0.78)';
+  ctx.fillRect(mx, my, mw, mh);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+  const off = adDeck.slide + (adDeck.drag ? adDeck.drag.dx : 0);
+  const fit = (sw, sh) => { const s = Math.min(mw / sw, mh / sh); return { w: sw * s, h: sh * s }; };
+  const vid = card.video ? adDeck.videos.get(card.video) : null;
+  if (vid && vid.readyState >= 2 && vid.videoWidth) {
+    const f = fit(vid.videoWidth, vid.videoHeight);
+    ctx.drawImage(vid, mx + (mw - f.w) / 2 + off, my + (mh - f.h) / 2, f.w, f.h);
+  } else if (card.img && card.img.width) {
+    const f = fit(card.img.width, card.img.height);
+    ctx.drawImage(card.img, mx + (mw - f.w) / 2 + off, my + (mh - f.h) / 2, f.w, f.h);
+  } else if (card.face && card.board) {
+    const F = card.face, f = fit(F.w, F.h);
+    ctx.drawImage(card.board, F.x, F.y, F.w, F.h, mx + (mw - f.w) / 2 + off, my + (mh - f.h) / 2, f.w, f.h);
+  }
+  if (card.video && !(vid && vid.readyState >= 2)) {          // a video still arriving
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(mx, my, mw, mh);
+    ui.icon('play', mx + mw / 2, my + mh / 2, 46, C.paper, 0.85);
+  }
+  ctx.restore();
+  ctx.strokeStyle = focus ? 'rgba(255,190,80,0.9)' : 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = focus ? 2 : 1;
+  ctx.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
+  adDeck.hits.push({ id: 'deck:card', x: mx, y: my, w: mw, h: mh });
+
+  // arrows
+  if (n > 1) {
+    const arrow = (dir, cx) => {
+      const cy = my + mh / 2;
+      ctx.fillStyle = 'rgba(6,9,16,0.78)';
+      ctx.beginPath(); ctx.arc(cx, cy, 19, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = focus ? C.gold : C.paper;
+      ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(cx + dir * -4, cy - 8); ctx.lineTo(cx + dir * 5, cy); ctx.lineTo(cx + dir * -4, cy + 8); ctx.stroke();
+      adDeck.hits.push({ id: dir < 0 ? 'deck:prev' : 'deck:next', x: cx - 24, y: cy - 24, w: 48, h: 48 });
+    };
+    arrow(-1, mx + 26);
+    arrow(1, mx + mw - 26);
+  }
+  // a video's sound
+  if (card.video) {
+    const sx = mx + mw - 26, sy = my + 24;
+    ctx.fillStyle = 'rgba(6,9,16,0.78)';
+    ctx.beginPath(); ctx.arc(sx, sy, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.paper; ctx.fillStyle = C.paper; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(sx - 8, sy - 3); ctx.lineTo(sx - 4, sy - 3); ctx.lineTo(sx + 1, sy - 8);
+    ctx.lineTo(sx + 1, sy + 8); ctx.lineTo(sx - 4, sy + 3); ctx.lineTo(sx - 8, sy + 3); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    if (adDeck.muted) { ctx.moveTo(sx + 4, sy - 4); ctx.lineTo(sx + 10, sy + 4); ctx.moveTo(sx + 10, sy - 4); ctx.lineTo(sx + 4, sy + 4); }
+    else { ctx.arc(sx + 2, sy, 6, -0.9, 0.9); }
+    ctx.stroke();
+    adDeck.hits.push({ id: 'deck:mute', x: sx - 18, y: sy - 18, w: 36, h: 36 });
+  }
+
+  // the words, and the link
+  const ty = my + mh + 34;
+  ctx.textAlign = 'left';
+  ui.setDisplay(700, 24, 1);
+  ctx.fillStyle = C.paper;
+  ctx.fillText(card.title, ix, ty);
+  if (card.desc) {
+    ui.setFont(500, 13, 0.2);
+    ctx.fillStyle = C.muted;
+    ctx.fillText(card.desc, ix, ty + 22);
+  }
+  if (card.link) {
+    const lw = 150, lh = 34, lx = ix + iw - lw, ly = ty - 24;
+    ctx.fillStyle = focus ? 'rgba(255,190,80,0.16)' : 'rgba(255,255,255,0.06)';
+    ctx.fillRect(lx, ly, lw, lh);
+    ctx.strokeStyle = focus ? C.gold : 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(lx + 0.5, ly + 0.5, lw - 1, lh - 1);
+    // the link icon: a box with an arrow leaving it
+    const gx = lx + 20, gy = ly + lh / 2;
+    ctx.strokeStyle = C.paper; ctx.lineWidth = 1.7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(gx + 1, gy - 7); ctx.lineTo(gx - 7, gy - 7); ctx.lineTo(gx - 7, gy + 7); ctx.lineTo(gx + 7, gy + 7); ctx.lineTo(gx + 7, gy - 1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gx - 1, gy + 1); ctx.lineTo(gx + 8, gy - 8); ctx.moveTo(gx + 3, gy - 8); ctx.lineTo(gx + 8, gy - 8); ctx.lineTo(gx + 8, gy - 3); ctx.stroke();
+    ui.setFont(800, 12, 2);
+    ctx.fillStyle = C.paper;
+    ctx.fillText('OPEN LINK', lx + 38, gy + 4);
+    adDeck.hits.push({ id: 'deck:link', x: lx, y: ly, w: lw, h: lh });
+  }
+  // page dots
+  if (n > 1) {
+    const dy = py + ph - 22, dx0 = px + pw / 2 - (n - 1) * 9;
+    for (let i = 0; i < n; i++) {
+      ctx.fillStyle = i === adDeck.i ? C.gold : 'rgba(255,255,255,0.28)';
+      ctx.beginPath(); ctx.arc(dx0 + i * 18, dy, i === adDeck.i ? 4.5 : 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  if (!focus) {
+    ui.setFont(600, 11, 1.5);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('VISIT POSTS TO BROWSE', ix, py + ph - 18);
+  }
+  ctx.restore();
+}
+/* Pointer on the carousel: arrows, the link, the speaker, and a horizontal drag
+ * (mouse or finger) across the media to swipe — pointer events, so one path
+ * serves both. Only while the pause menu is up; nothing reaches the fight. */
+function adDeckHitAt(e) {
+  const pt = frontEnd?.ui?.pointerPos(e);
+  if (!pt) return null;
+  for (let i = adDeck.hits.length - 1; i >= 0; i--) {
+    const h = adDeck.hits[i];
+    if (pt.x >= h.x && pt.x <= h.x + h.w && pt.y >= h.y && pt.y <= h.y + h.h) return { id: h.id, x: pt.x };
+  }
+  return null;
+}
+if (typeof canvas !== 'undefined') {
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!paused || gameOver.active || !adDeck.cards.length || window.__rorTouch?.editing) return;
+    const h = adDeckHitAt(e);
+    if (!h) return;
+    e.preventDefault();
+    adDeck.drag = { id: h.id, x0: h.x, dx: 0, pid: e.pointerId };
+    try { canvas.setPointerCapture?.(e.pointerId); } catch {}
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    const d = adDeck.drag;
+    if (!d || d.pid !== e.pointerId) return;
+    const pt = frontEnd?.ui?.pointerPos(e);
+    if (pt && d.id === 'deck:card' && adDeck.cards.length > 1) d.dx = Math.max(-160, Math.min(160, pt.x - d.x0));
+  });
+  const deckUp = (e) => {
+    const d = adDeck.drag;
+    if (!d || d.pid !== e.pointerId) return;
+    adDeck.drag = null;
+    if (!paused) return;
+    if (Math.abs(d.dx) > 56) { if (!adDeck.focus) adDeckFocus(true); adDeckMove(d.dx < 0 ? 1 : -1); return; }
+    const h = adDeckHitAt(e);
+    if (!h || h.id !== d.id) return;                         // released somewhere else: no press
+    if (!adDeck.focus) adDeckFocus(true);
+    if (h.id === 'deck:prev') adDeckMove(-1);
+    else if (h.id === 'deck:next') adDeckMove(1);
+    else if (h.id === 'deck:link') adDeckOpenLink();
+    else if (h.id === 'deck:mute') adDeckToggleMute();
+  };
+  canvas.addEventListener('pointerup', deckUp);
+  canvas.addEventListener('pointercancel', (e) => { if (adDeck.drag?.pid === e.pointerId) adDeck.drag = null; });
 }
 
 /* THE GAME-OVER ART (request 338): dark, worn and bloodied, built ONCE into an
@@ -21277,7 +22435,8 @@ function drawGameOver() {
   // the title: bone white over the blood, with a hard shadow under it
   ctx.globalAlpha = fadeIn(0.15);
   const cl = gameOver.cleared;
-  const title = cl ? 'AREA CLEARED' : 'YOU FELL';
+  const lost = !cl && gameOver.reason === 'computer';   // the workstation fell, not Darki (request 454)
+  const title = cl ? (activeLevel === 2 ? 'EVIDENCE SECURED' : 'AREA CLEARED') : lost ? 'EVIDENCE LOST' : 'YOU FELL';
   ui.setDisplay(900, cl ? 92 : 104, 6);
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillText(title, VIEW_W / 2 + 4, 250);
@@ -21288,10 +22447,12 @@ function drawGameOver() {
   ctx.globalAlpha = fadeIn(0.45);
   ui.setFont(700, 20, 1.2);
   ctx.fillStyle = '#e8d9c4';
-  ctx.fillText(cl ? `${LEVELS[activeLevel].code}  /  ${LEVELS[activeLevel].title}` : 'A RATEL DOES NOT STAY DOWN.', VIEW_W / 2, 312);
+  ctx.fillText(cl ? `${LEVELS[activeLevel].code}  /  ${LEVELS[activeLevel].title}`
+    : lost ? "JIMOH'S MEN DESTROYED THE WORKSTATION." : 'A RATEL DOES NOT STAY DOWN.', VIEW_W / 2, 312);
   ui.setFont(500, 14, 0.3);
   ctx.fillStyle = 'rgba(214,200,184,0.75)';
-  if (!cl) ctx.fillText('Every scar is a lesson. Get up and take the street back.', VIEW_W / 2, 340);
+  if (!cl) ctx.fillText(lost ? 'Keep them off the machine until the transfer completes.'
+    : 'Every scar is a lesson. Get up and take the street back.', VIEW_W / 2, 340);
   // what this attempt was worth, in the same numbers the summary keeps
   const st = gameOver.stats || {};
   ctx.globalAlpha = fadeIn(0.7);
@@ -21393,6 +22554,7 @@ function draw() {
   if (levelEntry.active) drawLevelEntry(); // the dossier dissolves over the empty live street
   else if (tapCueState.drawn) tapCueState.drawn = false;   // …and the skip cue leaves with it (request 353)
   else if (cutscene.active) drawCutscene();     // the entrance owns the frameâ€¦
+  else if (waveState === 'l2scene' && !paused) drawL2Scene();   // …as does Level 02's strong room (request 454)
   // â€¦the mission card closes it, and the post-mission sequence takes the frame
   // from there. Only one of the two draws: the analysis screens replace the card
   // outright rather than being layered over a frosted arena nobody can see.
@@ -21942,7 +23104,7 @@ window.__ror = {
     macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteTornadoSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite, macheteThrowSprite, batJumpSprite, batStrikeSprite,
     jumpSprite, jumpStrikeSprite,
     olodoStanceSprite, olodoSpecialSprite, olodoHookSprite, olodoFallSprite,
-    sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite }; },
+    sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite, wallSwitchSprite, systemSprite }; },
   /* What a class is DRAWN at, resolved the way the renderer resolves it. Two
    * classes only read as two classes if one is visibly bigger, so that claim
    * needs to be measurable rather than taken on trust from a config constant. */
@@ -22131,13 +23293,13 @@ window.__ror = {
     mobs().forEach(benchEnemy);
     player.x = sectionLeft() + 200;
     player.y = clampLane(GROUND_Y + 20);
-    cameraX = clampCamX(player.x - viewW() * 0.42, PLAYAREA.maxX + 1);
+    cameraX = clampCamX(player.x - viewW() * 0.42, levelRightEdge());
     cameraY = bandFramingY(player.y);
     return { section, gate: currentGate(), left: sectionLeft(), playerX: player.x };
   },
   // Snap the camera to a player x without waiting out the damped follow. A walk-in
   // test has to move the CAMERA, because "off screen" is measured against its edge.
-  cameraTo(x) { cameraX = clampCamX(x - viewW() * 0.42, PLAYAREA.maxX + 1); return cameraX; },
+  cameraTo(x) { cameraX = clampCamX(x - viewW() * 0.42, levelRightEdge()); return cameraX; },
   setWaveKills(n) { waveKills = n; return waveKills; },
   // Stage a walk-in directly, so a scenario does not have to clear a whole wave
   // to get one arriving body it can watch.
@@ -22554,7 +23716,7 @@ window.__ror = {
     for (const e of mobs()) benchEnemy(e);
     player.x = SECTIONS[BOSS_SECTION - 1].gateX;
     player.y = clampLane(GROUND_Y + 20);
-    cameraX = clampCamX(player.x - viewW() * 0.42, PLAYAREA.maxX + 1);
+    cameraX = clampCamX(player.x - viewW() * 0.42, levelRightEdge());
     advanceSection();
     return waveState;
   },
@@ -22685,6 +23847,59 @@ window.__ror = {
       entry: { ...L2_ENTRY_SPOT }, sections: SECTIONS.map((x) => ({ gateX: x.gateX, quota: x.quota, final: !!x.final, boss: !!x.boss })),
       clearT: l2ClearT, cleared: gameOver.cleared, camY: camYRange(),
     };
+  },
+  /* Level 02's strong room (request 454). `defense` is the live config object, so
+   * a harness may shorten the transfer or thin the waves for a test. */
+  get mission() {
+    return {
+      phase: l2m.phase, inside: l2m.inside, vo: l2m.vo, voLive: l2m.voLive, voDone: l2m.voDone, voT: l2VoiceT(),
+      voDur: l2m.voDur, voHeld: l2m.voHeld, screen: l2m.screen, powered: l2m.powered, progress: l2m.progress,
+      compHp: l2m.compHp, waveNo: l2m.waveNo, queue: l2m.queue.length, letterbox: l2m.letterbox,
+      door: { dy: l2Door.dy, target: l2Door.target, open: l2DoorIsOpen(), shut: l2DoorIsShut() },
+      reason: gameOver.reason,
+    };
+  },
+  missionStage: L2M_STAGE, missionDesk: L2_DESK, missionRaid: L2_RAID, defense: L2_DEFENSE,
+  startL2Scene() { startL2Scene(); return waveState; },
+  startL2Defense() { startL2Defense({ fromCheckpoint: true }); return waveState; },
+  toL2Keypad() {
+    section = SECTIONS.length - 1; waveKills = SECTIONS[section].quota; waveState = 'complete';
+    for (const e of mobs()) if (!e.benched) benchEnemy(e);
+    player.x = L2M_STAGE.trigger - 300; player.y = clampLane(L2M_STAGE.keypad.y);
+    cameraX = clampCamX(player.x - viewW() * 0.42, levelRightEdge());
+    return player.x;
+  },
+  hitComputer(d) { l2HitComputer(d); return l2m.compHp; },
+  /* The pause menu's posts carousel (request 454). */
+  get adDeck() {
+    return { n: adDeck.cards.length, i: adDeck.i, focus: adDeck.focus, muted: adDeck.muted,
+      cards: adDeck.cards.map((c) => ({ slot: c.slot, booking: c.booking, title: c.title, link: c.link, video: c.video })),
+      videos: [...adDeck.videos].map(([url, v]) => ({ url, playing: !v.paused, muted: v.muted })),
+      hits: adDeck.hits.map((h) => ({ ...h })) };
+  },
+  /* Stand in for the ad server: { slotId: [{ id, brand, link, url, video? }] }. */
+  fakeAds(map) {
+    ADS.endpoint = 'https://ads.test';
+    ADS.slots.clear(); ADS.cycle.clear(); ADS.art.clear();
+    for (const [slot, rotation] of Object.entries(map)) {
+      ADS.slots.set(slot, { page: `https://ads.test/b/${slot}`, rotation });
+      ADS.cycle.set(slot, { seq: rotation.map((r) => r.id), i: 0 });
+      for (const r of rotation) { const c = makeCanvas(320, 140); const g = c.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 320, 140); ADS.art.set(r.id, c); }
+    }
+    return ADS.slots.size;
+  },
+  adDeckProbe() {
+    return { level: activeLevel, art: advertArt.map((a) => ({ id: a.slot.id, img: !!a.img, gap: a.gap })),
+      camX: cameraX, camY: cameraY, vw: viewW(), vh: viewH(), streetY: tune.streetY, scale: tune.streetScale,
+      par: tune.streetParallax, sx: tune.streetX, endpoint: ADS.endpoint, found: adDeckCapture().map((c) => c.slot) };
+  },
+  get advertBoards() {
+    // each board's FACE as drawAdverts places it (its own fit included), camera-relative
+    const scale = tune.streetScale, ox = -cameraX * tune.streetParallax + tune.streetX;
+    return ADVERT_SLOTS.map((s) => {
+      const k = scale * (s.fit ?? 1), x = ox + (s.x + s.w * (1 - (s.fit ?? 1)) / 2) * scale;
+      return { id: s.id, screenX: x + (s.face?.x ?? 0) * k, w: (s.face?.w ?? s.w) * k };
+    });
   },
   applyLevel(n) { applyLevel(n); return activeLevel; },
   restartLevel() { startLevelEntry(); return { level: activeLevel, weapons: weapons.length }; },
@@ -23168,8 +24383,9 @@ window.__ror = {
   get pauseMenu() {
     return {
       choice: pauseChoice,
-      items: PAUSE_ITEMS.slice(),
-      label: PAUSE_ITEMS[pauseChoice],
+      // the LIVE rows (VISIT POSTS appears when boards are in view — request 454)
+      items: pauseList().map((it) => it.label),
+      label: pauseList()[pauseChoice]?.label,
       t: +pauseT.toFixed(3),
       difficulty: chosenDifficulty,
       /* Every widget the last pause frame drew, so a test can assert one row
