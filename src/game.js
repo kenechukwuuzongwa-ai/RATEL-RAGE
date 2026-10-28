@@ -320,15 +320,41 @@ const L2 = Object.freeze({
   /* MP: one image, three placements (left/top in PSD pixels). The solid FOOT is
    * the base flange measured off the layer's alpha (cols 43..179 of 223 on its
    * last rows), pulled in 10 px a side so a shoulder can brush the steel. */
+  /* Request 479: the PSD's re-laid pillars (the MP at 8113 became FP copy 3 at 8225;
+   * the MP at 9124 sits at -79), exported by _chromakey/req479/prep.js. */
   mp: { src: 'layers/level2/mp.png', w: 224, h: 665, footL: 53, footR: 169, base: 664,
     at: [{ left: 966, top: -79 }, { left: 3751, top: -54 }, { left: 4762, top: -64 },
-      { left: 8113, top: -54 }, { left: 9124, top: -64 }, { left: 10374, top: -54 }] },
+      { left: 9124, top: -79 }, { left: 10374, top: -54 }] },
   fp: [
     { src: 'layers/level2/fp-1.png', left: 1593, top: -140, w: 587, h: 883 },
     { src: 'layers/level2/fp-2.png', left: 2618, top: -2, w: 557, h: 837 },
     { src: 'layers/level2/fp-3.png', left: 5241, top: -111, w: 566, h: 945 },
     { src: 'layers/level2/fp-4.png', left: 6760, top: -111, w: 566, h: 945 },
-    { src: 'layers/level2/fp-5.png', left: 9553, top: -111, w: 566, h: 945 },
+    { src: 'layers/level2/fp-5.png', left: 8225, top: -111, w: 566, h: 945 },
+    { src: 'layers/level2/fp-6.png', left: 9553, top: -111, w: 566, h: 945 },
+  ],
+  /* THE NAVIGABLE REGION (request 479): the PSD's "Navigable region" layer, a red
+   * outline drawn as the strict guide to where Darki may walk. These are its INNER
+   * edges, flat [artX, artRow, ...] polylines read per column and simplified to
+   * within 1 art px (_chromakey/req479/prep.js -> nav.json): `top` the back edge
+   * (it steps around the pillar bases and into the strong room), `bottom` the
+   * near edge. laneBandAt reads the band at any x off these. */
+  nav: {
+    top: [0,463,995,463,1018,462,1022,458,1025,457,1123,456,1143,460,1162,470,1174,471,1803,470,1806,471,1807,474,1811,477,1998,477,2016,488,2030,491,2043,496,2364,496,2389,498,2846,499,3838,499,3842,502,3849,503,3859,508,3865,513,3891,526,3903,530,3905,532,3906,540,3909,542,3930,541,3938,538,4821,539,4824,537,5347,537,5348,541,5351,544,5362,549,5373,550,5384,556,5392,563,5403,567,5417,568,5421,570,5445,574,5512,574,5548,568,5579,557,5594,549,5616,528,6487,529,6511,527,6514,522,6519,520,6532,518,6544,514,6555,513,6562,509,6580,507,6591,504,6682,505,6694,504,6714,498,6747,497,6871,498,6890,496,6926,488,6951,485,6976,485,6985,488,7005,490,7010,487,7011,483,7012,482,7026,478,7054,472,7067,471,7074,468,7094,465,7109,460,7131,458,8798,458,8813,466,8840,476,8845,476,8880,485,8901,487,8920,493,8927,493,8943,497,8960,498,8971,496,10494,496,10498,499,10505,501,10507,506,10509,508,10514,508,10527,516,10530,514,10534,515,10547,522,10562,533,10571,537,11914,537,11919,534,12115,535,12118,539,12121,540,12149,540,12216,566,12232,568,12241,572,12258,575,12345,574,12350,570,12356,569,12383,554,12403,536,12412,531,12424,521,12432,517,12445,507,13566,507,13569,511,13571,523,13580,532,13590,537,13599,539,13606,543,13627,550,13664,566,13695,582,13798,582,13800,584,13812,584],
+    bottom: [0,709,13812,708],
+  },
+  /* THE OBSCURE MASK (request 479): the PSD's "Obscur mask" layer, green outlines
+   * around the crates painted into the plate's foreground. Each is cut from the
+   * plate's OWN pixels inside its outline (prep.js) and drawn back over the actors
+   * at its base row, so a body walking behind a crate is hidden by it the way the
+   * scene is built. No new art, no fading anyone: the crate simply draws on top. */
+  cover: [
+    { src: 'layers/level2/cover-1.png', left: 2, top: 515, w: 714, h: 204 },
+    { src: 'layers/level2/cover-6.png', left: 739, top: 656, w: 169, h: 62 },
+    { src: 'layers/level2/cover-2.png', left: 1305, top: 574, w: 470, h: 149 },
+    { src: 'layers/level2/cover-5.png', left: 7156, top: 654, w: 137, h: 66 },
+    { src: 'layers/level2/cover-4.png', left: 7309, top: 651, w: 168, h: 71 },
+    { src: 'layers/level2/cover-3.png', left: 7876, top: 574, w: 595, h: 148 },
   ],
 });
 const l2X = (ax) => ax * L2.scale;
@@ -352,11 +378,31 @@ const L2_PILLARS = L2.mp.at.map((p, i) => ({
 }));
 /* THE STRONG-ROOM DOOR'S LIVE OFFSET (request 454), in art px from the PSD's
  * raised rest: closedDy has its hazard edge on the threshold, openDy lifts it
- * clear of the opening. Only the mission moves it (l2DoorTo); it travels at a
- * fixed rate, so it reads as one heavy shutter rather than a cut. */
-const L2_DOOR_SPEED = 260;     // art px / s — ~1.5 s from shut to open
-const l2Door = { dy: L2.door.closedDy, target: L2.door.closedDy };
-const l2DoorTo = (open) => { l2Door.target = open ? L2.door.openDy : L2.door.closedDy; };
+ * clear of the opening. Only the mission moves it (l2DoorTo).
+ * Each move is timed (distance / L2_DOOR_SPEED, so ~2.1 s shut to open) and
+ * eased with After Effects' Easy Ease at 70% influence on both keys (request
+ * 477): it gathers from rest, runs through the middle, and settles into its stop.
+ * Request 478 slowed it from 260 (~1.5 s). */
+const L2_DOOR_SPEED = 185;     // art px / s, averaged over a move
+const L2_DOOR_INFLUENCE = 0.7; // Easy Ease influence, both keys
+const l2Door = { dy: L2.door.closedDy, target: L2.door.closedDy, from: L2.door.closedDy, t: 0, dur: 0 };
+const l2DoorTo = (open) => {
+  const to = open ? L2.door.openDy : L2.door.closedDy;
+  if (to === l2Door.target) return;            // the traffic calls this every frame
+  Object.assign(l2Door, { target: to, from: l2Door.dy, t: 0,
+    dur: Math.abs(to - l2Door.dy) / L2_DOOR_SPEED });
+  if (l2Door.dur > 0) l2DoorSfxStart();
+};
+/* AE's Easy Ease as a cubic bezier: flat tangents at both keys, handles reaching
+ * `influence` of the way across, i.e. cubic-bezier(k, 0, 1 - k, 1). */
+const l2Bez = (s, a, b) => 3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s;
+function l2DoorEase(p, k = L2_DOOR_INFLUENCE) {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  let lo = 0, hi = 1, s = p;
+  for (let i = 0; i < 24; i++) { s = (lo + hi) / 2; if (l2Bez(s, k, 1 - k) < p) lo = s; else hi = s; }
+  return l2Bez(s, 0, 1);
+}
 const l2DoorIsOpen = () => l2Door.dy <= L2.door.openDy + 6;
 const l2DoorIsShut = () => l2Door.dy >= L2.door.closedDy - 2;
 /* THE WORKSTATION IS SOLID, like a middle pillar, but it is a desk and not a
@@ -436,25 +482,35 @@ const L2_DEFENSE = {
     { shaved: 3, sars: 2, raiders: 3 },
   ],
 };
-/* Darki's band on the facility floor. The back edge is the street's (645 —
- * the offset above puts the floor's back edge there); the near edge keeps the
- * street's own gutter under it: Level 01 stops his feet 63 world rows above the
- * art's last row (walkBottom 1061 of 1124), so here it is 968 - 63 = 905.
- *
- * HARD CASES ARE PAINTED INTO THE GPB along its bottom edge in two places (read
- * off the floor band, _chromakey/_l2bottom.js): the bay at the west end (art
- * cols 0..450 with tops at row ~530, cols 450..910 at ~645) and a stack of
- * cases and drums at cols ~1290..1935 (tops ~570..620). Those stretches are
- * regions with a nearer stop, so nobody walks over crates drawn in front of
- * them. East of col 1935 the floor runs clear to the edge. */
-const L2_PLAY = {
-  laneTop: 645, laneBottom: 905, playerTop: 645,
-  regions: [
-    { name: 'bay cases (west)', x: 0, w: l2X(450), laneTop: 645, laneBottom: l2Y(522), playerTop: 645 },
-    { name: 'bay cases', x: l2X(450), w: l2X(460), laneTop: 645, laneBottom: l2Y(636), playerTop: 645 },
-    { name: 'cases and drums', x: l2X(1290), w: l2X(645), laneTop: 645, laneBottom: l2Y(560), playerTop: 645 },
-  ],
+/* Darki's band on the facility floor IS THE PSD's NAVIGABLE REGION (request 479):
+ * at any x, from the red outline's back edge to its near edge (L2.nav, read by
+ * l2NavBand). The crates painted along the plate's bottom edge are inside that
+ * outline — they are the Obscure mask's covers, drawn over whoever walks behind
+ * them — so the old nearer stops in front of them (three regions here) are gone.
+ * `laneTop` / `laneBottom` below are only the band's envelope, for the few
+ * callers that clamp a depth with no x to hand. */
+const l2NavRow = (pts, ax) => {
+  const n = pts.length / 2;
+  if (ax <= pts[0]) return pts[1];
+  if (ax >= pts[(n - 1) * 2]) return pts[n * 2 - 1];
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pts[m * 2] <= ax) lo = m; else hi = m; }
+  const x0 = pts[lo * 2], y0 = pts[lo * 2 + 1], x1 = pts[hi * 2], y1 = pts[hi * 2 + 1];
+  return y0 + (y1 - y0) * (ax - x0) / Math.max(1e-9, x1 - x0);
 };
+const l2NavEnvelope = (pts, pick) => pick(...pts.filter((_, i) => i % 2));
+const L2_PLAY = {
+  laneTop: l2Y(l2NavEnvelope(L2.nav.top, Math.min)),
+  laneBottom: l2Y(l2NavEnvelope(L2.nav.bottom, Math.max)),
+  playerTop: l2Y(l2NavEnvelope(L2.nav.top, Math.min)),
+  regions: [],
+};
+/* The navigable band at world x, in world rows (back edge = Darki's top too). */
+function l2NavBand(x) {
+  const ax = x / L2.scale;
+  const top = l2Y(l2NavRow(L2.nav.top, ax));
+  return { laneTop: top, laneBottom: l2Y(l2NavRow(L2.nav.bottom, ax)), playerTop: top, nav: true };
+}
 /* Where Darki walks in: out of the open bay at the west end, the facility's
  * entrance (the NPF EVIDENCE & PROPERTY WING sign), along the back of the floor
  * behind the bay's cases, to his mark — clear of the first middle pillar (its
@@ -14718,7 +14774,8 @@ function clampPlayerToArena() {
  * First match wins, so overlapping regions resolve in author order rather than
  * blending into something nobody drew. */
 function laneBandAt(x) {
-  const base = activeLevel === 2 ? L2_PLAY : PLAY;
+  if (activeLevel === 2) return l2NavBand(x);   // the PSD's navigable region (request 479)
+  const base = PLAY;
   for (const r of base.regions) {
     if (r.off) continue;
     if (x >= r.x && x <= r.x + r.w) return r;
@@ -18430,13 +18487,142 @@ function resetL2Mission() {
     waveNo: 0, waveT: 0, queue: [], releaseT: 0, wonT: 0,
   });
   setBars(l2m, 0);
-  l2Door.dy = l2Door.target = L2.door.closedDy;
+  l2DoorSfxStop();
+  Object.assign(l2Door, { dy: L2.door.closedDy, target: L2.door.closedDy, from: L2.door.closedDy, t: 0, dur: 0 });
 }
 
 /* The door travels; nothing else moves it. */
 function l2StepDoor(dt) {
-  const d = l2Door.target - l2Door.dy;
-  l2Door.dy += Math.sign(d) * Math.min(Math.abs(d), L2_DOOR_SPEED * dt);
+  if (l2Door.dy === l2Door.target) return;
+  l2Door.t += dt;
+  const p = l2Door.dur > 0 ? Math.min(1, l2Door.t / l2Door.dur) : 1;
+  l2Door.dy = l2Door.from + (l2Door.target - l2Door.from) * l2DoorEase(p);
+  if (p >= 1) {
+    l2Door.dy = l2Door.target;
+    l2DoorSfxLand(l2Door.target === L2.door.closedDy);
+  } else l2DoorSfxTravel(p);
+}
+
+/* ---- the door's own sound (request 477) ----
+ * No recording was supplied for it, so it is built here: a latch clunk as it
+ * sets off, a motor-and-chain rattle while it travels whose level and rattle
+ * rate follow the eased speed (quiet at the keys, loudest mid-move), and a
+ * landing: a heavy slam shutting, a lighter clunk at the top. The travel bed
+ * keeps itself alive one frame at a time (stop() pushed forward each step), so
+ * a pause, a game over or a level change silences it within a few frames with
+ * nothing else to clean up. */
+const L2_DOOR_SFX = { travel: 0.30, start: 0.55, slam: 0.85, top: 0.45 };
+const L2_DOOR_PEAK = (l2DoorEase(0.51) - l2DoorEase(0.49)) / 0.02;   // eased speed at mid-move
+let l2DoorBed = null;
+const l2DoorX = () => l2X(L2.door.left + L2.door.w / 2);
+function l2DoorOut(level) {
+  const g = audioCtx.createGain();
+  g.gain.value = level;
+  const p = audioCtx.createGain();
+  panTo(p, l2DoorX()).connect(g); g.connect(sfxGain);
+  return p;
+}
+function l2NoiseBuf(sec) {
+  const n = Math.floor(audioCtx.sampleRate * sec), b = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+/* A struck low body: a sine that drops in pitch and dies, under a filtered burst. */
+function l2DoorThud(level, f0, f1, decay, burstHz) {
+  const now = audioCtx.currentTime, out = l2DoorOut(level);
+  const o = audioCtx.createOscillator(), og = audioCtx.createGain();
+  o.frequency.setValueAtTime(f0, now);
+  o.frequency.exponentialRampToValueAtTime(f1, now + decay);
+  og.gain.setValueAtTime(1, now);
+  og.gain.exponentialRampToValueAtTime(0.001, now + decay);
+  o.connect(og); og.connect(out);
+  o.start(now); o.stop(now + decay + 0.02);
+  const n = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), ng = audioCtx.createGain();
+  n.buffer = l2NoiseBuf(0.2);
+  bp.type = 'bandpass'; bp.frequency.value = burstHz; bp.Q.value = 0.9;
+  ng.gain.setValueAtTime(0.7, now);
+  ng.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  n.connect(bp); bp.connect(ng); ng.connect(out);
+  n.start(now); n.stop(now + 0.2);
+  return out;
+}
+/* Steel ringing on after the slam. */
+function l2DoorRing(out, level) {
+  const now = audioCtx.currentTime;
+  for (const [f, a] of [[410, 1], [637, 0.6], [1180, 0.3]]) {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = f;
+    g.gain.setValueAtTime(level * a, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    o.connect(g); g.connect(out);
+    o.start(now); o.stop(now + 0.6);
+  }
+}
+function l2DoorSfxStart() {
+  cueFired.doorStart = (cueFired.doorStart ?? 0) + 1;
+  if (!audioCtx || audioMuted) return;
+  try { l2DoorThud(L2_DOOR_SFX.start, 120, 60, 0.18, 1900); } catch {}
+}
+function l2DoorSfxLand(shut) {
+  l2DoorSfxStop();
+  cueFired[shut ? 'doorSlam' : 'doorTop'] = (cueFired[shut ? 'doorSlam' : 'doorTop'] ?? 0) + 1;
+  if (!audioCtx || audioMuted) return;
+  try {
+    if (shut) l2DoorRing(l2DoorThud(L2_DOOR_SFX.slam, 70, 38, 0.42, 1100), 0.08);
+    else l2DoorThud(L2_DOOR_SFX.top, 95, 55, 0.22, 1500);
+  } catch {}
+}
+function l2DoorBedBuild() {
+  const now = audioCtx.currentTime, out = l2DoorOut(1);
+  const master = audioCtx.createGain(); master.gain.value = 0; master.connect(out);
+  // the motor: a low saw, its buzz rolled off
+  const motor = audioCtx.createOscillator(), lp = audioCtx.createBiquadFilter(), mg = audioCtx.createGain();
+  motor.type = 'sawtooth'; motor.frequency.value = 46;
+  lp.type = 'lowpass'; lp.frequency.value = 240;
+  mg.gain.value = 0.55;
+  motor.connect(lp); lp.connect(mg); mg.connect(master);
+  // the chain / slats: band-passed noise chopped by a square LFO
+  const noise = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), chop = audioCtx.createGain();
+  noise.buffer = l2NoiseBuf(1); noise.loop = true;
+  bp.type = 'bandpass'; bp.frequency.value = 850; bp.Q.value = 1.3;
+  chop.gain.value = 0.5;
+  const lfo = audioCtx.createOscillator(), depth = audioCtx.createGain();
+  lfo.type = 'square'; lfo.frequency.value = 10; depth.gain.value = 0.5;
+  lfo.connect(depth); depth.connect(chop.gain);
+  noise.connect(bp); bp.connect(chop); chop.connect(master);
+  const srcs = [motor, noise, lfo];
+  for (const s of srcs) s.start(now);
+  const bed = { master, motor, lfo, srcs, ended: false };
+  motor.onended = () => { bed.ended = true; if (l2DoorBed === bed) l2DoorBed = null; };
+  return bed;
+}
+function l2DoorSfxTravel(p) {
+  cueFired.doorTravel = (cueFired.doorTravel ?? 0) + 1;
+  if (!audioCtx || audioMuted || audioCtx.state !== 'running') return;
+  try {
+    if (!l2DoorBed || l2DoorBed.ended) l2DoorBed = l2DoorBedBuild();
+    const v = Math.min(1, ((l2DoorEase(Math.min(1, p + 0.01)) - l2DoorEase(Math.max(0, p - 0.01))) / 0.02) / L2_DOOR_PEAK);
+    const now = audioCtx.currentTime, b = l2DoorBed;
+    const level = L2_DOOR_SFX.travel * (0.15 + 0.85 * v);
+    b.master.gain.cancelScheduledValues(now);
+    b.master.gain.setTargetAtTime(level, now, 0.03);
+    b.master.gain.setTargetAtTime(0, now + 0.12, 0.03);   // fades itself unless the next frame renews it
+    b.motor.frequency.setTargetAtTime(38 + 22 * v, now, 0.05);
+    b.lfo.frequency.setTargetAtTime(7 + 19 * v, now, 0.05);
+    for (const s of b.srcs) s.stop(now + 0.3);
+  } catch {}
+}
+function l2DoorSfxStop() {
+  const b = l2DoorBed;
+  l2DoorBed = null;
+  if (!b || !audioCtx) return;
+  try {
+    const now = audioCtx.currentTime;
+    b.master.gain.cancelScheduledValues(now);
+    b.master.gain.setTargetAtTime(0, now, 0.02);
+    for (const s of b.srcs) s.stop(now + 0.12);
+  } catch {}
 }
 
 /* ---- the lines ---- */
@@ -18711,13 +18897,14 @@ function stageDoorEntrant(e, i, raider) {
     armWithMachete(e);
   }
   placeEnemy(e, L2M_STAGE.queue.x);
-  const S = L2M_STAGE, B = L2_PLAY;
+  const S = L2M_STAGE;
   e.x = S.queue.x - (i % 3) * 8; e.y = S.queue.y;
   e.prevX = e.x; e.prevY = e.y;
   e.spawnEntry = true; e.entryRoute = 'door'; e.entryPhase = 'queued'; e.entryPlane = 'main';
   e.entryProgress = 0; e.entryScale = 1; e.entryFrom = 1; e.spawnDelay = 0;
   const lane = [0.3, 0.75, 0.5, 0.15, 0.9, 0.6][i % 6];
   e.spawnTargetX = S.roomLeft + 140 + ((i * 113) % 480);
+  const B = laneBandAt(e.spawnTargetX);          // the room's own navigable band (request 479)
   e.spawnTargetY = B.laneTop + 40 + lane * (B.laneBottom - B.laneTop - 80);
   e.raider = raider; e.raiding = false; e.raidMode = null;
   e.raidSpot = L2_RAID.spots[(e.id + i) % L2_RAID.spots.length];
@@ -20054,7 +20241,7 @@ function drawWorldPlate(img, dx, dy, scale) {
  * Level 01 players never pay for it — and the handover waits for it
  * (isWorldReady below). A layer that fails stays null and simply is not drawn;
  * the failure is logged and surfaced as l2Art.error. */
-const l2Art = { state: 'idle', gpbA: null, gpbB: null, mp: null, fp: [], door: null, room: null, pillarFront: null, desk: null, error: null };
+const l2Art = { state: 'idle', gpbA: null, gpbB: null, mp: null, fp: [], cover: [], door: null, room: null, pillarFront: null, desk: null, error: null };
 function loadLevel2Art() {
   if (l2Art.state !== 'idle') return;
   l2Art.state = 'loading';
@@ -20062,12 +20249,13 @@ function loadLevel2Art() {
   Promise.allSettled([decoded(L2.gpb.srcA), decoded(L2.gpb.srcB), decoded(L2.mp.src),
     decoded(L2.door.src), decoded(L2.room.src), decoded(L2.pillarFront.src), decoded(L2.desk.src),
     loadSpriteFrames(WALLSWITCH_SHEET, 'wallSwitch'), loadSpriteFrames(SYSTEM_SHEET, 'computer'),
-    ...L2.fp.map((p) => decoded(p.src))])
+    ...L2.fp.map((p) => decoded(p.src)), ...L2.cover.map((c) => decoded(c.src))])
     .then((r) => {
       const v = r.map((x) => (x.status === 'fulfilled' ? x.value : null));
       [l2Art.gpbA, l2Art.gpbB, l2Art.mp, l2Art.door, l2Art.room, l2Art.pillarFront, l2Art.desk,
         wallSwitchSprite, systemSprite] = v;
-      l2Art.fp = v.slice(9);
+      l2Art.fp = v.slice(9, 9 + L2.fp.length);
+      l2Art.cover = v.slice(9 + L2.fp.length);
       // Each sheet is one take, played ONCE (the analyzer's section says loop: false;
       // its defaultAnimation says loop: true, which is what the loader keyed 'walk' off).
       if (wallSwitchSprite) wallSwitchSprite.anims.wallSwitch = { ...(wallSwitchSprite.anims.wallSwitchInterraction ?? wallSwitchSprite.anims.walk), loop: false };
@@ -20141,6 +20329,17 @@ function drawLevel2Pillar(p) {
   const x = snapWorldX(-cameraX) + p.drawX;
   if (x > viewW() + 40 || x + l2X(L2.mp.w) < -40) return;
   ctx.drawImage(gradedArt(l2Art.mp, 'l2'), x, snapWorldY(L2.artY) + (p.drawY - L2.artY), l2X(L2.mp.w), l2X(L2.mp.h));
+}
+/* One Obscure-mask cover (request 479): the plate's own crate pixels, laid back
+ * over the actors exactly where the plate has them (same snapped origin, same
+ * scale). The plate gets the 'l2' grade from the screen pass BEFORE the actors,
+ * so the cover carries the same grade baked in, like the pillars — no seam. */
+function drawLevel2Cover(i) {
+  const img = l2Art.cover[i] && gradedArt(l2Art.cover[i], 'l2'), c = L2.cover[i];
+  if (!img) return;
+  const x = snapWorldX(-cameraX) + l2X(c.left);
+  if (x > viewW() + 40 || x + l2X(c.w) < -40) return;
+  ctx.drawImage(img, x, snapWorldY(L2.artY) + l2X(c.top), l2X(c.w), l2X(c.h));
 }
 /* FP, the front pillars: nearer than anything that walks, so drawn after the
  * whole actor pass, at their own parallax about the view's centre. */
@@ -21034,6 +21233,8 @@ function actorList() {
    * behind the shaft. */
   if (activeLevel === 2) {
     for (const p of L2_PILLARS) actors.push({ depth: p.y, tie: -50, draw: () => drawLevel2Pillar(p) });
+    // the Obscure mask's crates, at their base row: anyone behind one is covered by it
+    L2.cover.forEach((c, i) => actors.push({ depth: l2Y(c.top + c.h), tie: -48, draw: () => drawLevel2Cover(i) }));
     if (l2Art.desk) {
       if (l2AtKeyboard()) {
         // working the laptop (request 474): the desk behind him, its front over his legs
@@ -23980,7 +24181,9 @@ window.__ror = {
   get activeLevel() { return activeLevel; },
   get l2() {
     return {
-      art: { state: l2Art.state, error: l2Art.error, gpb: !!l2Art.gpb, mp: !!l2Art.mp, fp: l2Art.fp.map((i) => !!i) },
+      art: { state: l2Art.state, error: l2Art.error, gpb: !!l2Art.gpb, mp: !!l2Art.mp, fp: l2Art.fp.map((i) => !!i), cover: l2Art.cover.map((i) => !!i) },
+      navAt: (x) => l2NavBand(x),               // request 479
+      cover: L2.cover.map((c) => ({ x: l2X(c.left), w: l2X(c.w), top: l2Y(c.top), base: l2Y(c.top + c.h) })),
       pillars: L2_PILLARS.map((p) => ({ id: p.id, x: p.x, w: p.w, y: p.y })),
       fp: L2.fp.map((p) => ({ left: l2X(p.left), w: l2X(p.w), screenX: fpScreenX(p) })),
       mpScreenX: L2_PILLARS.map((p) => p.drawX - cameraX),
