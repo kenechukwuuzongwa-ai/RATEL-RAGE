@@ -16,8 +16,9 @@
  *                it dispatches. Nothing hard-codes a position outside the
  *                layout defaults.
  *   EDITOR       "Customize Controls" (from the pause menu): drag to move,
- *                sliders for size and opacity, visibility toggle, reset,
- *                save, done. Gameplay dispatch is disabled while editing.
+ *                sliders for size and opacity, visibility toggle, undo,
+ *                reset, save, cancel, done. Gameplay dispatch is disabled
+ *                while editing.
  */
 (function () {
   'use strict';
@@ -289,7 +290,30 @@
     notchAt = t;
     sfx('notch', { p: (v - lo) / (hi - lo) });
   };
-  const startDrag = (id, e) => ({ id, x: e.clientX, y: e.clientY, ox: HUDS[id].x, oy: HUDS[id].y, live: false });
+  /* UNDO AND CANCEL (request 473). Every editor change — a move, a size or
+   * opacity slide, HIDE/SHOW, RESET — first files the layout as it stood on a
+   * stack; UNDO takes the newest entry that differs from the layout now (a touch
+   * that only selected leaves an identical one, which is skipped). CANCEL puts
+   * back the layout the editor OPENED with — moves are saved as they land, so it
+   * is saved again — and closes. */
+  const UNDO_MAX = 60;
+  let undoStack = [], openLayout = null;
+  const layoutNow = () => JSON.stringify(HUDS);
+  function pushUndo() {
+    const s = layoutNow();
+    if (undoStack[undoStack.length - 1] !== s) undoStack.push(s);
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    refreshUndo();
+  }
+  function canUndo() {
+    const now = layoutNow();
+    return undoStack.some((s) => s !== now);
+  }
+  function refreshUndo() {
+    const b = panel?.querySelector('#ror-hud-undo');
+    if (b) { const on = canUndo(); b.disabled = !on; b.style.opacity = on ? '1' : '0.4'; }
+  }
+  const startDrag = (id, e) => { pushUndo(); return { id, x: e.clientX, y: e.clientY, ox: HUDS[id].x, oy: HUDS[id].y, live: false }; };
   // Where the drag puts the control now, or null while it is still a touch.
   function dragTo(e) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -417,7 +441,7 @@
       });
       const up = (e) => {
         el.style.filter = '';
-        if (editing) { if (drag && drag.id === id && drag.live) sfx('drop'); drag = null; hudSave(); return; }
+        if (editing) { if (drag && drag.id === id && drag.live) sfx('drop'); drag = null; hudSave(); refreshUndo(); return; }
         if (c.type === 'key') {
           send(held_code[id] || c.code, false);
           held_code[id] = null;
@@ -774,7 +798,7 @@
       if (e.pointerId !== movePointer) return;
       if (editing && drag && drag.live) sfx('drop');
       movePointer = null; drag = null;
-      if (editing) { hudSave(); return; }
+      if (editing) { hudSave(); refreshUndo(); return; }
       breakRush();                               // releasing stops the rush
       applyStick(0, 0);
       placeStickAtHome();
@@ -795,6 +819,7 @@
      * down on the rare occasion the selected control is itself up here. */
     panel.style.cssText = 'position:absolute;left:50%;top:14px;transform:translateX(-50%);'
       + 'display:none;align-items:center;gap:14px;padding:10px 16px;border-radius:16px;'
+      + 'flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 24px);'   // UNDO + CANCEL (request 473) on a narrow phone
       + 'background:rgba(18,24,38,.72);border:1px solid rgba(255,255,255,.22);'
       + 'backdrop-filter:blur(16px) saturate(1.4);'
       + '-webkit-backdrop-filter:blur(16px) saturate(1.4);pointer-events:auto;'
@@ -813,9 +838,11 @@
       + '<span class="lab">Size</span><input id="ror-hud-size" type="range" min="0.6" max="1.8" step="0.05">'
       + '<span class="lab">Opacity</span><input id="ror-hud-opac" type="range" min="0.25" max="1" step="0.05">'
       + '<button id="ror-hud-vis">HIDE</button>'
+      + '<button id="ror-hud-undo">UNDO</button>'
       + '<button id="ror-hud-reset">RESET</button>'
       + '<button id="ror-hud-copy">COPY LAYOUT</button>'
       + '<button id="ror-hud-save">SAVE</button>'
+      + '<button id="ror-hud-cancel">CANCEL</button>'
       + '<button id="ror-hud-done">DONE</button>';
     wrap.appendChild(panel);
 
@@ -826,22 +853,30 @@
      * SIZE and watching nothing happen until you poke the button is exactly
      * that gap. `liveEdit` is the one door every editor mutation goes through
      * now, so a future control cannot be added and forget to redraw. */
-    const liveEdit = () => { refreshSel(); placeAll(); placeStickAtHome(); };
+    const liveEdit = () => { refreshSel(); placeAll(); placeStickAtHome(); refreshUndo(); };
 
+    // one undo step per slide: filed on its first input, re-armed when it is let go
+    let sliding = false;
+    const slideStart = () => { if (!sliding) { sliding = true; pushUndo(); } };
+    for (const sel of ['#ror-hud-size', '#ror-hud-opac'])
+      panel.querySelector(sel).addEventListener('change', () => { sliding = false; refreshUndo(); });
     panel.querySelector('#ror-hud-size').addEventListener('input', (e) => {
       if (!editing_sel) return;
+      slideStart();
       HUDS[editing_sel].scale = Number(e.target.value);
       notch(HUDS[editing_sel].scale, 0.6, 1.8);
       liveEdit();
     });
     panel.querySelector('#ror-hud-opac').addEventListener('input', (e) => {
       if (!editing_sel) return;
+      slideStart();
       HUDS[editing_sel].opacity = Number(e.target.value);
       notch(HUDS[editing_sel].opacity, 0.25, 1);
       liveEdit();
     });
     panel.querySelector('#ror-hud-vis').addEventListener('click', () => {
       if (!editing_sel) return;
+      pushUndo();
       HUDS[editing_sel].visible = !HUDS[editing_sel].visible;
       sfx(HUDS[editing_sel].visible ? 'forward' : 'back');
       liveEdit();
@@ -849,10 +884,27 @@
     panel.querySelector('#ror-hud-reset').addEventListener('click', () => {
       if (!window.confirm('Reset the control layout to its defaults?')) return;
       sfx('back');
+      pushUndo();                                  // a reset can be undone too
       HUDS = HUD_DEFAULTS();
       editing_sel = null;
       hudSave();
-      refreshSel(); placeAll(); placeStickAtHome();
+      refreshSel(); placeAll(); placeStickAtHome(); refreshUndo();
+    });
+    panel.querySelector('#ror-hud-undo').addEventListener('click', () => {
+      const now = layoutNow();
+      while (undoStack.length && undoStack[undoStack.length - 1] === now) undoStack.pop();
+      const prev = undoStack.pop();
+      if (!prev) { refreshUndo(); return; }
+      sfx('back');
+      HUDS = JSON.parse(prev);
+      drag = null;
+      hudSave();
+      liveEdit();
+    });
+    panel.querySelector('#ror-hud-cancel').addEventListener('click', () => {
+      sfx('back');
+      if (openLayout) { HUDS = JSON.parse(openLayout); hudSave(); }
+      closeEditor();
     });
     /* COPY LAYOUT — the live positions as the HUD_DEFAULTS block, on the
      * clipboard and in the console. This is what turns an arrangement made with
@@ -926,17 +978,19 @@
     if (editing) return;
     editing = true;
     editing_sel = null;
+    openLayout = layoutNow(); undoStack = [];    // CANCEL's layout, and a fresh history
     releaseAll();                     // no stuck directions when the sim resumes
     if (!panel) buildPanel();
     panel.style.display = 'flex';
     wrap.style.display = 'block';
-    refreshSel();
+    refreshSel(); refreshUndo();
     placeAll(); placeStickAtHome();
     window.__ror?.redraw?.();
   }
   function closeEditor() {
     editing = false;
     editing_sel = null; drag = null;
+    undoStack = []; openLayout = null;
     if (panel) panel.style.display = 'none';
     releaseAll();
     placeAll(); placeStickAtHome();

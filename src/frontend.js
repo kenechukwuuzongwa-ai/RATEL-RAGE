@@ -1025,6 +1025,7 @@ function loadSettings() {
 const TOUCH_ICON = {
   cross: 'tapBtn',
   triangleBtn: 'tapBtn',
+  squareBtn: 'tapBtn',
   circleBtn: 'swipeLeft',
   dpad: 'swipeUpDown',
 };
@@ -1179,6 +1180,12 @@ const ICONS = {
   circleBtn(c) {
     c.beginPath(); c.arc(12, 12, 8.4, 0, 7); c.stroke();
     c.beginPath(); c.arc(12, 12, 4.4, 0, 7); c.stroke();
+  },
+  /* Square (the pause posts' OPEN LINK, request 473): the ring the other faces
+   * use, with the square inscribed in it. */
+  squareBtn(c) {
+    c.beginPath(); c.arc(12, 12, 8.4, 0, 7); c.stroke();
+    c.strokeRect(8.2, 8.2, 7.6, 7.6);
   },
   /* Triangle. Drawn to the same 8.4 radius the Cross and Circle glyphs use, so
    * the three pad faces read as one set in the hint bar rather than as three

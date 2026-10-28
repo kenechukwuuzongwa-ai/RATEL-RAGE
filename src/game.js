@@ -393,6 +393,12 @@ const L2M_STAGE = Object.freeze({
   /* just BEHIND the desk (outside its solid band; the desk draws over his legs),
    * which is the depth at which his reach lands on the keyboard (req454/shots) */
   laptop: { x: l2X(L2.desk.left + 62) - 73, y: l2Y(L2.desk.top + L2.desk.h) - l2X(32) - 2 },
+  /* …and for the typing take itself he stands this much nearer (request 474): with
+   * him drawn over the keyboard, the take's fingertips land ON the keys instead of
+   * at the hinge (measured on req474/shots, ~17 screen px at the 1.2 zoom). He
+   * steps back onto `laptop` as he turns to the door — outside the desk's solid
+   * band, where control returns. */
+  keysDy: 14,
   /* Where an entrant waits for the door: behind the front pillar, out of sight. */
   queue: { x: l2X(12060), y: l2Y(L2.door.threshold) + 4 },
   roomLeft: l2X(12290),
@@ -3339,9 +3345,10 @@ let pauseChoice = 0;
  * able to release a direction on its own. */
 const pauseKey = { up: false, down: false };
 const pausePad = { up: false, down: false };
-const pausePadPrev = { accept: false, back: false, start: false, left: false, right: false, mute: false };
-// left/right/mute drive the posts carousel (request 454); the list itself ignores them
-const pauseLatch = { up: 0, down: 0, accept: 0, back: 0, left: 0, right: 0, mute: 0 };
+const pausePadPrev = { accept: false, back: false, start: false, left: false, right: false, mute: false, link: false };
+// left/right/mute drive the posts carousel (request 454), link opens a post's page
+// (request 473: it has its own button, so browsing never leaves the game); the list ignores them
+const pauseLatch = { up: 0, down: 0, accept: 0, back: 0, left: 0, right: 0, mute: 0, link: 0 };
 const pauseRepeat = { dir: 0, t: 0 };
 // (hover has no separate visual state: hovering MOVES the selection, so focus is it)
 let pausePointerDown = -1;
@@ -3459,15 +3466,18 @@ function updatePauseInput(dt) {
    * hidden — and must stay deaf too, or an Enter press would resume the fight
    * behind the editor. */
   if (window.__rorTouch?.editing) return;
-  /* THE POSTS CAROUSEL HAS THE FOCUS (request 454): left/right browse, accept
-   * opens the active post's link, M toggles a video's sound, and back (or
-   * up/down) hands the focus back to the list — the game stays paused, and
-   * nothing here reaches the fight. */
+  /* THE POSTS CAROUSEL HAS THE FOCUS (request 454): left/right browse, M
+   * toggles a video's sound, and back (or up/down) hands the focus back to the
+   * list — the game stays paused, and nothing here reaches the fight. Accept
+   * BROWSES too (the next post, request 473): it used to open the post's link,
+   * which took a player who only meant to look through them out to the booking
+   * page. The link has its own button now — L / Square, or its OPEN LINK chip. */
   if (adDeck.focus && !gameOver.active) {
     if (pauseTakeLatch('left')) adDeckMove(-1);
     if (pauseTakeLatch('right')) adDeckMove(1);
     if (pauseTakeLatch('mute')) adDeckToggleMute();
-    if (pauseTakeLatch('accept')) adDeckOpenLink();
+    if (pauseTakeLatch('accept')) adDeckMove(1);
+    if (pauseTakeLatch('link')) adDeckOpenLink();
     const up = pauseTakeLatch('up'), down = pauseTakeLatch('down');
     if (pauseTakeLatch('back') || up || down) adDeckFocus(false);
     pauseRepeat.dir = pauseHeld('down') ? 1 : pauseHeld('up') ? -1 : 0;
@@ -3477,7 +3487,7 @@ function updatePauseInput(dt) {
   // On the VISIT POSTS row, right steps into the carousel too.
   const onPosts = pauseAd && menuItems()[pauseChoice]?.label === pauseAd.label && !gameOver.active;
   if (pauseTakeLatch('right') && onPosts) { adDeckFocus(true); return; }
-  pauseTakeLatch('left'); pauseTakeLatch('mute');
+  pauseTakeLatch('left'); pauseTakeLatch('mute'); pauseTakeLatch('link');
   const holdDelay = frontEnd?.ui.HOLD_DELAY ?? 0.40;
   const holdRate = frontEnd?.ui.HOLD_RATE ?? 0.115;
   const dir = pauseHeld('down') ? 1 : pauseHeld('up') ? -1 : 0;
@@ -3517,6 +3527,7 @@ function pauseKeyAction(code) {
   if (code === 'ArrowLeft' || code === 'KeyA') return 'left';      // the posts carousel (request 454)
   if (code === 'ArrowRight' || code === 'KeyD') return 'right';
   if (code === 'KeyM') return 'mute';
+  if (code === 'KeyL') return 'link';
   if (code === 'Enter') return 'accept';
   if (code === 'Escape' || code === 'Backspace' || code === 'KeyP') return 'back';
   return null;
@@ -3839,11 +3850,12 @@ function pollPausePad(gp) {
   if ((back && !pausePadPrev.back) || (start && !pausePadPrev.start)) pauseLatch.back = 1;
   // the posts carousel (request 454): d-pad / stick left-right, Triangle for a video's sound
   const lx = gp.axes[0] || 0;
-  const left = btn(14) || lx < -0.55, right = btn(15) || lx > 0.55, mute = btn(3);
+  const left = btn(14) || lx < -0.55, right = btn(15) || lx > 0.55, mute = btn(3), link = btn(2);   // Square opens a post's link (request 473)
   if (left && !pausePadPrev.left) pauseLatch.left = 1;
   if (right && !pausePadPrev.right) pauseLatch.right = 1;
   if (mute && !pausePadPrev.mute) pauseLatch.mute = 1;
-  pausePadPrev.left = left; pausePadPrev.right = right; pausePadPrev.mute = mute;
+  if (link && !pausePadPrev.link) pauseLatch.link = 1;
+  pausePadPrev.left = left; pausePadPrev.right = right; pausePadPrev.mute = mute; pausePadPrev.link = link;
   pausePadPrev.accept = accept;
   pausePadPrev.back = back;
   pausePadPrev.start = start;
@@ -5637,6 +5649,17 @@ const CUES = {
   ayeWalkStep1:  { src: 'sounds/aye-uwalk-step1.mp3', onset: 0.025,            gain: 0.85 },
   ayeWalkStep2:  { src: 'sounds/aye-uwalk-step2.mp3', onset: 0.018,            gain: 0.95 },
   ayeWalkGroan:  { src: 'sounds/aye-uwalk-groan.mp3', onset: 0.032,            gain: 2.00 },
+
+  /* ------------------------- THE STRONG ROOM'S HANDS (request 473) ---
+   * The keypad presses and the laptop keys are the takes' OWN audio: cut from
+   * "ASSETS/New Animation/Wall switch interraction.mp4" and "typing on the
+   * computer.mp4" by _chromakey/req473/sfxmap.js + ffmpeg. Each sheet spans its
+   * whole clip (cells matched to video frames, in order), but plays faster than
+   * the video did (33 f @ 30 = 1.100 s for 1.96 s; 32 f @ 24 = 1.333 s for
+   * 2.04 s), so each track was tempo-fitted (atempo, pitch kept) to its take and
+   * loudness-normalised. Played whole, from the take's first frame. */
+  l2Keypad:   { src: 'sounds/l2-keypad.mp3',   onset: 0, gain: 0.85 },
+  l2Keyboard: { src: 'sounds/l2-keyboard.mp3', onset: 0, gain: 0.85 },
 };
 // Cut a sharpen scrape / chop swoosh short (he was interrupted). Safe on null
 // and on a source that has already finished.
@@ -10731,11 +10754,14 @@ const DARKI_WEAPON_REACH = { x: 70, y: 34 };  // a weapon this close to his feet
 const weaponDepthGap = (m) => Math.abs(clampPlayerLane(m.y, m.x) - player.y);
 
 // The grounded weapon L2 would take right now, nearest first, or null.
+/* A SARS KNIFE IS NOT DARKI'S (request 475): a dropped or spent officer's knife
+ * stays on the road for its owner to recover; Darki's pickup passes over it. */
+const darkiCanTake = (m) => m.type !== 'knife';
 function weaponPickupTarget() {
   if (player.weapon || !weaponsAllowed()) return null;
   let best = null, bd = Infinity;
   for (const m of weapons) {
-    if (!weaponOnGround(m)) continue;
+    if (!weaponOnGround(m) || !darkiCanTake(m)) continue;
     const dx = Math.abs(m.x - player.x), dy = weaponDepthGap(m);
     if (dx > DARKI_WEAPON_REACH.x || dy > DARKI_WEAPON_REACH.y) continue;
     if (dx + dy < bd) { bd = dx + dy; best = m; }
@@ -10748,7 +10774,7 @@ function updateWeaponTake(move, prevStep, step) {
   if (!(prevStep < move.weaponTake && step >= move.weaponTake)) return;
   const m = player.weaponTargetRef;
   player.weaponTargetRef = null;
-  if (!m || !weapons.includes(m) || !weaponOnGround(m) || player.weapon
+  if (!m || !weapons.includes(m) || !weaponOnGround(m) || player.weapon || !darkiCanTake(m)
       || Math.abs(m.x - player.x) > DARKI_WEAPON_REACH.x + 10
       || weaponDepthGap(m) > DARKI_WEAPON_REACH.y + 10) {
     playWhiff(false, true, player.x + player.facing * 40);   // beaten to it
@@ -18396,6 +18422,7 @@ function l2InRoom() {
     || (waveState === 'l2scene' && l2m.inside));
 }
 function resetL2Mission() {
+  l2StopHandSfx();
   Object.assign(l2m, {
     phase: null, t: 0, path: 0, inside: false, vo: null, voLive: false, voDone: false, voAt: null,
     voT: 0, voDur: 0, voHeld: false, voOffset: 0, screen: 0, powered: false, progress: 0,
@@ -18437,6 +18464,9 @@ function l2VoiceFinished() {
 }
 /* A pause holds the line on the sample it reached; unpausing picks it up there. */
 function l2VoicePause(on) {
+  // the keypad / keyboard take's own sound holds with it, and picks up where the take is
+  const hand = waveState === 'l2scene' ? L2_HAND_CUE[l2m.phase] : null;
+  if (hand) { if (on) l2StopHandSfx(); else l2HandSfx(hand, l2m.t); }
   if (waveState !== 'l2scene' || !l2m.vo || l2m.voDone || !l2m.voLive) return;
   if (on) {
     if (l2m.voHeld) return;
@@ -18452,6 +18482,33 @@ function l2VoicePause(on) {
     l2m.voAt = spoke ? (audioCtx?.currentTime ?? 0) - l2m.voOffset : null;
     l2m.voT = l2m.voOffset;
   }
+}
+
+/* ---- his hands' own sound (request 473) ----
+ * The take's audio (CUES.l2Keypad / l2Keyboard), begun on its first frame and
+ * `from` seconds in when a pause picks it back up. One at a time. */
+const L2_HAND_CUE = { keying: 'l2Keypad', typing: 'l2Keyboard' };
+let l2HandSrc = null;
+function l2HandSfx(name, from = 0) {
+  l2StopHandSfx();
+  sfxCues++;
+  cueFired[name] = (cueFired[name] ?? 0) + 1;
+  const def = CUES[name], buf = cueBuf[name];
+  if (!def || !buf || !audioCtx || audioMuted || from >= buf.duration - 0.02) return;
+  try {
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const g = audioCtx.createGain();
+    g.gain.value = def.gain ?? 1;
+    panTo(src, player.x).connect(g); g.connect(sfxGain);
+    src.start(audioCtx.currentTime, (def.onset ?? 0) + from);
+    src.onended = () => { if (l2HandSrc === src) l2HandSrc = null; };
+    l2HandSrc = src;
+  } catch {}
+}
+function l2StopHandSfx() {
+  try { l2HandSrc?.stop(); } catch {}
+  l2HandSrc = null;
 }
 
 /* ---- Darki's scripted feet ---- */
@@ -18510,7 +18567,7 @@ function updateL2Scene(dt) {
   const S = L2M_STAGE;
   switch (l2m.phase) {
     case 'toKeypad':
-      if (l2WalkTo(S.keypad.x, S.keypad.y, dt)) { player.facing = 1; l2SetPose('wallSwitch'); l2Next('keying'); }
+      if (l2WalkTo(S.keypad.x, S.keypad.y, dt)) { player.facing = 1; l2SetPose('wallSwitch'); l2Next('keying'); l2HandSfx('l2Keypad'); }
       break;
     case 'keying':
       if (l2PlayOnce(dt)) { l2DoorTo(true); l2SetPose('idle'); l2Next('doorOpening'); }
@@ -18536,13 +18593,14 @@ function updateL2Scene(dt) {
       if (l2VoiceFinished()) { l2m.vo = null; l2Next('toLaptop'); }
       break;
     case 'toLaptop':
-      if (l2WalkTo(S.laptop.x, S.laptop.y, dt)) { player.facing = 1; l2SetPose('computer'); l2Next('typing'); }
+      if (l2WalkTo(S.laptop.x, S.laptop.y + S.keysDy, dt)) { player.facing = 1; l2SetPose('computer'); l2Next('typing'); l2HandSfx('l2Keyboard'); }
       break;
     case 'typing':
       if (l2PlayOnce(dt)) {
         // the screen comes on; he squares round to the door on the same frame
         l2m.powered = true;
         player.facing = -1;
+        player.y = S.laptop.y;                  // back off the keys, out of the desk's band (request 474)
         l2SetPose('combatidle');
         l2StartVoice('l2Computer');
         stageL2Wave();                          // the door opens for them (l2DoorTraffic)
@@ -18862,12 +18920,31 @@ function updateL2Defense(dt) {
  * as the plate. Powered on, its screen lights and throws a little light of its
  * own on the desk — a local glow; the level's grade is untouched. A blow on it
  * flickers the screen red. */
-function drawLevel2Desk() {
+/* HIS HANDS ON THE KEYS (request 474). At the laptop Darki stands just behind the
+ * desk, so the sort draws the desk over him — his legs, rightly, but his fingers
+ * on the keyboard too. While he works it (the 'computer' take) the desk draws
+ * WHOLE behind him and only its FRONT — everything below the tabletop's front
+ * edge — again in front: hands over the keyboard, legs behind the desk. The edge
+ * is the red-brown top's lowest row per column, in desk-image px
+ * (_chromakey/req474/deskedge.js), plus a row so the lip stays on the top. */
+const L2_DESK_FRONT = [[0, 34], [16, 36], [40, 40], [72, 44], [88, 44], [100, 43], [112, 42], [144, 41], [144, 116], [0, 116]];
+const l2AtKeyboard = () => activeLevel === 2 && player.anim === 'computer';
+function drawLevel2Desk(frontOnly = false) {
   const img = l2Art.desk, D = L2.desk;
   if (!img) return;
   const ox = snapWorldX(-cameraX), oy = snapWorldY(L2.artY);
   const x = ox + L2_DESK.drawX, y = oy + (L2_DESK.drawY - L2.artY);
   if (x > viewW() + 40 || x + l2X(D.w) < -40) return;
+  if (frontOnly) {
+    ctx.save();
+    ctx.beginPath();
+    L2_DESK_FRONT.forEach(([px, py], i) => (i ? ctx.lineTo(x + l2X(px), y + l2X(py)) : ctx.moveTo(x + l2X(px), y + l2X(py))));
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(gradedArt(img, 'l2'), x, y, l2X(D.w), l2X(D.h));
+    ctx.restore();
+    return;
+  }
   ctx.drawImage(gradedArt(img, 'l2'), x, y, l2X(D.w), l2X(D.h));
   const on = l2m.screen;
   if (on <= 0 || reflecting) return;
@@ -20151,7 +20228,7 @@ function drawFrontage() {
  * (ads/boards.js) carries the same rectangles: keep the two in step. */
 const ADVERT_SLOTS = [
   { id: 'board-1', x: 2700, y: 136, w: 539, h: 413, src: 'layers/adverts/board-1.png', qr: false,
-    face: { x: 8, y: 24, w: 489, h: 208 }, qrRect: null },  // MIVA (taken)
+    face: { x: 8, y: 24, w: 489, h: 208 }, qrRect: null, brand: 'RATEL OPEN UNIVERSITY' },  // taken: its art is an advert (the pause posts, request 473)
   { id: 'board-2', x: 3745, y: 216, w: 201, h: 338, src: 'layers/adverts/board-2.png', qr: true,
     face: { x: 15, y: 8, w: 171, h: 209 }, qrRect: { x: 37, y: 102, w: 60, h: 60 } },   // portrait sign
   /* `fit` (request 345): the big two-post board is 525 px of art — planted, its
@@ -20403,16 +20480,23 @@ function updateAds(dt) {
   if (ADS.flushT >= 30) { ADS.flushT = 0; flushAds(); }
 }
 /* THE PAUSE MENU'S POSTS (request 454). The board row was VISIT <brand> for the
- * one board seen last; it is now VISIT POSTS, and it opens a carousel of every
- * billboard IN THE CAMERA'S VIEW when the pause opened — captured once, in the
- * order the boards stand left to right, so navigating never reshuffles it.
+ * one board seen last; it is now VISIT POSTS, and it opens a carousel of the
+ * posts — captured once as the pause opens, in the order the boards stand left
+ * to right, so navigating never reshuffles it (which posts: request 473, below).
  *   - a live booking shows its artwork (or its video, when the booking carries
  *     one), its brand, and a link icon to ITS link — only a real http(s) one;
- *   - a house-art board shows its own face and, where it is for sale, the link
- *     to its booking page.
+ *   - a house-art advert shows its board's own face.
  * Only the active card's video plays, muted until the speaker is toggled; every
  * video is paused when its card is left and released when the pause closes. */
-const adDeck = { cards: [], i: 0, focus: false, muted: true, videos: new Map(), hits: [], drag: null, slide: 0 };
+/* REQUEST 473 — the carousel is every POST in the game, not only the boards in
+ * view: paused in Level 02's strong room there is no board on screen at all, and
+ * a carousel of one cannot be browsed. A post is a real advert — every booking
+ * in a board's rotation whose artwork has arrived, and a board's own house art
+ * where that art IS an advert (board-1). The CLAIM SPACE VACANCY house art
+ * (the boards with a printed QR) is a placeholder, so it is never a card. The
+ * order is fixed (boards left to right, each rotation in the server's order);
+ * the deck only OPENS on the first post whose board is in view, if one is. */
+const adDeck = { cards: [], i: 0, focus: false, muted: true, videos: new Map(), hits: [], drag: null, slide: 0, scroll: null };
 const AD_LINK = (u) => (typeof u === 'string' && /^https?:\/\/[^\s<>"']+$/i.test(u) ? u : null);
 const AD_VIDEO = (live) => {
   const v = typeof live?.video === 'string' ? live.video
@@ -20422,38 +20506,51 @@ const AD_VIDEO = (live) => {
 /* Which boards' faces intersect the frame right now, in the space drawAdverts
  * draws them in (x relative to the camera, y in world rows under cameraY). */
 function adDeckCapture() {
-  if (activeLevel !== 1 || !advertArt.length) return [];
+  const found = [], bookings = new Set();
+  for (const { slot, img } of [...advertArt].sort((a, b) => a.slot.x - b.slot.x)) {
+    const rotation = ADS.endpoint ? (ADS.slots.get(slot.id)?.rotation ?? []) : [];
+    let booked = false;
+    for (const r of rotation) {
+      const art = ADS.art.get(r.id);
+      if (!art) continue;                                 // its artwork never arrived: no card
+      booked = true;
+      if (bookings.has(r.id)) continue;                   // one booking on two boards is one post
+      bookings.add(r.id);
+      found.push({ slot: slot.id, booking: r.id, title: String(r.brand || 'SPONSOR').toUpperCase().slice(0, 30),
+        desc: typeof r.desc === 'string' ? r.desc.slice(0, 120) : '', img: art,
+        video: AD_VIDEO(r), link: AD_LINK(r.link), face: null, board: null });
+    }
+    // the board's own art, where it is an advert and not the vacancy placeholder
+    if (!booked && !slot.qrRect && img && slot.face)
+      found.push({ slot: slot.id, booking: null, title: slot.brand || 'ON THIS STREET', desc: '',
+        img: null, video: null, link: AD_LINK(slot.link), face: slot.face, board: img });
+  }
+  return found;
+}
+/* The boards whose faces intersect the frame right now (Level 01's street only),
+ * in the space drawAdverts draws them in (x relative to the camera, y in world
+ * rows under cameraY) — where the deck opens. */
+function adDeckInView() {
+  if (activeLevel !== 1 || !advertArt.length) return new Set();
   const scale = tune.streetScale, ox = -cameraX * tune.streetParallax + tune.streetX, oy = tune.streetY;
   const vw = viewW(), top = cameraY, bottom = cameraY + viewH();
-  const found = [], bookings = new Set();
+  const seen = new Set();
   for (const { slot, img, gap } of advertArt) {
     if (!img || !slot.face) continue;
     const k = scale * (slot.fit ?? 1);
     const x = ox + (slot.x + slot.w * (1 - (slot.fit ?? 1)) / 2) * scale;
     const t = oy + ADVERT_FOOT_Y * scale - (slot.h - gap) * k;
     const fx = x + slot.face.x * k, fy = t + slot.face.y * k, fw = slot.face.w * k, fh = slot.face.h * k;
-    if (Math.min(fx + fw, vw) - Math.max(fx, 0) <= 0 || Math.min(fy + fh, bottom) - Math.max(fy, top) <= 0) continue;
-    const live = ADS.endpoint ? adLiveOf(slot.id) : null;
-    if (live) {
-      if (bookings.has(live.id)) continue;               // one booking on two boards is one post
-      bookings.add(live.id);
-      found.push({ at: fx, slot: slot.id, booking: live.id, title: String(live.brand || 'SPONSOR').toUpperCase().slice(0, 30),
-        desc: typeof live.desc === 'string' ? live.desc.slice(0, 120) : '', img: ADS.art.get(live.id) || null,
-        video: AD_VIDEO(live), link: AD_LINK(live.link), face: null, board: img });
-    } else {
-      found.push({ at: fx, slot: slot.id, booking: null,
-        title: slot.qrRect ? 'ADVERTISE ON THIS BOARD' : 'ON THIS STREET',
-        desc: slot.qrRect && ADS.endpoint ? 'This board is open for bookings.' : '',
-        img: null, video: null, face: slot.face, board: img,
-        link: slot.qrRect && ADS.endpoint ? AD_LINK(ADS.slots.get(slot.id)?.page || `${ADS.endpoint}/b/${slot.id}`) : null });
-    }
+    if (Math.min(fx + fw, vw) - Math.max(fx, 0) > 0 && Math.min(fy + fh, bottom) - Math.max(fy, top) > 0) seen.add(slot.id);
   }
-  return found.sort((a, b) => a.at - b.at);
+  return seen;
 }
 function adDeckOpen() {
   adDeckClose();
   adDeck.cards = adDeckCapture();
-  adDeck.i = 0; adDeck.focus = false; adDeck.drag = null; adDeck.slide = 0;
+  const inView = adDeckInView();
+  const at = adDeck.cards.findIndex((c) => inView.has(c.slot));
+  adDeck.i = Math.max(0, at); adDeck.focus = false; adDeck.drag = null; adDeck.slide = 0; adDeck.scroll = null;
 }
 /* Leaving the pause: every video stopped and its resources let go. */
 function adDeckClose() {
@@ -20937,7 +21034,13 @@ function actorList() {
    * behind the shaft. */
   if (activeLevel === 2) {
     for (const p of L2_PILLARS) actors.push({ depth: p.y, tie: -50, draw: () => drawLevel2Pillar(p) });
-    if (l2Art.desk) actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk() });   // the workstation (request 454)
+    if (l2Art.desk) {
+      if (l2AtKeyboard()) {
+        // working the laptop (request 474): the desk behind him, its front over his legs
+        actors.push({ depth: player.y, tie: 99, draw: () => drawLevel2Desk() });
+        actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk(true) });
+      } else actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk() });   // the workstation (request 454)
+    }
   }
   for (const v of activeLevel === 2 ? [] : VEHICLE_ART) {
     const sx = v.x - cameraX;
@@ -22141,7 +22244,8 @@ function drawPauseOverlay() {
 
   ui.drawControlBar(adDeck.focus ? [
     { icon: 'dpad', label: 'BROWSE' },
-    { icon: 'cross', label: 'OPEN LINK', color: '#8fb4ff' },
+    { icon: 'cross', label: 'NEXT', color: '#8fb4ff' },
+    ...(adDeck.cards[adDeck.i]?.link ? [{ icon: 'squareBtn', label: 'OPEN LINK', color: '#f0a0e0' }] : []),
     ...(adDeck.cards[adDeck.i]?.video ? [{ icon: 'triangleBtn', label: adDeck.muted ? 'SOUND ON' : 'SOUND OFF', color: '#7be0a4' }] : []),
     { icon: 'circleBtn', label: 'BACK', color: '#ff8f8f' },
   ] : [
@@ -22160,19 +22264,41 @@ function drawPauseOverlay() {
   ctx.textBaseline = 'top';
 }
 
-/* THE POSTS CAROUSEL (request 454), in the pause panel's own glass and type.
- * One card at a time: the media (a video's live frame, the booking's artwork, or
- * the board's own face), arrows either side, the brand and its line, the link
- * icon (only where a real link exists), page dots and a count. Hidden outright
- * when no board was in view. Its hit rects live in adDeck.hits (virtual px). */
+/* THE POSTS CAROUSEL, in the pause panel's own glass and type — laid out the way
+ * a LinkedIn / Facebook carousel is (request 473): the posts stand side by side
+ * on one strip, each at its OWN proportions (a video's frame, the booking's
+ * artwork, or the board's face) with rounded corners, the active one at the
+ * strip's left edge and the next peeking in from the right. No frame, no empty
+ * box behind them, no page dots: just the cards. Round arrows sit on the strip's
+ * edges; the active post's brand, its line and its OPEN LINK chip (only where a
+ * real link exists) are under it. Hidden outright when there are no posts. Its
+ * hit rects live in adDeck.hits (virtual px). */
+const DECK_CARD_H = 214, DECK_GAP = 16, DECK_R = 14;
+function deckRoundRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+/* What a card shows, and at what native size: the video once it has a frame,
+ * else the artwork, else the board's face. */
+function deckMedia(card) {
+  const vid = card.video ? adDeck.videos.get(card.video) : null;
+  if (vid && vid.readyState >= 2 && vid.videoWidth) return { src: vid, w: vid.videoWidth, h: vid.videoHeight };
+  if (card.img && card.img.width) return { src: card.img, w: card.img.width, h: card.img.height };
+  if (card.face && card.board) return { src: card.board, w: card.face.w, h: card.face.h, face: card.face };
+  return null;
+}
 function drawAdDeck(ui, px, py, pw, ph) {
   adDeck.hits = [];
   const cards = adDeck.cards;
   if (!cards.length) return;
   const C = ui.C, n = cards.length, card = cards[adDeck.i];
   const focus = adDeck.focus;
-  adDeck.slide *= 0.78;
-  if (Math.abs(adDeck.slide) < 0.5) adDeck.slide = 0;
   ui.glass(px, py, pw, ph, 10, focus ? { border: 'rgba(255,190,80,0.85)' } : {});
   const ix = px + 28, iw = pw - 56;
   ctx.save();
@@ -22180,74 +22306,90 @@ function drawAdDeck(ui, px, py, pw, ph) {
   ctx.textBaseline = 'alphabetic';
   ui.setFont(700, 11, 4);
   ctx.fillStyle = C.gold;
-  ctx.fillText('POSTS ON THIS STREET', ix, py + 34);
+  ctx.fillText('POSTS', ix, py + 34);
   ctx.textAlign = 'right';
   ctx.fillStyle = C.muted;
   ctx.fillText(`${adDeck.i + 1} / ${n}`, ix + iw, py + 34);
 
-  // the media
-  const mx = ix, my = py + 48, mw = iw, mh = 206;
-  ctx.fillStyle = 'rgba(4,6,10,0.78)';
-  ctx.fillRect(mx, my, mw, mh);
-  ctx.save();
-  ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
-  const off = adDeck.slide + (adDeck.drag ? adDeck.drag.dx : 0);
-  const fit = (sw, sh) => { const s = Math.min(mw / sw, mh / sh); return { w: sw * s, h: sh * s }; };
-  const vid = card.video ? adDeck.videos.get(card.video) : null;
-  if (vid && vid.readyState >= 2 && vid.videoWidth) {
-    const f = fit(vid.videoWidth, vid.videoHeight);
-    ctx.drawImage(vid, mx + (mw - f.w) / 2 + off, my + (mh - f.h) / 2, f.w, f.h);
-  } else if (card.img && card.img.width) {
-    const f = fit(card.img.width, card.img.height);
-    ctx.drawImage(card.img, mx + (mw - f.w) / 2 + off, my + (mh - f.h) / 2, f.w, f.h);
-  } else if (card.face && card.board) {
-    const F = card.face, f = fit(F.w, F.h);
-    ctx.drawImage(card.board, F.x, F.y, F.w, F.h, mx + (mw - f.w) / 2 + off, my + (mh - f.h) / 2, f.w, f.h);
+  // the strip: every card at its own proportions, one height, capped in width
+  const sx = ix, sy = py + 50, sw = iw, sh = DECK_CARD_H;
+  const maxW = sw * 0.84;
+  const lay = [];
+  let run = 0;
+  for (const c of cards) {
+    const m = deckMedia(c);
+    const a = m ? m.w / m.h : 16 / 9;
+    let w = sh * a, h = sh;
+    if (w > maxW) { w = maxW; h = w / a; }
+    lay.push({ x: run, w, h, m });
+    run += w + DECK_GAP;
   }
-  if (card.video && !(vid && vid.readyState >= 2)) {          // a video still arriving
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(mx, my, mw, mh);
-    ui.icon('play', mx + mw / 2, my + mh / 2, 46, C.paper, 0.85);
+  const total = run - DECK_GAP;
+  // the active card at the strip's left edge; the last ones end flush with its right
+  const target = Math.max(0, Math.min(lay[adDeck.i].x, total - sw));
+  if (adDeck.scroll == null) adDeck.scroll = target;
+  adDeck.scroll += (target - adDeck.scroll) * 0.24;
+  if (Math.abs(target - adDeck.scroll) < 0.5) adDeck.scroll = target;
+  const off = adDeck.drag ? adDeck.drag.dx : 0;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx, sy - 4, sw, sh + 8); ctx.clip();
+  for (let k = 0; k < n; k++) {
+    const L = lay[k], X = sx + L.x - adDeck.scroll + off, Y = sy + (sh - L.h) / 2;
+    if (X > sx + sw || X + L.w < sx || !L.m) continue;
+    ctx.save();
+    deckRoundRect(X, Y, L.w, L.h, DECK_R);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const M = L.m;
+    if (M.face) ctx.drawImage(M.src, M.face.x, M.face.y, M.face.w, M.face.h, X, Y, L.w, L.h);
+    else ctx.drawImage(M.src, X, Y, L.w, L.h);
+    if (k !== adDeck.i) { ctx.fillStyle = 'rgba(4,6,10,0.38)'; ctx.fillRect(X, Y, L.w, L.h); }
+    ctx.restore();
+    deckRoundRect(X + 0.5, Y + 0.5, L.w - 1, L.h - 1, DECK_R);
+    ctx.strokeStyle = k === adDeck.i && focus ? 'rgba(255,190,80,0.95)' : 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = k === adDeck.i && focus ? 2.4 : 1;
+    ctx.stroke();
+    adDeck.hits.push({ id: 'deck:card', idx: k, x: Math.max(sx, X), y: Y, w: Math.min(sx + sw, X + L.w) - Math.max(sx, X), h: L.h });
   }
   ctx.restore();
-  ctx.strokeStyle = focus ? 'rgba(255,190,80,0.9)' : 'rgba(255,255,255,0.10)';
-  ctx.lineWidth = focus ? 2 : 1;
-  ctx.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
-  adDeck.hits.push({ id: 'deck:card', x: mx, y: my, w: mw, h: mh });
 
-  // arrows
+  // a video's sound, on the active card's corner
+  const A = lay[adDeck.i], AX = sx + A.x - adDeck.scroll + off, AY = sy + (sh - A.h) / 2;
+  if (card.video) {
+    const vx = AX + A.w - 24, vy = AY + 24;
+    ctx.fillStyle = 'rgba(6,9,16,0.78)';
+    ctx.beginPath(); ctx.arc(vx, vy, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = C.paper; ctx.fillStyle = C.paper; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(vx - 8, vy - 3); ctx.lineTo(vx - 4, vy - 3); ctx.lineTo(vx + 1, vy - 8);
+    ctx.lineTo(vx + 1, vy + 8); ctx.lineTo(vx - 4, vy + 3); ctx.lineTo(vx - 8, vy + 3); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    if (adDeck.muted) { ctx.moveTo(vx + 4, vy - 4); ctx.lineTo(vx + 10, vy + 4); ctx.moveTo(vx + 10, vy - 4); ctx.lineTo(vx + 4, vy + 4); }
+    else { ctx.arc(vx + 2, vy, 6, -0.9, 0.9); }
+    ctx.stroke();
+    adDeck.hits.push({ id: 'deck:mute', x: vx - 18, y: vy - 18, w: 36, h: 36 });
+  }
+
+  // round arrows on the strip's edges
   if (n > 1) {
     const arrow = (dir, cx) => {
-      const cy = my + mh / 2;
-      ctx.fillStyle = 'rgba(6,9,16,0.78)';
+      const cy = sy + sh / 2;
+      ctx.fillStyle = 'rgba(244,240,230,0.94)';
       ctx.beginPath(); ctx.arc(cx, cy, 19, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = focus ? C.gold : C.paper;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = '#10141c';
       ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.beginPath(); ctx.moveTo(cx + dir * -4, cy - 8); ctx.lineTo(cx + dir * 5, cy); ctx.lineTo(cx + dir * -4, cy + 8); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + dir * -4, cy - 7); ctx.lineTo(cx + dir * 4, cy); ctx.lineTo(cx + dir * -4, cy + 7); ctx.stroke();
       adDeck.hits.push({ id: dir < 0 ? 'deck:prev' : 'deck:next', x: cx - 24, y: cy - 24, w: 48, h: 48 });
     };
-    arrow(-1, mx + 26);
-    arrow(1, mx + mw - 26);
-  }
-  // a video's sound
-  if (card.video) {
-    const sx = mx + mw - 26, sy = my + 24;
-    ctx.fillStyle = 'rgba(6,9,16,0.78)';
-    ctx.beginPath(); ctx.arc(sx, sy, 15, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = C.paper; ctx.fillStyle = C.paper; ctx.lineWidth = 1.8;
-    ctx.beginPath(); ctx.moveTo(sx - 8, sy - 3); ctx.lineTo(sx - 4, sy - 3); ctx.lineTo(sx + 1, sy - 8);
-    ctx.lineTo(sx + 1, sy + 8); ctx.lineTo(sx - 4, sy + 3); ctx.lineTo(sx - 8, sy + 3); ctx.closePath(); ctx.fill();
-    ctx.beginPath();
-    if (adDeck.muted) { ctx.moveTo(sx + 4, sy - 4); ctx.lineTo(sx + 10, sy + 4); ctx.moveTo(sx + 10, sy - 4); ctx.lineTo(sx + 4, sy + 4); }
-    else { ctx.arc(sx + 2, sy, 6, -0.9, 0.9); }
-    ctx.stroke();
-    adDeck.hits.push({ id: 'deck:mute', x: sx - 18, y: sy - 18, w: 36, h: 36 });
+    arrow(-1, sx + 20);
+    arrow(1, sx + sw - 20);
   }
 
-  // the words, and the link
-  const ty = my + mh + 34;
+  // the active post's words, and its link
+  const ty = sy + sh + 36;
   ctx.textAlign = 'left';
-  ui.setDisplay(700, 24, 1);
+  ui.setDisplay(700, 22, 1);
   ctx.fillStyle = C.paper;
   ctx.fillText(card.title, ix, ty);
   if (card.desc) {
@@ -22258,27 +22400,19 @@ function drawAdDeck(ui, px, py, pw, ph) {
   if (card.link) {
     const lw = 150, lh = 34, lx = ix + iw - lw, ly = ty - 24;
     ctx.fillStyle = focus ? 'rgba(255,190,80,0.16)' : 'rgba(255,255,255,0.06)';
-    ctx.fillRect(lx, ly, lw, lh);
+    deckRoundRect(lx, ly, lw, lh, 17); ctx.fill();
     ctx.strokeStyle = focus ? C.gold : 'rgba(255,255,255,0.25)';
     ctx.lineWidth = 1.2;
-    ctx.strokeRect(lx + 0.5, ly + 0.5, lw - 1, lh - 1);
+    deckRoundRect(lx + 0.5, ly + 0.5, lw - 1, lh - 1, 17); ctx.stroke();
     // the link icon: a box with an arrow leaving it
-    const gx = lx + 20, gy = ly + lh / 2;
+    const gx = lx + 22, gy = ly + lh / 2;
     ctx.strokeStyle = C.paper; ctx.lineWidth = 1.7; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(gx + 1, gy - 7); ctx.lineTo(gx - 7, gy - 7); ctx.lineTo(gx - 7, gy + 7); ctx.lineTo(gx + 7, gy + 7); ctx.lineTo(gx + 7, gy - 1); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(gx - 1, gy + 1); ctx.lineTo(gx + 8, gy - 8); ctx.moveTo(gx + 3, gy - 8); ctx.lineTo(gx + 8, gy - 8); ctx.lineTo(gx + 8, gy - 3); ctx.stroke();
     ui.setFont(800, 12, 2);
     ctx.fillStyle = C.paper;
-    ctx.fillText('OPEN LINK', lx + 38, gy + 4);
+    ctx.fillText('OPEN LINK', lx + 40, gy + 4);
     adDeck.hits.push({ id: 'deck:link', x: lx, y: ly, w: lw, h: lh });
-  }
-  // page dots
-  if (n > 1) {
-    const dy = py + ph - 22, dx0 = px + pw / 2 - (n - 1) * 9;
-    for (let i = 0; i < n; i++) {
-      ctx.fillStyle = i === adDeck.i ? C.gold : 'rgba(255,255,255,0.28)';
-      ctx.beginPath(); ctx.arc(dx0 + i * 18, dy, i === adDeck.i ? 4.5 : 3.5, 0, Math.PI * 2); ctx.fill();
-    }
   }
   if (!focus) {
     ui.setFont(600, 11, 1.5);
@@ -22296,7 +22430,7 @@ function adDeckHitAt(e) {
   if (!pt) return null;
   for (let i = adDeck.hits.length - 1; i >= 0; i--) {
     const h = adDeck.hits[i];
-    if (pt.x >= h.x && pt.x <= h.x + h.w && pt.y >= h.y && pt.y <= h.y + h.h) return { id: h.id, x: pt.x };
+    if (pt.x >= h.x && pt.x <= h.x + h.w && pt.y >= h.y && pt.y <= h.y + h.h) return { id: h.id, idx: h.idx, x: pt.x };
   }
   return null;
 }
@@ -22313,18 +22447,26 @@ if (typeof canvas !== 'undefined') {
     const d = adDeck.drag;
     if (!d || d.pid !== e.pointerId) return;
     const pt = frontEnd?.ui?.pointerPos(e);
-    if (pt && d.id === 'deck:card' && adDeck.cards.length > 1) d.dx = Math.max(-160, Math.min(160, pt.x - d.x0));
+    if (pt && d.id === 'deck:card' && adDeck.cards.length > 1) d.dx = Math.max(-220, Math.min(220, pt.x - d.x0));
   });
   const deckUp = (e) => {
     const d = adDeck.drag;
     if (!d || d.pid !== e.pointerId) return;
     adDeck.drag = null;
     if (!paused) return;
-    if (Math.abs(d.dx) > 56) { if (!adDeck.focus) adDeckFocus(true); adDeckMove(d.dx < 0 ? 1 : -1); return; }
+    if (Math.abs(d.dx) > 56) {
+      // the strip follows the finger, so the swipe lands from where it was let go
+      if (!adDeck.focus) adDeckFocus(true);
+      if (adDeck.scroll != null) adDeck.scroll -= d.dx;
+      adDeckMove(d.dx < 0 ? 1 : -1);
+      return;
+    }
     const h = adDeckHitAt(e);
     if (!h || h.id !== d.id) return;                         // released somewhere else: no press
     if (!adDeck.focus) adDeckFocus(true);
-    if (h.id === 'deck:prev') adDeckMove(-1);
+    // a tap on a card only browses — to that card; it never leaves the game (request 473)
+    if (h.id === 'deck:card') { if (h.idx != null && h.idx !== adDeck.i) adDeckMove(h.idx - adDeck.i); }
+    else if (h.id === 'deck:prev') adDeckMove(-1);
     else if (h.id === 'deck:next') adDeckMove(1);
     else if (h.id === 'deck:link') adDeckOpenLink();
     else if (h.id === 'deck:mute') adDeckToggleMute();
@@ -23856,7 +23998,8 @@ window.__ror = {
       voDur: l2m.voDur, voHeld: l2m.voHeld, screen: l2m.screen, powered: l2m.powered, progress: l2m.progress,
       compHp: l2m.compHp, waveNo: l2m.waveNo, queue: l2m.queue.length, letterbox: l2m.letterbox,
       door: { dy: l2Door.dy, target: l2Door.target, open: l2DoorIsOpen(), shut: l2DoorIsShut() },
-      reason: gameOver.reason,
+      reason: gameOver.reason, t: l2m.t,
+      handSfx: !!l2HandSrc,                  // the keypad / keyboard take's own sound is playing (request 473)
     };
   },
   missionStage: L2M_STAGE, missionDesk: L2_DESK, missionRaid: L2_RAID, defense: L2_DEFENSE,
