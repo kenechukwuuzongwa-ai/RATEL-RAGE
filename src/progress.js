@@ -31,6 +31,10 @@
       stats: { runs: 0, deaths: 0, retries: 0, completions: 0, kos: 0, playSeconds: 0 } };
   }
   var num = function (x) { return typeof x === 'number' && isFinite(x) ? x : 0; };
+  /* Level 02's strong-room checkpoints: 'keypad' (its last arena cleared, or the
+   * scene begun at the keypad — game.js reports that one as 'strongroom') and
+   * 'defense' (the workstation defense begun). */
+  function checkpointMission(m) { return m === 'defense' ? 'defense' : m === 'keypad' || m === 'strongroom' ? 'keypad' : null; }
   function betterBest(a, b) {
     if (!a) return b || null;
     if (!b) return a;
@@ -54,7 +58,9 @@
     }
     if (p.checkpoint && typeof p.checkpoint === 'object') {
       o.checkpoint = { level: num(p.checkpoint.level) || 1, section: num(p.checkpoint.section),
-        difficulty: DIFFS.indexOf(p.checkpoint.difficulty) >= 0 ? p.checkpoint.difficulty : 'NORMAL', at: num(p.checkpoint.at) };
+        difficulty: DIFFS.indexOf(p.checkpoint.difficulty) >= 0 ? p.checkpoint.difficulty : 'NORMAL', at: num(p.checkpoint.at),
+        // where in the level CONTINUE resumes (request 482): the boss room, or Level 02's strong room
+        boss: !!p.checkpoint.boss, mission: checkpointMission(p.checkpoint.mission) };
     }
     var s = p.stats || {};
     for (var key in o.stats) o.stats[key] = num(s[key]);
@@ -161,7 +167,8 @@
     } else if (type === 'checkpoint') {
       var L = level(lv);
       L.furthestSection = Math.max(L.furthestSection, num(d.section));
-      data.checkpoint = { level: lv, section: num(d.section), difficulty: diff, at: Date.now() };
+      data.checkpoint = { level: lv, section: num(d.section), difficulty: diff, at: Date.now(),
+        boss: !!d.boss, mission: checkpointMission(d.mission) };
       persist(type);
     } else if (type === 'game_over') {
       data.stats.deaths++;

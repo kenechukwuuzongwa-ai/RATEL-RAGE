@@ -364,8 +364,11 @@ const L2_WORLD_W = Math.round(l2X(L2.fullW));
 const levelW = () => (activeLevel === 2 ? L2_WORLD_W : WORLD_W);
 /* The camera's exclusive right edge (levelRightEdge() on the street). */
 const levelRightEdge = () => (activeLevel === 2 ? L2_WORLD_W : PLAYAREA.maxX + 1);
-/* The camera's floor here: the GPB's last row. */
-const L2_ART_BOTTOM = l2Y(724);
+/* The camera's floor here: the GPB's last row, plus the mirrored floor apron
+ * drawn under it (request 487 — drawPlateApron), so Darki's feet at the
+ * navigable outline's near edge keep room below them. */
+const L2_APRON_ROWS = 40;                         // art rows (~55 world px)
+const L2_ART_BOTTOM = l2Y(724 + L2_APRON_ROWS);
 /* THE MIDDLE PILLARS ARE SOLID AT THEIR FOOT, AND ONLY THERE. Same contract as a
  * parked vehicle (vehicleBlocks / resolveVehicleCollision): a body cannot pass
  * through the foot, but steps BEHIND it a few px past the base row, and the
@@ -3484,6 +3487,8 @@ function activatePauseChoice() {
     try { sessionStorage.setItem('rr.retry', '1'); window.RRAnalytics?.flush(); } catch {}   // the reload below ends this page
     // …and WHICH level: the reload forgets it, and the front end restores it (request 399).
     try { sessionStorage.setItem('rorRetryLevel', String(activeLevel)); } catch {}
+    // …and at which difficulty: the front end restores it too (request 482)
+    try { sessionStorage.setItem('rorRetryDifficulty', chosenDifficulty); } catch {}
     // …and WHERE in it (request 442): REPLAY LEVEL is a fresh run of a cleared level, so it keeps none.
     if (item === 'REPLAY LEVEL') { try { sessionStorage.removeItem(RETRY_CHECKPOINT_KEY); } catch {} }
     else saveRetryCheckpoint();
@@ -6100,6 +6105,10 @@ function applyGameplaySettings(difficulty, settings) {
   musicSetting = Math.max(0, Math.min(1, master * (settings.music ?? 1)));
   vibrationEnabled = settings.vibration !== false;
   if (!vibrationEnabled) stopControllerRumble();
+  // request 483: the two options the game never read
+  screenShakeOn = settings.screenShake !== false;
+  damageFxOn = settings.damageIndicators !== false;
+  if (!damageFxOn) bloodPatches.length = 0;
   if (sfxGain) sfxGain.gain.value = 0.9 * Math.max(0, Math.min(1, master * (settings.sfx ?? 1)));
   if (voiceGain) voiceGain.gain.value = Math.max(0, Math.min(1, master * (settings.voice ?? 1)));
 }
@@ -6210,6 +6219,7 @@ function advanceFx(dt) {
   /* Ages the speed trail alongside every other effect — and unconditionally, so
    * an echo cannot be stranded live by a state change that skipped endRush. */
   rushFxUpdate(dt);
+  updateDamageFx(dt);                     // the danger dim and the blood (request 483)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
   for (let i = sparks.length - 1; i >= 0; i--)
@@ -6224,7 +6234,7 @@ function advanceFx(dt) {
 }
 
 function shakeOffset() {
-  if (shakeTimer <= 0) return { sx: 0, sy: 0 };
+  if (shakeTimer <= 0 || !screenShakeOn) return { sx: 0, sy: 0 };   // OPTIONS > SCREEN SHAKE (request 483)
   const a = shakeMag * (shakeTimer / shakeDur);   // decays to 0
   return { sx: Math.sin(shakeTimer * 130) * a, sy: Math.cos(shakeTimer * 97) * a * 0.6 };
 }
@@ -6277,6 +6287,140 @@ function drawFlash() {
   ctx.fillStyle = `rgb(${flashColor})`;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   ctx.globalAlpha = 1;
+}
+
+/* ================================================ DARKI'S DAMAGE FEEDBACK ==
+ * Request 483. Three screen-space signals, all drawn after the scene and under
+ * the HUD, so the bar you have to read is never covered and nothing is shaken
+ * twice:
+ *   DANGER DIM  in the last quarter of his health the frame eases toward dark —
+ *               deeper the lower he goes, edges heavier than the middle so the
+ *               fight stays readable, with a slow pulse at the very bottom. It is
+ *               a wash over the whole frame: Darki himself is never faded.
+ *   BLOOD       every blow that lands spatters 1-3 patches on the "lens", toward
+ *               the side the blow came from and clear of the middle; they hold,
+ *               then dry off. Drawn procedurally, no image assets.
+ *   SHAKE       every landed blow shakes the camera, harder for a heavy one.
+ * The options menu's DAMAGE INDICATORS toggles the first two, SCREEN SHAKE the
+ * shake (both were settings the game never read). */
+const DANGER = { below: 0.25, max: 0.62, edge: 0.35, ease: 1.6, pulse: 0.06 };
+const BLOOD = { max: 9, life: 2.8, hold: 1.0, size: [190, 330], heavyMul: 1.3, alpha: 0.88 };
+const HURT_SHAKE = { light: 11, heavy: 19, dur: 0.3 };
+let damageFxOn = true, screenShakeOn = true;
+let dangerDim = 0, dangerT = 0;
+const bloodPatches = [];
+let bloodTex = null;
+const bloodRng = mulberry32(483);
+
+/* Six splat textures, made once on first use and reused (rotated, scaled). */
+function bloodTextures() {
+  if (bloodTex) return bloodTex;
+  bloodTex = [];
+  const rnd = mulberry32(4831);
+  for (let v = 0; v < 6; v++) {
+    const S = 256, c = makeCanvas(S, S), x = c.getContext('2d');
+    const cx = S / 2 + (rnd() - 0.5) * 20, cy = S / 2 + (rnd() - 0.5) * 20;
+    const blob = (bx, by, r) => {
+      const g = x.createRadialGradient(bx, by, r * 0.1, bx, by, r);
+      g.addColorStop(0, 'rgba(118,4,6,0.95)');
+      g.addColorStop(0.75, 'rgba(92,0,2,0.92)');
+      g.addColorStop(1, 'rgba(60,0,0,0.0)');
+      x.fillStyle = g;
+      x.beginPath(); x.arc(bx, by, r, 0, Math.PI * 2); x.fill();
+    };
+    for (let i = 0; i < 16; i++) {                       // the body of the splat
+      const a = rnd() * Math.PI * 2, d = rnd() * S * 0.15;
+      blob(cx + Math.cos(a) * d, cy + Math.sin(a) * d, S * (0.07 + rnd() * 0.12));
+    }
+    x.fillStyle = 'rgba(96,0,2,0.92)';
+    for (let i = 0; i < 26; i++) {                       // thrown droplets
+      const a = rnd() * Math.PI * 2, d = S * (0.2 + rnd() * 0.27), r = S * (0.006 + rnd() * 0.026);
+      x.beginPath(); x.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, r, 0, Math.PI * 2); x.fill();
+    }
+    x.strokeStyle = 'rgba(92,0,2,0.9)'; x.lineCap = 'round';
+    for (let k = 0; k < 2 + Math.floor(rnd() * 3); k++) {   // runs dripping down the lens
+      const dx = cx + (rnd() - 0.5) * S * 0.3, y0 = cy + S * 0.05, len = S * (0.12 + rnd() * 0.28), w = S * (0.012 + rnd() * 0.02);
+      x.lineWidth = w;
+      x.beginPath(); x.moveTo(dx, y0); x.lineTo(dx + (rnd() - 0.5) * 6, y0 + len); x.stroke();
+      x.beginPath(); x.arc(dx, y0 + len, w * 0.9, 0, Math.PI * 2); x.fillStyle = 'rgba(96,0,2,0.92)'; x.fill();
+    }
+    // a wet sheen, only where there is blood
+    x.globalCompositeOperation = 'source-atop';
+    const h = x.createRadialGradient(cx - S * 0.08, cy - S * 0.1, 2, cx - S * 0.08, cy - S * 0.1, S * 0.22);
+    h.addColorStop(0, 'rgba(255,90,80,0.28)'); h.addColorStop(1, 'rgba(255,90,80,0)');
+    x.fillStyle = h; x.fillRect(0, 0, S, S);
+    x.globalCompositeOperation = 'source-over';
+    bloodTex.push(c);
+  }
+  return bloodTex;
+}
+
+/* A blow landed on Darki (damagePlayer, after the guard). */
+function onDarkiHurtFx(from, heavy) {
+  if (screenShakeOn) {
+    shakeDur = HURT_SHAKE.dur; shakeTimer = shakeDur;
+    shakeMag = Math.max(shakeMag, heavy ? HURT_SHAKE.heavy : HURT_SHAKE.light);
+  }
+  if (!damageFxOn) return;
+  const W = VIEW_W, H = VIEW_H;
+  const fromRight = from && Number.isFinite(from.x) ? from.x > player.x : bloodRng() < 0.5;
+  const n = (heavy ? 2 : 1) + (bloodRng() < 0.5 ? 1 : 0);
+  for (let i = 0; i < n; i++) {
+    let px = 0, py = 0;
+    for (let tries = 0; tries < 12; tries++) {            // somewhere off the middle of the frame
+      const side = bloodRng() < 0.72 ? fromRight : !fromRight;
+      px = side ? W * (0.55 + bloodRng() * 0.47) : W * (-0.02 + bloodRng() * 0.47);
+      py = H * (-0.02 + bloodRng() * 1.04);
+      const ex = (px - W / 2) / (W * 0.3), ey = (py - H / 2) / (H * 0.3);
+      if (ex * ex + ey * ey >= 1) break;
+    }
+    const s = (BLOOD.size[0] + bloodRng() * (BLOOD.size[1] - BLOOD.size[0])) * (heavy ? BLOOD.heavyMul : 1);
+    bloodPatches.push({ x: px, y: py, s, rot: bloodRng() * Math.PI * 2, v: Math.floor(bloodRng() * 6), age: 0 });
+  }
+  while (bloodPatches.length > BLOOD.max) bloodPatches.shift();
+}
+
+/* Every live frame (advanceFx): the dim follows his health; the blood dries. */
+function updateDamageFx(dt) {
+  const frac = player.maxHp > 0 ? player.hp / player.maxHp : 1;
+  const live = !levelEntry.active && !cutscene.active && !outro.active && !aftermath.owningFrame;
+  const target = damageFxOn && live && frac <= DANGER.below
+    ? DANGER.max * Math.min(1, (DANGER.below - frac) / DANGER.below * 0.85 + 0.15) : 0;
+  dangerDim += (target - dangerDim) * Math.min(1, dt * DANGER.ease);
+  if (dangerDim < 0.002 && target === 0) dangerDim = 0;
+  dangerT += dt;
+  for (let i = bloodPatches.length - 1; i >= 0; i--)
+    if ((bloodPatches[i].age += dt) >= BLOOD.life) bloodPatches.splice(i, 1);
+}
+
+function drawDamageFx() {
+  if (dangerDim > 0) {
+    const W = VIEW_W, H = VIEW_H;
+    const pulse = 1 + DANGER.pulse * Math.sin(dangerT * 5.2) * Math.min(1, dangerDim / DANGER.max);
+    const a = Math.min(0.9, dangerDim * pulse);
+    // the whole frame darkens, and the edges go further (a closing vignette)
+    ctx.fillStyle = `rgba(0,0,0,${a * (1 - DANGER.edge)})`;
+    ctx.fillRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.22, W / 2, H * 0.55, W * 0.62);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `rgba(8,0,0,${Math.min(0.95, a + DANGER.edge * a)})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (bloodPatches.length) {
+    const tex = bloodTextures();
+    for (const b of bloodPatches) {
+      const fade = b.age < BLOOD.hold ? 1 : 1 - (b.age - BLOOD.hold) / (BLOOD.life - BLOOD.hold);
+      const pop = Math.min(1, 0.82 + b.age / 0.08 * 0.18);
+      ctx.save();
+      ctx.globalAlpha = BLOOD.alpha * Math.max(0, fade);
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.rot);
+      ctx.drawImage(tex[b.v], -b.s * pop / 2, -b.s * pop / 2, b.s * pop, b.s * pop);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 
 // Seeded so test runs stay deterministic. Wrapped in a draw counter so the
@@ -7452,7 +7596,15 @@ function onEnemyDefeated(e) {
    * entrance cutscene (see startBossIntro), where it plays letterboxed with both
    * fighters on screen, so there is nothing left here to wait for. */
   /* Level 02's last arena has no gate after it: clearing it ends the level. */
-  if (waveKills >= sec.quota) waveState = sec.final ? 'complete' : 'cleared';
+  if (waveKills >= sec.quota) {
+    waveState = sec.final ? 'complete' : 'cleared';
+    /* Level 02's last arena cleared IS a checkpoint — the keypad, the one a
+     * RESTART already returns to — so CONTINUE resumes there too (request 482).
+     * Saved progress only; the analytics checkpoint stays the gates'. */
+    if (sec.final && activeLevel === 2) {
+      try { window.RRProgress?.record('checkpoint', { level: 2, section, mission: 'keypad', difficulty: chosenDifficulty }); } catch {}
+    }
+  }
 }
 
 // Walk past a cleared gate â†’ next section. The last gate opens onto the boss
@@ -14677,6 +14829,7 @@ function damagePlayer(amount, from, heavy = amount >= HEAVY_DAMAGE, breaksGuard 
   player.hurtTimer = dur;
   player.invuln = dur + 0.45;
   triggerHitFx(player.x, player.y - 110, 0.08, 8);
+  onDarkiHurtFx(from, heavy);           // the camera shake and blood on the lens (request 483)
   rumbleController(heavy ? 180 : 105, heavy ? 0.92 : 0.58, heavy ? 0.68 : 0.38);
   /* AND HE SAYS SOMETHING ABOUT IT — unless that blow just killed him, in
    * which case the death cry below is the vocal and this one would talk over
@@ -18763,7 +18916,8 @@ function updateL2Scene(dt) {
       if (l2DoorIsOpen()) { l2m.path = 0; l2Next('enter'); }
       break;
     case 'enter': {
-      const wp = l2m.path === 0 ? S.doorway : S.inside;
+      // inside, far enough in that he and the workstation fill the two ends of the frame (request 484)
+      const wp = l2m.path === 0 ? S.doorway : { x: l2RoomShotMarkX(), y: S.inside.y };
       if (l2WalkTo(wp.x, wp.y, dt)) {
         if (l2m.path === 0) l2m.path = 1;
         else { l2m.inside = true; player.facing = 1; l2SetPose('idle'); l2DoorTo(false); l2Next('doorClosing'); }
@@ -18817,10 +18971,23 @@ function updateL2Scene(dt) {
  * Darki with the door; once inside it follows him; under the second line it
  * swings left to the door as it opens and wave 1 steps through, and is back on
  * Darki and the workstation as control returns. */
+/* REQUEST 484: walking into the strong room, Darki and the workstation hold the
+ * two ends of the frame — him at the left, the server computer at the right.
+ * The camera keeps him at the left end as he comes through the doorway, until
+ * the workstation reaches the right end; from there it holds through the door
+ * closing, the first line and the walk to the laptop. `l2RoomShotMarkX` is where
+ * he stops inside so the two fit at this screen's width. */
+const L2_ROOM_SHOT = { darki: 120, desk: 40 };           // world px between each and its frame edge
+const l2DeskRightX = () => L2_DESK.drawX + l2X(L2.desk.w);
+const l2RoomShotCam = () => l2DeskRightX() + L2_ROOM_SHOT.desk - viewW();
+const l2RoomShotMarkX = () => Math.max(L2M_STAGE.inside.x, l2RoomShotCam() + L2_ROOM_SHOT.darki);
+const l2RoomShot = () => (l2m.phase === 'enter' && l2m.path === 1)
+  || l2m.phase === 'doorClosing' || l2m.phase === 'vo1' || l2m.phase === 'toLaptop';
 function updateL2SceneCamera(dt) {
   const S = L2M_STAGE, vw = viewW();
   let want;
-  if (!l2m.inside) want = (player.x + S.doorway.x) / 2 - vw / 2;
+  if (l2RoomShot()) want = Math.min(player.x - L2_ROOM_SHOT.darki, l2RoomShotCam());
+  else if (!l2m.inside) want = (player.x + S.doorway.x) / 2 - vw / 2;
   else if (l2m.phase === 'vo2') {
     const t = l2VoiceT(), back = l2m.voDur - 2.2;
     want = t > 0.35 && t < back ? S.doorway.x - vw * 0.28 : player.x - vw * 0.66;
@@ -18829,7 +18996,11 @@ function updateL2SceneCamera(dt) {
   const hi = levelRightEdge() - vw;
   want = Math.max(lo, Math.min(hi, want));
   cameraX = Math.max(lo, Math.min(hi, damp(cameraX, want, 2.4, dt)));
-  cameraY = clampCamY(damp(cameraY, followCamY(), 3, dt));
+  // …and in that shot the frame sits a bar's height lower, so the bottom letterbox bar
+  // does not cut off his legs or the workstation (the top bar only takes ceiling)
+  // (and at the keyboard: the key pose reads as the whole figure in front of the whole desk, request 485)
+  const lift = l2RoomShot() || l2m.phase === 'typing' ? CUT.barH * l2m.letterbox / (tune.zoom || 1) : 0;
+  cameraY = clampCamY(damp(cameraY, followCamY() + lift, 3, dt));
 }
 
 function finishL2Scene() {
@@ -18858,6 +19029,8 @@ function startL2Defense({ fromCheckpoint = false } = {}) {
   // anyone already through the door joins the fight now, with a beat of grace
   for (const e of mobs()) if (!e.benched && e.spawnEntry && e.entryRoute === 'door' && e.entryPhase === 'arrived') endEnemyEntrance(e, 0.6);
   fightBanner = 1.1;
+  // the defense's start is the strong room's second checkpoint: CONTINUE resumes here (request 482)
+  try { window.RRProgress?.record('checkpoint', { level: 2, section, mission: 'defense', difficulty: chosenDifficulty }); } catch {}
 }
 
 /* ---- the waves ---- */
@@ -19116,6 +19289,14 @@ function updateL2Defense(dt) {
  * (_chromakey/req474/deskedge.js), plus a row so the lip stays on the top. */
 const L2_DESK_FRONT = [[0, 34], [16, 36], [40, 40], [72, 44], [88, 44], [100, 43], [112, 42], [144, 41], [144, 116], [0, 116]];
 const l2AtKeyboard = () => activeLevel === 2 && player.anim === 'computer';
+/* REQUEST 485 — THE KEY POSE ("Darki Using the server"): he stands at the desk's
+ * LEFT END, side-on, and the whole workstation is BEHIND him — his skirt over the
+ * drawer unit, his front foot across its front-left leg, his reaching hand on the
+ * keyboard. So whenever he is at that end (not genuinely behind the desk, past its
+ * back legs) the desk draws whole under him; no part of it covers his body. This
+ * replaces request 474's desk-front-over-the-legs layering. */
+const l2BesideDesk = () => activeLevel === 2 && !!l2Art.desk
+  && (l2AtKeyboard() || (player.x <= L2_DESK.drawX + l2X(24) && player.y >= L2_DESK.y - L2_DESK.backGap - 6));
 function drawLevel2Desk(frontOnly = false) {
   const img = l2Art.desk, D = L2.desk;
   if (!img) return;
@@ -20232,6 +20413,26 @@ function drawWorldPlate(img, dx, dy, scale) {
   ctx.drawImage(img, sx0, sy0, sw, sh,
     dx + sx0 * scale, dy + sy0 * scale, sw * scale, sh * scale);
 }
+/* THE FLOOR APRON (request 487). Level 02's art stops at row 724, and the PSD's
+ * navigable outline lets Darki's feet come within ~15 art rows of it — so at the
+ * near edge the camera, floored on the art, put his feet on the frame's bottom
+ * edge. The plate's own last `rows` rows, mirrored, continue the wet floor below
+ * the art (a mirror is seamless at the join), and the camera floor drops by that
+ * much: his feet keep Level 01's room under them. No new art, no black band. */
+function drawPlateApron(img, dx, dy, scale, rows) {
+  if (!img || !img.width) return;
+  const viewL = -PLATE_MARGIN, viewR = VIEW_W + PLATE_MARGIN;
+  const sx0 = Math.max(0, Math.min(img.width, Math.floor((viewL - dx) / scale)));
+  const sx1 = Math.max(0, Math.min(img.width, Math.ceil((viewR - dx) / scale)));
+  const sw = sx1 - sx0, n = Math.min(rows, img.height);
+  if (sw <= 0 || n <= 0) return;
+  const seam = dy + img.height * scale;
+  ctx.save();
+  ctx.translate(0, seam);
+  ctx.scale(1, -1);
+  ctx.drawImage(img, sx0, img.height - n, sw, n, dx + sx0 * scale, -n * scale, sw * scale, n * scale);
+  ctx.restore();
+}
 
 // SKY, the deepest layer. The authored sky art scrolls at its own slow
 // parallax; the warm gradient behind it is only a backstop — it covers the
@@ -20306,6 +20507,9 @@ function drawLevel2Back() {
   const ox = snapWorldX(-cameraX), oy = snapWorldY(L2.artY);
   if (l2Art.gpbA) drawWorldPlate(l2Art.gpbA, ox, oy, L2.scale);
   if (l2Art.gpbB) drawWorldPlate(l2Art.gpbB, ox + l2X(L2.gpb.split), oy, L2.scale);
+  // the floor carried on below the art, mirrored (request 487)
+  if (l2Art.gpbA) drawPlateApron(l2Art.gpbA, ox, oy, L2.scale, L2_APRON_ROWS);
+  if (l2Art.gpbB) drawPlateApron(l2Art.gpbB, ox + l2X(L2.gpb.split), oy, L2.scale, L2_APRON_ROWS);
   /* THE STRONG-ROOM DOOR, between the plate and the room that frames it (the PSD
    * order). Clipped to its doorway so a raised door can never show above the
    * frame's top edge where the room plate stops (art row 0). */
@@ -20320,7 +20524,10 @@ function drawLevel2Back() {
     ctx.drawImage(l2Art.door, ox + l2X(D.left), oy + l2X(D.top + l2Door.dy), l2X(D.w), l2X(D.h));
     ctx.restore();
   }
-  if (l2Art.room) ctx.drawImage(l2Art.room, rx, oy + l2X(L2.room.top), l2X(L2.room.w), l2X(L2.room.h));
+  if (l2Art.room) {
+    ctx.drawImage(l2Art.room, rx, oy + l2X(L2.room.top), l2X(L2.room.w), l2X(L2.room.h));
+    drawPlateApron(l2Art.room, rx, oy + l2X(L2.room.top), L2.scale, L2_APRON_ROWS);   // its floor too (request 487)
+  }
 }
 /* One middle pillar, from the SAME snapped origin as the GPB, so the two can
  * never drift apart. Called by the actor pass at the pillar's foot row. */
@@ -21236,11 +21443,9 @@ function actorList() {
     // the Obscure mask's crates, at their base row: anyone behind one is covered by it
     L2.cover.forEach((c, i) => actors.push({ depth: l2Y(c.top + c.h), tie: -48, draw: () => drawLevel2Cover(i) }));
     if (l2Art.desk) {
-      if (l2AtKeyboard()) {
-        // working the laptop (request 474): the desk behind him, its front over his legs
-        actors.push({ depth: player.y, tie: 99, draw: () => drawLevel2Desk() });
-        actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk(true) });
-      } else actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk() });   // the workstation (request 454)
+      // at the desk's left end (the key pose, request 485): the whole workstation behind him
+      if (l2BesideDesk()) actors.push({ depth: player.y - 0.01, tie: -49, draw: () => drawLevel2Desk() });
+      else actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk() });   // the workstation (request 454)
     }
   }
   for (const v of activeLevel === 2 ? [] : VEHICLE_ART) {
@@ -21322,7 +21527,9 @@ const REFLECT = {
   levels: {
     1: { src: 'layers/level-wet.png', artW: WORLD_W, artH: 1124, alpha: 0.9,
       tint: '#120c0a', tintA: 0.22, ripple: 1.6 },
-    2: { src: 'layers/level2/wet.png', artW: 7239, artH: 724, alpha: 0.95,
+    /* the whole extended level, strong room included, and the floor apron under
+     * it (request 488: the map used to stop at the original 7239 columns) */
+    2: { src: 'layers/level2/wet.png', artW: 13813, artH: 724 + L2_APRON_ROWS, alpha: 0.95,
       tint: '#0a0d14', tintA: 0.12, ripple: 0.8 },
   },
 };
@@ -22894,6 +23101,7 @@ function draw() {
   drawExecEmphasis();                      // vignette closes on a graded blow
   drawExecBrutalityDim();                  // â€¦and the reward round drops the lights
   drawFlash();                             // full-frame impact/rage wash
+  drawDamageFx();                          // low-health dim + blood on the lens (request 483), under the HUD
   if (levelEntry.active) drawLevelEntry(); // the dossier dissolves over the empty live street
   else if (tapCueState.drawn) tapCueState.drawn = false;   // …and the skip cue leaves with it (request 353)
   else if (cutscene.active) drawCutscene();     // the entrance owns the frameâ€¦
@@ -24177,6 +24385,13 @@ window.__ror = {
   // feature stopped him" without hardcoding 5600 in every suite that measures
   // travel. (ragerushverify already reached for this and got undefined.)
   get worldW() { return WORLD_W; },
+  /* Request 483: the danger dim, the blood on the lens and the shake. */
+  get damageFx() {
+    return { dim: dangerDim, blood: bloodPatches.map((b) => ({ x: b.x, y: b.y, s: b.s, age: b.age })),
+      shake: { timer: shakeTimer, mag: shakeMag, dur: shakeDur }, on: damageFxOn, shakeOn: screenShakeOn };
+  },
+  applySettings(s) { applyGameplaySettings(null, s); },
+  clearDamageFx() { bloodPatches.length = 0; },
   /* Level 02 (request 399): which world is live, its art, solids and band. */
   get activeLevel() { return activeLevel; },
   get l2() {
@@ -24197,7 +24412,7 @@ window.__ror = {
    * a harness may shorten the transfer or thin the waves for a test. */
   get mission() {
     return {
-      phase: l2m.phase, inside: l2m.inside, vo: l2m.vo, voLive: l2m.voLive, voDone: l2m.voDone, voT: l2VoiceT(),
+      phase: l2m.phase, path: l2m.path, inside: l2m.inside, vo: l2m.vo, voLive: l2m.voLive, voDone: l2m.voDone, voT: l2VoiceT(),
       voDur: l2m.voDur, voHeld: l2m.voHeld, screen: l2m.screen, powered: l2m.powered, progress: l2m.progress,
       compHp: l2m.compHp, waveNo: l2m.waveNo, queue: l2m.queue.length, letterbox: l2m.letterbox,
       door: { dy: l2Door.dy, target: l2Door.target, open: l2DoorIsOpen(), shut: l2DoorIsShut() },
@@ -25739,8 +25954,12 @@ function fontState() {
         startLevelEntry(transitionFrame, gameplayStartDuration);
         {
           // RESTART / RETRY: back into the arena (or boss room) he left (request 442).
+          // CONTINUE (request 482): the main menu's resume from the saved checkpoint
+          // hands it over the same way, flagged as a continue rather than a retry.
+          let continued = false;
+          try { continued = sessionStorage.getItem('rorContinue') === '1'; sessionStorage.removeItem('rorContinue'); } catch {}
           const cp = takeRetryCheckpoint();   // always consumed, so a stale one cannot outlive its retry
-          if (cp && retried) resumeAtCheckpoint(cp);
+          if (cp && (retried || continued)) resumeAtCheckpoint(cp);
         }
         startMusic();                         // BG1 begins under the narrated walk-in
       },

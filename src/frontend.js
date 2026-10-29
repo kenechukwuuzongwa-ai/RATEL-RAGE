@@ -19,6 +19,29 @@
 // The cinematic bars, shared with game.js (request 399): Level 2's screen changes.
 import { createBarCut } from './bars.js';
 
+/* START-POINT LINKS (request 486): `?start=strongroom` opens straight into Level 02
+ * at the keypad checkpoint — its last arena cleared, a few steps short of the
+ * keypad, so walking on plays the whole strong-room scene (the door, the server,
+ * the defense) without playing the level through. Optional `&diff=EASY|NORMAL|
+ * HARD|ARCADE`. It rides the same handoff CONTINUE and RESTART use (sessionStorage,
+ * read once by the boot below and by game.js), never touches saved progress, and
+ * strips itself from the address bar so a later reload (QUIT TO MENU) is ordinary. */
+const START_POINTS = { strongroom: { level: 2, section: 5, boss: false, mission: 'keypad' } };
+try {
+  const q = new URLSearchParams(location.search);
+  const sp = START_POINTS[(q.get('start') || '').toLowerCase()];
+  if (sp) {
+    const d = (q.get('diff') || 'NORMAL').toUpperCase();
+    sessionStorage.setItem('rorRetryCheckpoint', JSON.stringify(sp));
+    sessionStorage.setItem('rorRetryLevel', String(sp.level));
+    sessionStorage.setItem('rorRetryDifficulty', ['EASY', 'NORMAL', 'HARD', 'ARCADE'].includes(d) ? d : 'NORMAL');
+    sessionStorage.setItem('rorContinue', '1');
+    sessionStorage.setItem('rorSkipToGameplay', '1');
+    q.delete('start'); q.delete('diff');
+    history.replaceState(null, '', location.pathname + (q.toString() ? `?${q}` : '') + location.hash);
+  }
+} catch {}
+
 const H = 720;
 /* FULL-BLEED MOBILE: on a phone wider than 16:9 the front end widens its
  * virtual space to the device aspect (same rule as game.js), so the menus
@@ -267,9 +290,18 @@ const IDLE = {
   head: { frame: 0, x: 228, y: 138, w: 100, h: 100 },
 };
 
+/* CONTINUE (request 482): the saved progress's latest checkpoint (progress.js
+ * writes it at every gate, the boss room and Level 02's strong room, and clears
+ * it when a level is completed). With none, the row stays disabled. */
+const continuePoint = () => {
+  try {
+    const cp = window.RRProgress?.get()?.checkpoint;
+    return cp && cp.level >= 1 && cp.level <= 2 && (cp.section > 0 || cp.boss || cp.mission) ? cp : null;
+  } catch { return null; }
+};
 const MAIN_ITEMS = [
   { label: 'START GAME', icon: 'play' },
-  { label: 'CONTINUE', icon: 'restore', disabled: true, note: 'NO SAVE DATA' },
+  { label: 'CONTINUE', icon: 'restore', get disabled() { return !continuePoint(); }, note: 'NO SAVE DATA' },
   { label: 'LEVEL SELECT', icon: 'map' },
   { label: 'CHARACTERS', icon: 'person' },
   { label: 'SHOP', icon: 'cart' },
@@ -2779,6 +2811,7 @@ export function createFrontEnd({
       navForward();
       menuReturnSelection = selection;      // …and this is the row O comes back to
       if (item.label === 'START GAME') go('difficulty');
+      else if (item.label === 'CONTINUE') continueGame();
       else if (item.label === 'LEVEL SELECT') go('levelSelect');
       else if (item.label === 'CHARACTERS') go('characters');
       else if (item.label === 'SHOP') go('shop');
@@ -6632,6 +6665,24 @@ export function createFrontEnd({
     return false;
   }
 
+  /* CONTINUE (request 482): back to the latest checkpoint, through the same door
+   * RESTART CHECKPOINT uses — the checkpoint, level and difficulty handed over in
+   * sessionStorage and a clean reload straight into gameplay (no cinematic, no
+   * walk-in). game.js's onGameplayStart sees `rorContinue` and resumes there. */
+  function continueGame() {
+    const cp = continuePoint();
+    if (!cp) return;
+    try {
+      sessionStorage.setItem('rorRetryCheckpoint', JSON.stringify({ level: cp.level, section: cp.section,
+        boss: !!cp.boss, ...(cp.mission ? { mission: cp.mission } : {}) }));
+      sessionStorage.setItem('rorRetryLevel', String(cp.level));
+      sessionStorage.setItem('rorRetryDifficulty', cp.difficulty || 'NORMAL');
+      sessionStorage.setItem('rorContinue', '1');
+      sessionStorage.setItem('rorSkipToGameplay', '1');
+    } catch { return; }
+    location.reload();
+  }
+
   function startLevel(level = 1) {
     const { id, src } = selectLevel(level);
     /* LEVEL 02 IS ENTERED ON THE BARS (request 399). Coming out of the fight's
@@ -6770,6 +6821,12 @@ export function createFrontEnd({
        * replayed: a retry goes straight back to the fight, as Level 01's does. */
       let retryLevel = 1;
       try { retryLevel = Number(sessionStorage.getItem('rorRetryLevel')) || 1; sessionStorage.removeItem('rorRetryLevel'); } catch {}
+      // …and the difficulty it was played at (request 482: RETRY used to come back on NORMAL)
+      try {
+        const d = sessionStorage.getItem('rorRetryDifficulty');
+        sessionStorage.removeItem('rorRetryDifficulty');
+        if (['EASY', 'NORMAL', 'HARD', 'ARCADE'].includes(d)) difficulty = d;
+      } catch {}
       if (retryLevel === 2) {
         currentLevel = 2;
         introSrcOverride = LEVEL_INTRO[2];
@@ -7096,6 +7153,9 @@ export function createFrontEnd({
     /* The main list as drawn, so a test can find a row BY NAME instead of
      * hardcoding an index into a list that gets edited. */
     get mainItems() { return MAIN_ITEMS.map((i) => i.label); },
+    get continuePoint() { return continuePoint(); },          // request 482
+    get continueEnabled() { return !MAIN_ITEMS.find((i) => i.label === 'CONTINUE').disabled; },
+    get difficulty() { return difficulty; },
     get menuReturn() { return menuReturnSelection; },
     /* Which level the intro pipeline is currently running for — the proof that
      * `startLevel` chose a cut rather than just re-entering the default one. */
