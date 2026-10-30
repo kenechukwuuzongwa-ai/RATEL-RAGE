@@ -1388,6 +1388,7 @@ export function createFrontEnd({
   /* Set when a handover was asked for before the level finished loading: the
    * front end keeps drawing and goes the moment isWorldReady() turns true. */
   let pendingGameplay = false;
+  let previewHandoff = false;        // test-only: draw the hold card (previewScreen, request 489)
   let handoffT = 0;
 
   let ambience = null;
@@ -3409,9 +3410,22 @@ export function createFrontEnd({
     }
   }
 
+  let fontTrack = 0;                 // the tracking setFont last applied (request 489)
   function setFont(weight, size, spacing = 0, family = FONT) {
     ctx.font = `${weight} ${size}px ${family}`;
+    fontTrack = ('letterSpacing' in ctx) ? spacing : 0;
     if ('letterSpacing' in ctx) ctx.letterSpacing = spacing ? `${spacing}px` : '0px';
+  }
+  /* CENTRED, TRACKED TEXT, TRULY CENTRED (request 489). Canvas letter-spacing is
+   * added after EVERY glyph — the last one too — so a centred tracked string sits
+   * half a spacing left of where it was asked for, against anything (a bar, a
+   * rule) that is centred exactly. Used where that shows: the level-title
+   * loading screens, whose title and percentage sit over a centred bar. */
+  function fillCentred(text, x, y) {
+    const a = ctx.textAlign;
+    ctx.textAlign = 'center';
+    ctx.fillText(text, x + fontTrack / 2, y);
+    ctx.textAlign = a;
   }
 
   /* Every headline that used to be set in Impact goes through here, and the
@@ -5670,13 +5684,13 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    ctx.fillText(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 238);
+    fillCentred(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 238);
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
-    ctx.fillText(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 306);
+    fillCentred(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 306);
     setFont(500, 13, 1.4);
     ctx.fillStyle = C.muted;
-    ctx.fillText(isL2() ? 'NPF EVIDENCE & PROPERTY WING' : 'LAGOS NEVER SLEEPS.', W / 2, 340);
+    fillCentred(isL2() ? 'NPF EVIDENCE & PROPERTY WING' : 'LAGOS NEVER SLEEPS.', W / 2, 340);
     const f = Math.min(introLoadProgress, clamp(phaseT / 1.6, 0, 1));
     /* Centred against the LIVE viewport width: this bar was hardcoded at
      * 390..890 for the old 1280 frame, which put it left of centre the moment
@@ -5690,7 +5704,7 @@ export function createFrontEnd({
     ctx.fill();
     setFont(700, 11.5, 3);
     ctx.fillStyle = C.gold;
-    ctx.fillText(`LOADING STORY  ${Math.round(f * 100)}%`, W / 2, 456);
+    fillCentred(`LOADING STORY  ${Math.round(f * 100)}%`, W / 2, 456);
     drawGrain(0.6);
   }
 
@@ -6327,18 +6341,24 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    ctx.fillText(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 300);
+    fillCentred(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 300);
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
-    ctx.fillText(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 368);
+    fillCentred(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 368);
 
     if (err) {
       setFont(600, 13, 1.6);
       ctx.fillStyle = '#ff6a4d';
-      ctx.fillText(`ASSET ERROR — ${err}`, W / 2, 430);
+      fillCentred(`ASSET ERROR — ${err}`, W / 2, 430);
     } else {
       const f = clamp(worldProgress(), 0, 1);
-      const bx = 390, by = 424, bw = 500;
+      /* THE LEVEL-TITLE LOADING BAR, CENTRED ON THE LIVE WIDTH (request 489). It
+       * was hardcoded at x 390..890 — the centre of the old 1280 frame — while its
+       * title and percentage are centred on W / 2, so on every screen that is not
+       * exactly 1280 wide (every phone: the mobile layout widens W to the device
+       * aspect) the bar sat off to the left of its own title. drawLoading's bar had
+       * the same fix; this, the handover's, never got it. */
+      const bw = 500, by = 424, bx = Math.round(W / 2 - bw / 2);
       roundRectPath(ctx, bx, by, bw, 5, 2.5);
       ctx.fillStyle = 'rgba(255,255,255,0.10)';
       ctx.fill();
@@ -6347,7 +6367,7 @@ export function createFrontEnd({
       ctx.fill();
       setFont(700, 11.5, 3);
       ctx.fillStyle = C.gold;
-      ctx.fillText(`PREPARING THE STREETS  ${Math.round(f * 100)}%`, W / 2, 460);
+      fillCentred(`PREPARING THE STREETS  ${Math.round(f * 100)}%`, W / 2, 460);
     }
     drawGrain(0.6);
   }
@@ -7084,7 +7104,7 @@ export function createFrontEnd({
   }
 
   function drawPhase() {
-    if (pendingGameplay) { drawHandoff(); return; }
+    if (pendingGameplay || previewHandoff) { drawHandoff(); return; }
     if (phase === 'splash') drawSplash();
     else if (phase === 'title') drawTitle();
     else if (phase === 'menu') drawMenu();
@@ -7155,6 +7175,16 @@ export function createFrontEnd({
     get mainItems() { return MAIN_ITEMS.map((i) => i.label); },
     get continuePoint() { return continuePoint(); },          // request 482
     get continueEnabled() { return !MAIN_ITEMS.find((i) => i.label === 'CONTINUE').disabled; },
+    /* Test-only (request 489): show a loading screen as drawn, without its
+     * transition in front — 'loading' (LOADING STORY) or 'handoff' (PREPARING THE
+     * STREETS, the hold card a slow load shows after START MISSION). */
+    previewScreen(name, level = null) {
+      if (level) selectLevel(level);
+      barCut.reset();
+      previewHandoff = name === 'handoff';
+      if (name === 'loading') go('loading', { force: true });
+      return phase;
+    },
     get difficulty() { return difficulty; },
     get menuReturn() { return menuReturnSelection; },
     /* Which level the intro pipeline is currently running for — the proof that

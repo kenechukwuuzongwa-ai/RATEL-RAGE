@@ -1,0 +1,74 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "darki-pull-bat",
+  "image": "darki-pull-bat.png",
+  "frameWidth": 1005,
+  "frameHeight": 451,
+  "sheet": {
+    "cols": 6,
+    "rows": 6,
+    "frames": 33,
+    "imageWidth": 6030,
+    "imageHeight": 2706
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "pullBat",
+        "role": "custom",
+        "name": "pullBat",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32
+        ],
+        "fps": 30,
+        "fpsMode": "sheet",
+        "loop": false,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "play once forward"
+      }
+    ]
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 32,
+    "fps": 30,
+    "loop": false
+  },
+  "source": {
+    "file": "ASSETS/NEW SPRITES/pullbat.png",
+    "prep": "req489/pullprep.js: x0.44"
+  }
+}

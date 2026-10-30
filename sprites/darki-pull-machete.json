@@ -1,0 +1,63 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "darki-pull-machete",
+  "image": "darki-pull-machete.png",
+  "frameWidth": 1024,
+  "frameHeight": 460,
+  "sheet": {
+    "cols": 5,
+    "rows": 5,
+    "frames": 22,
+    "imageWidth": 5120,
+    "imageHeight": 2300
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "pullMachete",
+        "role": "custom",
+        "name": "pullMachete",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21
+        ],
+        "fps": 35,
+        "fpsMode": "sheet",
+        "loop": false,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "play once forward"
+      }
+    ]
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 21,
+    "fps": 35,
+    "loop": false
+  },
+  "source": {
+    "file": "ASSETS/NEW SPRITES/Pullmachette.png",
+    "prep": "req489/pullprep.js: x1"
+  }
+}

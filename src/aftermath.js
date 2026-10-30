@@ -26,7 +26,7 @@
  * or the camera. It starts when the fight is already over.
  */
 
-import { resolveIdentity, assertPlayerSafe, LEVELS, AFTERMATH, CASES, caseFor, caseIsOpen } from './story.js';
+import { resolveIdentity, assertPlayerSafe, LEVELS, AFTERMATH, CASES, caseFor, caseIsOpen as caseHasFile } from './story.js?v=ratelrage-kiwe-v1';
 
 /* The machine. Written out in order because the order IS the design — reading
  * this list top to bottom is reading the player's experience.
@@ -316,6 +316,16 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * one network, not one per case. */
   let caseId = CASES[0].id;
   const file = () => caseFor(caseId)?.file ?? AFTERMATH;
+  /* THE LEVEL THE PLAYER HAS REACHED (request 495). `levelId` follows whichever
+   * file is open; `reached` is the mission that just ended and does not move.
+   * A file can only be opened once its level is done — Level 01's network must
+   * not read Jimoh's Level 02 file ahead of the raid — and the network page is
+   * the one belonging to the case that just closed (Level 02's runs a rung
+   * higher, to Minister Kiwe). */
+  let reached = 1;
+  let netCaseId = CASES[0].id;
+  const net = () => caseFor(netCaseId)?.file?.cabal ?? AFTERMATH.cabal;
+  const caseIsOpen = (key) => caseHasFile(key) && (caseFor(key)?.level ?? Infinity) <= reached;
   let chosen = null;              // set once, so a double press cannot start two levels
 
   /* ------------------------------------------------- THE LEFT PANEL PAGER ---
@@ -381,13 +391,25 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * uses the supplied full dossier photograph. Each view crops that shared art
    * for its own frame, so the operation card and evidence screens cannot drift
    * onto different or missing portrait assets. */
-  const PORTRAITS = { olodo: '../frontend/olodo-dossier.jpg', jibril: '../frontend/jimoh-dossier.jpg' };
+  const PORTRAITS = { olodo: '../frontend/olodo-dossier.jpg', jibril: '../frontend/jimoh-dossier.jpg',
+    kiwe: '../frontend/kiwe-dossier.jpg' };
+  /* WHERE EACH FACE IS (request 498): the circle on the board and the network
+   * shows the face, centred — not the whole dossier picture shrunk into it,
+   * which put the face small and off to one side with the hat cut off. In the
+   * art's own pixels: the face's centre and the diameter the circle should
+   * show (head and hat included, a little air round them). */
+  const FACES = {
+    olodo: { cx: 312, cy: 185, d: 300 },
+    jibril: { cx: 365, cy: 190, d: 470 },
+    kiwe: { cx: 392, cy: 200, d: 440 },
+  };
   const portraits = {};
   function portrait(key) {
     if (!key || !PORTRAITS[key]) return null;
     if (portraits[key] !== undefined) return portraits[key];
     portraits[key] = null;
     const img = new Image();
+    img.face = FACES[key] ?? null;
     img.onload = () => { portraits[key] = img; };
     img.onerror = () => { portraits[key] = null; };
     img.src = new URL(PORTRAITS[key], import.meta.url);
@@ -476,7 +498,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   };
 
   const cabalCues = () => {
-    const chain = AFTERMATH.cabal.chain;
+    const chain = net().chain;
     const out = [];
     chain.forEach((node, i) => {
       /* When the rung STARTS landing — the disc pops in on that frame and the
@@ -510,7 +532,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * collision: its nodes are 0.60 s clear of the lines they feed. */
     for (let i = 0; i < chain.length - 1; i++) {
       const at = CHAIN.lineLag + i * CHAIN.step;
-      const known = i === 0;
+      const known = i === 0 || !!chain[i + 1]?.linked;   // established links sound settled
       out.push(
         { id: `cline${i}`, at, cue: 'traceDraw', dur: CHAIN.line,
           rate: known ? 1 : 0.72, gain: known ? 1 : 0.9 },
@@ -608,10 +630,17 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     if (opt.img) {
       ctx.save();
       ctx.beginPath(); ctx.arc(0, 0, n.r - 3, 0, Math.PI * 2); ctx.clip();
-      const s = Math.max((n.r * 2) / opt.img.width, (n.r * 2) / opt.img.height) * 1.12;
       ctx.globalAlpha *= opt.imgAlpha ?? 1;
-      ctx.drawImage(opt.img, -opt.img.width * s / 2, -opt.img.height * s / 2 - n.r * 0.16,
-        opt.img.width * s, opt.img.height * s);
+      const F = opt.img.face;
+      if (F) {
+        // the face, centred and sized to the disc (request 498)
+        const s = (2 * (n.r - 3)) / F.d;
+        ctx.drawImage(opt.img, -F.cx * s, -F.cy * s, opt.img.width * s, opt.img.height * s);
+      } else {
+        const s = Math.max((n.r * 2) / opt.img.width, (n.r * 2) / opt.img.height) * 1.12;
+        ctx.drawImage(opt.img, -opt.img.width * s / 2, -opt.img.height * s / 2 - n.r * 0.16,
+          opt.img.width * s, opt.img.height * s);
+      }
       ctx.restore();
     } else if (opt.silhouette) {
       ctx.save();
@@ -892,7 +921,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.fill();
     ctx.save();
     ctx.clip();
-    if (img) {
+    if (img?.face) {
+      const F = img.face, s = (2 * r) / F.d;     // the face, centred (request 498)
+      ctx.drawImage(img, cx - F.cx * s, cy - F.cy * s, img.width * s, img.height * s);
+    } else if (img) {
       const s = Math.max((r * 2) / img.width, (r * 2) / img.height) * 1.12;
       ctx.drawImage(img, cx - img.width * s / 2, cy - img.height * s / 2 - r * 0.16,
         img.width * s, img.height * s);
@@ -1106,7 +1138,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     /* ---- the board --------------------------------------------------- */
     const src = BOARD.source;
     const srcU = clamp((t - TRACE.srcAt) / TRACE.node, 0, 1);
-    const olodo = resolveIdentity('olodo');
+    const S = A.source ?? { character: 'olodo', bottom: 'LEVEL 01 · DEFEATED' };
+    const srcWho = resolveIdentity(S.character);
 
     // connections first, so a circle always covers the line's end
     A.evidence.forEach((ev, i) => {
@@ -1119,15 +1152,15 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     });
 
     drawNode(ui, src, srcU, {
-      tone: 'green', heavy: true, img: portrait('olodo'),
-      top: olodo.shortName, bottom: 'LEVEL 01 · DEFEATED',
+      tone: 'green', heavy: true, img: portrait(S.character),
+      top: srcWho.shortName, bottom: S.bottom,
     });
 
     A.evidence.forEach((ev, i) => {
       const u = clamp((t - ev.at) / TRACE.node, 0, 1);
       drawNode(ui, BOARD.items[i], u, {
         tone: 'gold',
-        icon: ev.id === 'phone' ? 'bell' : ev.id === 'witness' ? 'users' : 'map',
+        icon: ev.icon ?? (ev.id === 'phone' ? 'bell' : ev.id === 'witness' ? 'users' : 'map'),
         top: ev.no, bottom: ev.nodeStatus ?? ev.status, labelSize: 9.4,
       });
     });
@@ -1145,7 +1178,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * whether the page is a thing or a person. */
     const focusNode = page === null ? null
       : focus.cur?.kind === 'evidence' ? BOARD.items[focus.cur.i]
-        : focus.cur?.kind === 'case' ? (focus.cur.c.boss === 'olodo' ? BOARD.source : BOARD.target)
+        : focus.cur?.kind === 'case' ? (focus.cur.c.boss === S.character ? BOARD.source : BOARD.target)
           : focus.cur?.kind === 'target' ? BOARD.target : null;
     if (focusNode) {
       const n = focusNode;
@@ -1209,7 +1242,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const n = BOARD.target;
     const B = revealBeats();
     const started = revealT > 0;
-    const jibril = resolveIdentity('jibril');
+    const jibril = resolveIdentity(file().target.character ?? 'jibril');
 
     if (!started) {
       /* Before the reveal it is a question, not a person. */
@@ -1220,7 +1253,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       return;
     }
 
-    const img = portrait('jibril');
+    const img = portrait(file().target.character ?? 'jibril');
     drawNode(ui, n, 1, {
       tone: B.silhouette > 0 ? 'red' : 'dim',
       heavy: true,
@@ -1285,7 +1318,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   function drawTargetPlate(ui, u) {
     if (!(u > 0)) return;
     const C = ui.C;
-    const jibril = resolveIdentity('jibril');
+    const jibril = resolveIdentity(file().target.character ?? 'jibril');
     const box = PANEL_BOX;
     ctx.save();
     ctx.globalAlpha *= panelEntry() * u;
@@ -1372,10 +1405,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
 
   function drawCabalScreen(ui) {
     const C = ui.C;
-    const K = AFTERMATH.cabal;
+    const K = net();
     drawAnalysisBackground(ui);
-    header(ui, `${LEVELS[levelId].code}  /  ${LEVELS[levelId].title}`, K.heading,
-      'The chain runs higher than the street.', clamp(stateT / 0.5, 0, 1));
+    header(ui, `${LEVELS[reached].code}  /  ${LEVELS[reached].title}`, K.heading,
+      K.subhead ?? 'The chain runs higher than the street.', clamp(stateT / 0.5, 0, 1));
 
     /* The chain, bottom of the food chain at the top. Connections first.
      *
@@ -1388,7 +1421,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       const b = { x: CABAL_COL, y: cabalNodeY(i + 1), r: 34 };
       const u = clamp((cabalT - CHAIN.lineLag - i * CHAIN.step) / CHAIN.line, 0, 1);
       if (u <= 0) continue;
-      const known = i === 0;
+      const known = i === 0 || !!K.chain[i + 1]?.linked;   // established links draw solid (request 495)
       trimPath([{ x: a.x, y: a.y + a.r + 4 }, { x: b.x, y: b.y - b.r - 4 }], u, {
         color: known ? 'rgba(233,182,84,0.75)' : 'rgba(224,67,44,0.55)',
         width: 1.8, dash: known ? null : [6, 6], glow: true,
@@ -1508,10 +1541,19 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   }
 
   /* ==================================================== LevelSelectController */
-  const SELECT_CARDS = [
-    { id: 'replay', level: 1 },
-    { id: 'next', level: 2 },
+  /* The two cards follow the mission that just ended (request 495): replay it,
+   * or the next level. A next level that is not built yet (Level 03) still shows
+   * its target — the lead the case ends on — and its card returns to the menu. */
+  const selectCards = () => [
+    { id: 'replay', level: reached },
+    { id: 'next', level: reached + 1 },
   ];
+  const nextPlayable = () => !!LEVELS[reached + 1]?.playable;
+  const cardAction = (card) => {
+    const lvl = LEVELS[card.level];
+    if (card.id === 'replay') return `REPLAY ${lvl.code}`;
+    return lvl?.playable ? `PLAY ${lvl.code}` : 'RETURN TO MAIN MENU';
+  };
 
   /* ------------------------------------------------------- the card photograph
    *
@@ -1540,6 +1582,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   const CARD_ART = {
     olodo: { focusX: 0.45, focusY: 0.27, zoom: 1.62 },
     jibril: { focusX: 0.50, focusY: 0.22, zoom: 1.45 },
+    kiwe: { focusX: 0.52, focusY: 0.22, zoom: 1.7 },
   };
   const THUMB = { w: 168, h: 226, right: 26, top: 30 };
 
@@ -1641,8 +1684,9 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   function drawLevelSelect(ui) {
     const C = ui.C;
     drawAnalysisBackground(ui);
-    header(ui, 'CASE FILE 001  ·  CLOSED', 'SELECT OPERATION',
-      'The board is set. Choose where the investigation goes next.',
+    header(ui, `${LEVELS[reached].caseNo}  ·  CLOSED`, 'SELECT OPERATION',
+      nextPlayable() ? 'The board is set. Choose where the investigation goes next.'
+        : `The trail leads to ${resolveIdentity(LEVELS[reached + 1]?.boss).displayName}. ${LEVELS[reached + 1]?.code ?? 'The next case'} is being prepared.`,
       clamp(stateT / 0.5, 0, 1));
 
     const cards = [
@@ -1650,7 +1694,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ];
     const cw = 496, ch = 316;
 
-    SELECT_CARDS.forEach((card, i) => {
+    selectCards().forEach((card, i) => {
       const on = select === i;
       const lvl = LEVELS[card.level];
       const who = resolveIdentity(lvl.boss);
@@ -1691,7 +1735,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
 
       ui.setFont(700, 10, 3.0);
       ctx.fillStyle = card.id === 'next' ? C.red : C.green;
-      ctx.fillText(card.id === 'next' ? 'NEXT TARGET' : 'DEFEATED', box.x + 34, box.y + 116);
+      ctx.fillText(card.id === 'next' ? (lvl.playable ? 'NEXT TARGET' : 'NEXT TARGET · IN PREPARATION')
+        : (lvl.closedTag ?? 'DEFEATED'), box.x + 34, box.y + 116);
 
       ui.setDisplay(700, 27, 1.1);
       ctx.fillStyle = C.paper;
@@ -1712,14 +1757,14 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ctx.fillStyle = C.text;
       const blurb = card.id === 'next'
         ? assertPlayerSafe(who.role, 'select.role')
-        : 'Case closed. Run the street again.';
+        : (lvl.replayBlurb ?? 'Case closed. Run the street again.');
       ui.wrapLines(blurb, textW)
         .forEach((line, n) => ctx.fillText(line, box.x + 34, box.y + 224 + n * 17));
 
       // the action line
       ui.setFont(700, 11, 2.6);
       ctx.fillStyle = on ? C.orange : C.dim;
-      ctx.fillText(card.id === 'next' ? 'PLAY LEVEL 02' : 'REPLAY LEVEL 01', box.x + 34, box.y + ch - 34);
+      ctx.fillText(cardAction(card), box.x + 34, box.y + ch - 34);
       if (on) {
         ui.icon('cross', box.x + box.w - 46, box.y + ch - 39, 20, C.orange, 0.95);
       }
@@ -1937,7 +1982,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * another. Null means "nothing selected", i.e. Cross still just continues. */
   function chainAction() {
     if (state !== 'CABAL_NETWORK_REVEAL' || !chainPinned) return null;
-    const node = AFTERMATH.cabal.chain[chainSel];
+    const node = net().chain[chainSel];
     if (!node?.key) return null;
     const c = caseFor(node.key);
     if (!c) return null;
@@ -1973,7 +2018,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
        * along it, and refusing that reads as the diagram not being interactive
        * at all. */
       if (state === 'CABAL_NETWORK_REVEAL') {
-        const n = AFTERMATH.cabal.chain.length;
+        const n = net().chain.length;
         chainSel = chainPinned ? (chainSel + step + n) % n : (step > 0 ? 0 : n - 1);
         chainPinned = true;
         chainFade = 0;
@@ -2016,7 +2061,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         /* Through the same router Cross uses. Triangle used to refuse any rung
          * without a file, which meant the one node the player most wants to act
          * on — the NEXT TARGET — was the only one the button ignored. */
-        return enterNode(AFTERMATH.cabal.chain[chainSel], ui);
+        return enterNode(net().chain[chainSel], ui);
       }
       return false;
     }
@@ -2121,7 +2166,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         if (action === 'right' && select !== 1) { select = 1; ui?.navForward(); return true; }
         if (action === 'accept') {
           if (chosen) return true;               // one commit per sequence
-          const card = SELECT_CARDS[select];
+          const card = selectCards()[select];
           chosen = card.id;
           ui?.pressPulse(`after:${select}`);
           ui?.navForward();
@@ -2166,7 +2211,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
           : `PRESS X TO BEGIN ${LEVELS[act.c.level].code}`, 0.85);
     }
     else if (state === 'LEVEL_SELECT') {
-      prompt(ui, select === 1 ? 'PRESS X TO PLAY LEVEL 02' : 'PRESS X TO REPLAY LEVEL 01');
+      prompt(ui, `PRESS X TO ${cardAction(selectCards()[select])}`);
     } else prompt(ui, 'PRESS X TO SKIP', 0.5);
 
     /* The bar always names what the button will DO on THIS screen. A stale
@@ -2224,6 +2269,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     start(opts = {}) {
       active = true;
       levelId = opts.level ?? 1;
+      reached = levelId;
       stats = opts.stats ?? null;
       state = 'MISSION_COMPLETE';
       stateT = 0; bgFade = 0; revealT = 0; cabalT = 0; select = 1; chosen = null;
@@ -2232,6 +2278,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       /* The case the sequence is ABOUT is the one whose mission just ended, and
        * the level it ended on is the only thing that says which. */
       caseId = (CASES.find((c) => c.level === levelId) ?? CASES[0]).id;
+      netCaseId = caseId;
       narration.stop();
       traceAudio.reset();
       loadBackground();                          // decodes while the card is read
@@ -2280,7 +2327,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * is refused on the four rungs that have no file rather than inferring it
      * from a screenshot of a diagram. */
     get chain() {
-      const rungs = AFTERMATH.cabal.chain;
+      const rungs = net().chain;
       const node = rungs[chainSel];
       return {
         pinned: chainPinned,

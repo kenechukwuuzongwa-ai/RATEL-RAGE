@@ -61,6 +61,17 @@ const CHARACTERS = {
     role: 'Senior police official · position in the network unconfirmed',
     level: 2,
   },
+  /* THE SPONSOR (request 495). The name the cloned police server leads to: a
+   * serving federal minister whose office signs off Jimoh's payments. Invented,
+   * like everyone in this file. */
+  kiwe: {
+    internalReference: 'CASE_REFERENCE_002',
+    displayName: 'Minister Kiwe',
+    shortName: 'MINISTER KIWE',
+    rank: 'FEDERAL CABINET · SERVING',
+    role: 'Serving federal minister · named as the sponsor behind Jimoh’s network',
+    level: 3,
+  },
   cabal: {
     internalReference: 'ORG_UNKNOWN',
     displayName: 'The Cabal',
@@ -105,8 +116,25 @@ const LEVELS = {
     introOwn: true,
     caseNo: 'CASE FILE 002',
     playable: true,
+    closedTag: 'EXPOSED',
+    replayBlurb: 'Case closed. Raid the evidence wing again.',
+  },
+  /* The lead Level 02 ends on (request 495). Not built yet: the aftermath shows
+   * it as the next target and its card cannot be started. */
+  3: {
+    id: 3,
+    code: 'LEVEL 03',
+    title: 'THE SPONSOR',
+    place: 'ABUJA · THE MINISTRY',
+    boss: 'kiwe',
+    intro: null,
+    introOwn: false,
+    caseNo: 'CASE FILE 003',
+    playable: false,
   },
 };
+LEVELS[1].closedTag = 'DEFEATED';
+LEVELS[1].replayBlurb = 'Case closed. Run the street again.';
 
 /* ------------------------------------------------- the Level 01 aftermath ---
  * The post-mission sequence's script. Times are on the NARRATION CLOCK — the
@@ -129,6 +157,8 @@ const AFTERMATH = {
    * two screens away and naming it here throws the whole beat. */
   heading: 'CONNECTION TO NEXT TARGET',
   subhead: 'Recovered from MC Olodo. Analysis in progress.',
+  /* Whose circle the board starts from (the man the evidence was taken off). */
+  source: { character: 'olodo', bottom: 'LEVEL 01 · DEFEATED' },
 
   /* The read. Investigative, not a verdict — "points to", "appears connected",
    * "requires confirmation". Nothing here says anyone did anything. */
@@ -162,6 +192,7 @@ const AFTERMATH = {
        * under a 33px circle is a caption that overlaps its neighbours. */
       nodeStatus: 'UNDER ANALYSIS',
       tone: 'gold',
+      icon: 'bell',
       body: [
         'A recording recovered from the handset suggests Olodo was',
         'in contact with an unknown intermediary about the handling',
@@ -177,6 +208,7 @@ const AFTERMATH = {
       status: 'UNVERIFIED',
       nodeStatus: 'UNVERIFIED',
       tone: 'gold',
+      icon: 'users',
       body: [
         'Multiple sources describe contact between Olodo’s network',
         'and a senior police official. Accounts are consistent with',
@@ -192,6 +224,7 @@ const AFTERMATH = {
       status: 'REQUIRES FURTHER INVESTIGATION',
       nodeStatus: 'UNRESOLVED',
       tone: 'gold',
+      icon: 'map',
       body: [
         'Timelines, statements and case movements do not fully match.',
         'The handling of the investigation raises questions that have',
@@ -249,6 +282,130 @@ const AFTERMATH = {
   },
 };
 
+/* ------------------------------------------------- the Level 02 aftermath ---
+ * Request 495. Same machine, same shape as Level 01's — this is the read that
+ * plays over analysisBG once the strong room's door comes down. What Darki took
+ * out of that room is a CLONE of the police server's drive, and what it holds is
+ * Jimoh's own archive. Where Level 01 could only point, this one names: the
+ * payments all clear through one office, and that office belongs to a serving
+ * minister — the sponsor, and the lead Level 03 starts from.
+ *
+ * Times are on the narration clock (no recorded read yet, so its own clock),
+ * each script row one sentence of `narration`. */
+const AFTERMATH_L2 = {
+  id: 'level02_evidence',
+  voice: null,
+  fallbackDur: 15.2,
+  typewriterSpeed: 0.035,
+
+  heading: 'CONNECTION TO NEXT TARGET',
+  subhead: 'Cloned from the NPF evidence server. Analysis in progress.',
+  source: { character: 'jibril', bottom: 'LEVEL 02 · EXPOSED' },
+
+  narration:
+    'The cloned drive is Jimoh’s own archive. '
+    + 'Case files rewritten, seized property sold off, protection paid for by the men he was meant to arrest. '
+    + 'Every payment clears through one office. '
+    + 'One signature approves them all: Minister Kiwe. '
+    + 'Jimoh was never the top of this chain. He was the sponsor’s enforcer.',
+
+  script: [
+    [0.30, 1.90],
+    [2.20, 6.30],
+    [6.60, 8.20],
+    [8.50, 10.50],
+    [10.80, 13.60],
+  ],
+
+  evidence: [
+    {
+      id: 'records',
+      no: 'EVIDENCE 01',
+      title: 'ALTERED CASE RECORDS',
+      source: 'NPF SERVER · DRIVE CLONE',
+      status: 'VERIFIED AGAINST THE ORIGINALS',
+      nodeStatus: 'VERIFIED',
+      tone: 'gold',
+      icon: 'map',
+      body: [
+        'Hundreds of closed cases were edited after the fact —',
+        'charges dropped, exhibits re-logged as destroyed —',
+        'every change made under Jimoh’s own login.',
+      ],
+      at: 0.70, draw: 1.30,
+    },
+    {
+      id: 'transfers',
+      no: 'EVIDENCE 02',
+      title: 'SEIZED ASSET TRANSFERS',
+      source: 'EVIDENCE & PROPERTY WING',
+      status: 'TRACED TO PRIVATE ACCOUNTS',
+      nodeStatus: 'TRACED',
+      tone: 'gold',
+      icon: 'users',
+      body: [
+        'Seized cash and vehicles left the wing on paper and',
+        'resurfaced in private accounts and front companies',
+        'run by Jimoh’s people — protection, paid in exhibits.',
+      ],
+      at: 3.20, draw: 3.80,
+    },
+    {
+      id: 'messages',
+      no: 'EVIDENCE 03',
+      title: 'THE SPONSOR’S APPROVALS',
+      source: 'JIMOH’S OFFICE ACCOUNT',
+      status: 'SPONSOR IDENTIFIED',
+      nodeStatus: 'SPONSOR NAMED',
+      tone: 'gold',
+      icon: 'bell',
+      body: [
+        'Every transfer and every promotion waits on one sign-off,',
+        'routed through the office of a serving federal minister.',
+        'The same title appears on all of them.',
+      ],
+      at: 6.70, draw: 7.30,
+    },
+  ],
+
+  reveal: {
+    at: 8.90,
+    scan: 0.85,
+    glitch: 0.55,
+    silhouette: 0.70,
+    portrait: 0.90,
+    name: 0.75,
+  },
+
+  target: {
+    character: 'kiwe',
+    tag: 'NEXT TARGET',
+    level: 'LEVEL 03',
+    note: 'Serving federal minister. Every file on the drive leads back to his office. Jimoh answered to him.',
+  },
+
+  /* ---- the network, one rung higher than Level 01 left it ---------------- */
+  cabal: {
+    heading: 'CONNECTION TO THE CABAL',
+    subhead: 'The chain runs from the street into government.',
+    narration:
+      'Olodo collected on the street. Jimoh buried the cases. Minister Kiwe paid for both. '
+      + 'Whoever the minister answers to sits higher still — and the trail now runs into government.',
+    fallbackDur: 10.4,
+    script: [[0.25, 3.60], [3.90, 6.80], [7.10, 9.90]],
+    /* `linked` on a rung: the line INTO it is established (solid gold), not a
+     * guess (dashed red). Olodo -> Jimoh and Jimoh -> Kiwe are now on file. */
+    chain: [
+      { key: 'olodo', top: 'MC OLODO', bottom: 'LEVEL 01 · DEFEATED', tone: 'green', portrait: true },
+      { key: 'jibril', top: 'MOSHUN JIMOH', bottom: 'LEVEL 02 · EXPOSED', tone: 'green', portrait: true, linked: true },
+      { key: 'kiwe', top: 'MINISTER KIWE', bottom: 'LEVEL 03 · NEXT TARGET', tone: 'red', portrait: true, linked: true },
+      { key: null, top: '', bottom: 'UNIDENTIFIED', tone: 'dim', unknown: true },
+      { key: 'cabal', top: 'THE CABAL', bottom: 'IDENTITY UNKNOWN', tone: 'alert' },
+    ],
+    footer: 'THE CABAL   ·   IDENTITY UNKNOWN',
+  },
+};
+
 /* --------------------------------------------------------- the case index ---
  *
  * ONE ROW PER BOSS, and the thing both of the aftermath's browsers walk.
@@ -297,11 +454,22 @@ const CASES = [
     tone: 'red',
     file: null,
   },
+  {
+    id: 'kiwe',
+    boss: 'kiwe',
+    level: 3,
+    status: 'NEXT TARGET',
+    tone: 'red',
+    file: null,
+  },
 ];
 
-/* The one line that ties the index to the read. Kept as an assignment rather
- * than an inline reference so the reason above stays true and visible. */
+/* The lines that tie the index to the reads. Kept as assignments rather than
+ * inline references so the reason above stays true and visible. Jimoh's file is
+ * the Level 02 read (request 495); the aftermath only lets a file be opened once
+ * its level has been completed, so Level 01's network cannot read ahead. */
 CASES[0].file = AFTERMATH;
+CASES[1].file = AFTERMATH_L2;
 
 /* A case by its id, or by the character it is about — the Cabal chain keys its
  * rungs by character, the pager keys its pages by case, and they must resolve
@@ -390,6 +558,7 @@ export function auditPlayerStrings() {
     }
   };
   walk(AFTERMATH, 'AFTERMATH');
+  walk(AFTERMATH_L2, 'AFTERMATH_L2');
   walk(LEVELS, 'LEVELS');
   /* The case index is player-facing copy too — its statuses are printed under
    * portraits on two screens. Walked with `file` cut out, because that is a
@@ -406,4 +575,4 @@ export function auditPlayerStrings() {
   };
 }
 
-export { CHARACTERS, LEVELS, AFTERMATH, CASES, INTERNAL_TAGS };
+export { CHARACTERS, LEVELS, AFTERMATH, AFTERMATH_L2, CASES, INTERNAL_TAGS };
