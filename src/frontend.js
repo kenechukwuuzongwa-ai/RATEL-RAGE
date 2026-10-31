@@ -1014,11 +1014,25 @@ const breathe = (t, period, phase = 0) => 0.5 - 0.5 * Math.cos(((t / period) + p
 /* Frame-rate independent approach — the same visual timing at 30 or 144 fps. */
 const approach = (cur, target, tau, dt) => cur + (target - cur) * (1 - Math.exp(-dt / tau));
 
+/* The web build's WebP twins (request 507): a sprite/layer PNG that
+ * deploy/build-web.js re-encoded is fetched as its .webp, exactly as game.js's
+ * assetPath does. No list (editor, APK) -> the PNG, unchanged. */
+const webArt = (src) => {
+  const list = window.RR_WEB && window.RR_WEB.webp;
+  if (!Array.isArray(list)) return src;
+  const m = /(?:^|\/)((?:lowres\/)?(?:sprites|layers)\/[^?#]+\.png)$/i.exec(String(src));
+  return m && list.includes(m[1]) ? String(src).replace(/\.png$/i, '.webp') : src;
+};
 const image = (src) => new Promise((resolve, reject) => {
   const img = new Image();
   img.onload = () => resolve(img);
-  img.onerror = () => reject(new Error(`Could not load ${src}`));
-  img.src = new URL(src, import.meta.url);
+  const url = new URL(webArt(src), import.meta.url);
+  img.onerror = () => {
+    if (!/\.webp$/i.test(url.pathname)) return reject(new Error(`Could not load ${src}`));
+    img.onerror = () => reject(new Error(`Could not load ${src}`));  // no WebP support: the PNG
+    img.src = new URL(src, import.meta.url);
+  };
+  img.src = url;
 });
 
 function roundRectPath(c, x, y, w, h, r = 8) {
@@ -4783,6 +4797,24 @@ export function createFrontEnd({
   /* `inkW` still sets the WIDTH — the bar is the mark's width by design, and
    * that tie is the one thing about it that should follow a re-cut. Only the
    * vertical position left the mark's orbit; see TITLE.barY. */
+  /* MEGABYTES IN (request 507). The percentage counts SHEETS, and on a slow
+   * connection one big sheet can hold it still for a minute, which reads as a
+   * hang. The art that has actually arrived, summed off the browser's own
+   * resource timing (twice a second, not every frame), keeps moving instead. */
+  let loadedMB = 0, loadedMBAt = -1;
+  try { performance.setResourceTimingBufferSize?.(3000); } catch {}
+  function artMBIn() {
+    const now = performance.now();
+    if (now - loadedMBAt < 500) return loadedMB;
+    loadedMBAt = now;
+    let b = 0;
+    try {
+      for (const e of performance.getEntriesByType('resource'))
+        if (/\.(webp|png|jpe?g)(\?|$)/i.test(e.name)) b += e.encodedBodySize || e.transferSize || 0;
+    } catch {}
+    loadedMB = b / 1048576;
+    return loadedMB;
+  }
   function drawTitleLoadBar(inkW) {
     const k = easeOut((phaseT - TITLE.barAt) / TITLE.barIn);
     if (k <= 0) return;
@@ -4807,7 +4839,8 @@ export function createFrontEnd({
       ctx.textBaseline = 'alphabetic';
       setFont(700, 9.5, 3.2);
       ctx.fillStyle = 'rgba(207,216,234,0.75)';
-      ctx.fillText(`LOADING  ${Math.round(p * 100)}%`, W / 2, y + 20);
+      const mb = artMBIn();
+      ctx.fillText(`LOADING  ${Math.round(p * 100)}%${mb >= 0.1 ? `  ·  ${mb.toFixed(1)} MB` : ''}`, W / 2, y + 20);
     }
     ctx.restore();
   }

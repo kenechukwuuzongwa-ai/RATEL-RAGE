@@ -21,6 +21,7 @@ mobile/build-log.txt
 supabase/.temp/
 # web build output (node deploy/build-web.js) and tool caches
 deploy/dist/
+deploy/.webp-cache/
 .wrangler/
 **/.wrangler/
 .claude/

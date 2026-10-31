@@ -2327,13 +2327,26 @@ const LOWRES = (() => {
     return Array.isArray(list) && list.length ? new Set(list) : null;
   } catch { return null; }
 })();
-const assetPath = (src) => (LOWRES && LOWRES.has(src) ? 'lowres/' + src : src);
+/* …AND THE WEB'S ART IS WEBP (request 507). deploy/build-web.js re-encodes the
+ * plates and sheets (q90, lossless alpha — ~5x smaller, visually the same; see
+ * _chromakey/req505) next to the PNGs and lists every path it converted in
+ * RR_WEB.webp. The editor and the APK have no list and keep loading the PNGs. */
+const WEBP = (() => {
+  try {
+    const list = window.RR_WEB && window.RR_WEB.webp;
+    return Array.isArray(list) && list.length ? new Set(list) : null;
+  } catch { return null; }
+})();
+const assetPath = (src) => {
+  const p = LOWRES && LOWRES.has(src) ? 'lowres/' + src : src;
+  return WEBP && WEBP.has(p) ? p.replace(/\.png$/i, '.webp') : p;
+};
 
 /* Three tries, spaced out: on a phone network one dropped request used to be
  * the end of the whole load (the world waits on every sheet). */
 function loadImage(src, tries = 3) {
   // resolve against this module so test pages in /tests load the same asset
-  const url = new URL('../' + encodeURI(assetPath(src)), import.meta.url);
+  let url = new URL('../' + encodeURI(assetPath(src)), import.meta.url);
   return new Promise((resolve, reject) => {
     let attempt = 0;
     const go = () => {
@@ -2341,7 +2354,9 @@ function loadImage(src, tries = 3) {
       img.onload = () => resolve(img);
       img.onerror = () => {
         if (++attempt < tries) setTimeout(go, 700 * attempt);
-        else reject(new Error(`Failed to load ${src}`));
+        else if (/\.webp$/i.test(url.pathname)) {          // a browser without WebP: the PNG is still there
+          url = new URL(url.href.replace(/\.webp$/i, '.png')); attempt = 0; go();
+        } else reject(new Error(`Failed to load ${src}`));
       };
       img.src = url;
     };

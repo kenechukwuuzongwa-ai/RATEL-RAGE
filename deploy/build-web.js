@@ -16,7 +16,9 @@
  *                    renders 1280x720, and Cloudflare Pages refuses files over
  *                    25 MiB. --full-intro keeps the 1080p master (for a host
  *                    without that limit).
- *   4. index.html    gets window.RR_WEB = { production, build, lowres } inline,
+ *   3b. *.webp       a WebP twin beside each plate/sheet PNG (deploy/webp-art.js),
+ *                    listed in window.RR_WEB.webp; the game fetches those instead.
+ *   4. index.html    gets window.RR_WEB = { production, build, lowres, webp } inline,
  *                    which hides the authoring tools (game.js DEV_TOOLS).
  *   5. _headers      cache + safety headers (Cloudflare Pages / Netlify syntax).
  *
@@ -123,11 +125,22 @@ for (const [m, t] of INTRO_TWINS) {
 }
 const intro = introNotes.join('; ');
 
+// 4b. WebP twins of the plates and sheets (deploy/webp-art.js; request 507).
+/* ~5x smaller at q90 with exact alpha. The PNGs stay beside them; `--no-webp`
+ * leaves the build PNG-only. */
+let webp = [];
+if (!args.includes('--no-webp')) {
+  const r = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'webp-art.js'), OUT],
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] });
+  if (r.status !== 0) { console.error('webp-art failed'); process.exit(1); }
+  webp = JSON.parse(r.stdout.trim().split('\n').pop());
+}
+
 // 5. index.html: production flag + the lowres list, before any game script
 const build = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13);
 const idx = path.join(OUT, 'index.html');
 let html = fs.readFileSync(idx, 'utf8');
-const flag = `<script>window.RR_WEB = ${JSON.stringify({ production: true, build: `web-${build}`, lowres })};</script>`;
+const flag = `<script>window.RR_WEB = ${JSON.stringify({ production: true, build: `web-${build}`, lowres, webp })};</script>`;
 if (!html.includes('<meta charset="UTF-8" />')) { console.error('index.html: charset meta not found'); process.exit(1); }
 html = html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n  ${flag}`);
 /* Cloudflare Web Analytics (visits/page views for ratel-rage.pages.dev). Web build
@@ -209,9 +222,9 @@ const files = walk(OUT);
 const bytes = files.reduce((s, f) => s + fs.statSync(f).size, 0);
 const big = files.filter((f) => fs.statSync(f).size > CF_FILE_LIMIT).map((f) => path.relative(OUT, f));
 fs.writeFileSync(path.join(OUT, 'build-info.json'), JSON.stringify({
-  build: `web-${build}`, files: files.length + 1, bytes, lowres: lowres.length, phoneOnly, intro, overCfLimit: big,
+  build: `web-${build}`, files: files.length + 1, bytes, lowres: lowres.length, webp: webp.length, phoneOnly, intro, overCfLimit: big,
 }, null, 2));
 console.log(`web build -> ${OUT}`);
 console.log(`  ${files.length + 1} files, ${(bytes / 1048576).toFixed(1)} MB`);
-console.log(`  lowres (Android browsers): ${lowres.length} files; phone-only names: ${phoneOnly}; intro: ${intro}`);
+console.log(`  lowres (Android browsers): ${lowres.length} files; phone-only names: ${phoneOnly}; webp twins: ${webp.length}; intro: ${intro}`);
 if (big.length) console.log(`  WARNING over Cloudflare Pages' 25 MiB file limit: ${big.join(', ')}`);
