@@ -1,0 +1,50 @@
+{
+  "generatedBy": "Sorceress Sprite Analyzer",
+  "sprite": "darki-ramrage",
+  "image": "darki-ramrage.png",
+  "frameWidth": 512,
+  "frameHeight": 443,
+  "sheet": {
+    "cols": 3,
+    "rows": 3,
+    "frames": 8,
+    "imageWidth": 1536,
+    "imageHeight": 1329
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "ramRage",
+        "role": "custom",
+        "name": "ramRage",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "fps": 30,
+        "fpsMode": "sheet",
+        "loop": false,
+        "pingPong": false,
+        "reverse": false,
+        "playback": "play once forward",
+        "description": "RamRage is activated by flickering the joy stick first to opposite direction and then to the main direction and holding to it. it is first once stamina is full and has more force and aggression when raging. use real beleivable physics."
+      }
+    ]
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 7,
+    "fps": 30,
+    "loop": false
+  },
+  "source": {
+    "file": "ASSETS/NEW SPRITES/ramrage_1024x886_sheet.png",
+    "prep": "req501/ramprep.js: x0.5"
+  }
+}

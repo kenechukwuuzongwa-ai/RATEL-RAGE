@@ -297,7 +297,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   let levelId = 1;
   let stats = null;
   let bgFade = 0;                 // analysisBG cross-fade, 0..1
-  let select = 1;                 // LEVEL_SELECT: 0 = replay 01, 1 = play 02
+  let select = 1;                 // LEVEL_SELECT: index into selectCards() (replays 01..reached, then next)
   let revealT = 0;                // NEXT_TARGET_REVEAL's own clock
   let cabalT = 0;
   /* Where the chain's clock was when the player left it for the level chooser,
@@ -392,7 +392,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * for its own frame, so the operation card and evidence screens cannot drift
    * onto different or missing portrait assets. */
   const PORTRAITS = { olodo: '../frontend/olodo-dossier.jpg', jibril: '../frontend/jimoh-dossier.jpg',
-    kiwe: '../frontend/kiwe-dossier.jpg' };
+    kiwe: '../frontend/kiwe-dossier.jpg?v=desk' };   // request 501: the supplied desk portrait
   /* WHERE EACH FACE IS (request 498): the circle on the board and the network
    * shows the face, centred — not the whole dossier picture shrunk into it,
    * which put the face small and off to one side with the hat cut off. In the
@@ -401,7 +401,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   const FACES = {
     olodo: { cx: 312, cy: 185, d: 300 },
     jibril: { cx: 365, cy: 190, d: 470 },
-    kiwe: { cx: 392, cy: 200, d: 440 },
+    kiwe: { cx: 367, cy: 296, d: 350 },   // the supplied desk portrait (request 501): fedora + shades
   };
   const portraits = {};
   function portrait(key) {
@@ -1541,14 +1541,173 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   }
 
   /* ==================================================== LevelSelectController */
-  /* The two cards follow the mission that just ended (request 495): replay it,
-   * or the next level. A next level that is not built yet (Level 03) still shows
-   * its target — the lead the case ends on — and its card returns to the menu. */
-  const selectCards = () => [
-    { id: 'replay', level: reached },
-    { id: 'next', level: reached + 1 },
-  ];
+  /* The cards follow the mission that just ended (request 495): EVERY level up
+   * to and including it can be replayed, then the next level. A next level that
+   * is not built yet (Level 03) still shows its target — the lead the case ends
+   * on — and its card returns to the menu.
+   *
+   * REQUEST 501: this used to be exactly [reached, reached + 1], which was the
+   * whole list after Level 01 and silently dropped Level 01 the moment Level 02
+   * became the mission that ended. Every level <= `reached` has been completed
+   * to get here, so listing them unlocks nothing that was not already open. */
+  const selectCards = () => {
+    const out = [];
+    for (let n = 1; n <= reached; n++) if (LEVELS[n]) out.push({ id: 'replay', level: n });
+    if (LEVELS[reached + 1]) out.push({ id: 'next', level: reached + 1 });
+    return out;
+  };
+  /* The default focus: the next level, as it always was. */
+  const defaultSelect = () => Math.max(0, selectCards().length - 1);
   const nextPlayable = () => !!LEVELS[reached + 1]?.playable;
+
+  /* --------------------------------------------- THE SCROLLING CARD GRID ---
+   * Two cards a row at the size they were designed at, centred on the frame.
+   * More than one row does not fit between the header and the prompt, so the
+   * grid lives in a clipped viewport that scrolls: wheel/trackpad, a drag with
+   * the mouse or a finger, and focus moves scroll the focused card into view.
+   * Content y 0 is the viewport top; the first row sits at the old y = 214. */
+  const SEL = { cw: 496, ch: 316, gapX: 48, gapY: 26, top: 190, bottom: 650, pad: 24, slop: 8 };
+  let selScroll = 0, selScrollTarget = 0;
+  let selDrag = null;               // { id, x0, y0, p0, s0, moved, axis }
+  function selLayout() {
+    const cards = selectCards();
+    const rows = Math.ceil(cards.length / 2);
+    const x0 = Math.round(W / 2 - (SEL.cw * 2 + SEL.gapX) / 2);
+    const boxes = cards.map((card, i) => {
+      const row = Math.floor(i / 2), col = i % 2;
+      const inRow = Math.min(2, cards.length - row * 2);
+      /* A row with one card centres it, rather than leaving it hanging left. */
+      const x = inRow === 2 ? x0 + col * (SEL.cw + SEL.gapX) : Math.round(W / 2 - SEL.cw / 2);
+      return { card, x, y: SEL.pad + row * (SEL.ch + SEL.gapY), w: SEL.cw, h: SEL.ch };
+    });
+    const contentH = SEL.pad * 2 + rows * SEL.ch + Math.max(0, rows - 1) * SEL.gapY;
+    const viewH = SEL.bottom - SEL.top;
+    return { cards, boxes, contentH, viewH, max: Math.max(0, contentH - viewH) };
+  }
+  const selClamp = (v) => clamp(v, 0, selLayout().max);
+  /* The smallest scroll that shows the whole of card `i` (with the grid's own
+   * padding around it). `instant` for arriving; otherwise it eases. */
+  function selReveal(i, instant = false) {
+    const L = selLayout();
+    const b = L.boxes[i];
+    if (!b) return;
+    let t = selScrollTarget;
+    if (b.y - SEL.pad < t) t = b.y - SEL.pad;
+    if (b.y + b.h + SEL.pad > t + L.viewH) t = b.y + b.h + SEL.pad - L.viewH;
+    selScrollTarget = clamp(t, 0, L.max);
+    if (instant) selScroll = selScrollTarget;
+  }
+  function selMove(to) {
+    const n = selectCards().length;
+    /* At an edge the focus stays put, but a direction press still brings the
+     * focused card back into view (it may have been scrolled away by hand). */
+    if (to < 0 || to >= n || to === select) { selReveal(select); return false; }
+    select = to;
+    selReveal(select);
+    return true;
+  }
+
+  /* POINTER INPUT FOR THIS SCREEN. game.js's mouse path accepts on mousedown
+   * and touch.js's gesture layer turns a swipe into arrow keys or Enter — both
+   * of which would make a scroll gesture choose or launch a level. So while the
+   * level select is up, this screen takes the pointer itself (window capture,
+   * ahead of both), and only for events aimed at the game: the canvas, or the
+   * gesture layer laid over it on touch devices.
+   *   move < 8 px and release  -> a TAP: pick the card under it and launch it
+   *                               (the old click/tap contract — a tap off the
+   *                               cards confirms the focused one, as before)
+   *   move >= 8 px vertically  -> a DRAG: scrolls; never selects or launches
+   *   move >= 8 px sideways    -> a swipe; left goes back (touch.js's meaning)
+   *   mouse hover              -> focuses the card under it (as before) */
+  const selCanvas = ctx.canvas;
+  const selOwns = () => active && state === 'LEVEL_SELECT';
+  const selTarget = (e) => !!e.target && (e.target === selCanvas || e.target.id === 'ror-gest');
+  const selHit = (e) => {
+    const ui = getUi();
+    if (!ui) return null;
+    const h = ui.hitTest(ui.pointerPos(e));
+    return h && String(h.id).startsWith('after:') ? h : null;
+  };
+  if (typeof window !== 'undefined' && selCanvas) {
+    const swallow = (e) => { e.stopImmediatePropagation(); if (e.cancelable) e.preventDefault(); };
+    window.addEventListener('pointerdown', (e) => {
+      if (!selOwns() || !selTarget(e)) return;
+      swallow(e);
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      try { selCanvas.focus({ preventScroll: true }); } catch {}
+      const ui = getUi();
+      selDrag = { id: e.pointerId, x0: e.clientX, y0: e.clientY,
+        p0: ui ? ui.pointerPos(e) : { x: 0, y: 0 }, s0: selScroll, moved: false, axis: null };
+    }, true);
+    window.addEventListener('pointermove', (e) => {
+      if (!selOwns()) { selDrag = null; return; }
+      if (selDrag && e.pointerId === selDrag.id) {
+        swallow(e);
+        const dx = e.clientX - selDrag.x0, dy = e.clientY - selDrag.y0;
+        if (!selDrag.moved && Math.hypot(dx, dy) >= SEL.slop) {
+          selDrag.moved = true;
+          selDrag.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
+        }
+        if (selDrag.moved && selDrag.axis === 'y') {
+          const ui = getUi();
+          const p = ui ? ui.pointerPos(e) : selDrag.p0;
+          selScroll = selScrollTarget = selClamp(selDrag.s0 - (p.y - selDrag.p0.y));
+        }
+        return;
+      }
+      if (!selTarget(e)) return;
+      swallow(e);
+      if (e.pointerType !== 'mouse' || selDrag) return;
+      const h = selHit(e);
+      if (h && h.index !== select) { select = h.index; getUi()?.navForward(); }
+    }, true);
+    window.addEventListener('pointerup', (e) => {
+      if (!selDrag || e.pointerId !== selDrag.id) return;
+      const d = selDrag;
+      selDrag = null;
+      if (!selOwns()) return;
+      swallow(e);
+      if (d.moved) {
+        const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+        if (d.axis === 'x' && e.pointerType !== 'mouse' && dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.2) press('back');
+        return;                                  // a drag or a swipe never picks or launches
+      }
+      const h = selHit(e);
+      if (h) select = h.index;
+      press('accept');
+    }, true);
+    window.addEventListener('pointercancel', (e) => {
+      if (selDrag && e.pointerId === selDrag.id) selDrag = null;
+    }, true);
+    /* The compatibility mouse events are game.js's old path (accept on
+     * mousedown, step-wise hover). Swallowed here so a press is answered once,
+     * by the pointer handlers above, on release. */
+    for (const type of ['mousedown', 'mouseup', 'mousemove', 'click']) {
+      window.addEventListener(type, (e) => { if (selOwns() && selTarget(e)) swallow(e); }, true);
+    }
+    window.addEventListener('wheel', (e) => {
+      if (!selOwns() || !selTarget(e)) return;
+      swallow(e);
+      const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? SEL.bottom - SEL.top : 1;
+      selScrollTarget = selClamp(selScrollTarget + e.deltaY * k);
+    }, { capture: true, passive: false });
+    /* Test surface (game.js's `__ror.aftermath` snapshot is a fixed list): the
+     * grid as drawn — cards in frame coordinates at the CURRENT scroll. */
+    window.__rorAfterSelect = () => {
+      const L = selLayout();
+      return {
+        state, select, chosen, reached,
+        scroll: +selScroll.toFixed(2), target: +selScrollTarget.toFixed(2), max: L.max,
+        viewport: { top: SEL.top, bottom: SEL.bottom, W },
+        dragging: !!selDrag?.moved,
+        cards: L.boxes.map((b, i) => ({
+          i, id: b.card.id, level: b.card.level, playable: !!LEVELS[b.card.level]?.playable,
+          action: cardAction(b.card),
+          x: b.x, y: SEL.top + b.y - Math.round(selScroll), w: b.w, h: b.h,
+        })),
+      };
+    };
+  }
   const cardAction = (card) => {
     const lvl = LEVELS[card.level];
     if (card.id === 'replay') return `REPLAY ${lvl.code}`;
@@ -1689,17 +1848,26 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         : `The trail leads to ${resolveIdentity(LEVELS[reached + 1]?.boss).displayName}. ${LEVELS[reached + 1]?.code ?? 'The next case'} is being prepared.`,
       clamp(stateT / 0.5, 0, 1));
 
-    const cards = [
-      { x: 120, y: 214 }, { x: 664, y: 214 },
-    ];
-    const cw = 496, ch = 316;
+    const L = selLayout();
+    const ch = SEL.ch;
+    selScroll = clamp(selScroll, 0, L.max);
+    selScrollTarget = clamp(selScrollTarget, 0, L.max);
+    /* The viewport. Cards outside it are not drawn and push no hitbox; a card
+     * half in pushes only its visible part, so nothing under the header or the
+     * prompt can be clicked. */
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, SEL.top, W, L.viewH);
+    ctx.clip();
 
-    selectCards().forEach((card, i) => {
+    L.boxes.forEach((b, i) => {
+      const card = b.card;
+      const box = { x: b.x, y: SEL.top + b.y - Math.round(selScroll), w: b.w, h: b.h };
+      if (box.y >= SEL.bottom || box.y + box.h <= SEL.top) return;
       const on = select === i;
       const lvl = LEVELS[card.level];
       const who = resolveIdentity(lvl.boss);
       const u = ease(clamp((stateT - 0.2 - i * 0.12) / 0.5, 0, 1));
-      const box = { x: cards[i].x, y: cards[i].y, w: cw, h: ch };
       ctx.save();
       ctx.globalAlpha *= u;
       const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
@@ -1771,9 +1939,29 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ctx.restore();
 
       /* A real hitbox, so the mouse can pick a card exactly like every other
-       * screen in this game. */
-      ui.hitboxes.push({ x: box.x, y: box.y, w: box.w, h: box.h, index: i, id: `after:${i}` });
+       * screen in this game — clipped to the viewport like the card is. */
+      const y0 = Math.max(box.y, SEL.top), y1 = Math.min(box.y + box.h, SEL.bottom);
+      if (y1 - y0 > 0) ui.hitboxes.push({ x: box.x, y: y0, w: box.w, h: y1 - y0, index: i, id: `after:${i}` });
     });
+    ctx.restore();                                   // drop the viewport clip
+
+    /* The scroll position, only when there is somewhere to scroll: a thin rail
+     * just right of the grid, in the screen's own blue-grey and orange. */
+    if (L.max > 0) {
+      const rx = Math.round(W / 2 + (SEL.cw * 2 + SEL.gapX) / 2 + 20);
+      const ry = SEL.top + SEL.pad, rh = L.viewH - SEL.pad * 2;
+      const th = Math.max(36, rh * (L.viewH / L.contentH));
+      const ty = ry + (rh - th) * (selScroll / L.max);
+      ctx.save();
+      ctx.globalAlpha *= clamp(stateT / 0.5, 0, 1);
+      ui.roundRectPath(ctx, rx, ry, 4, rh, 2);
+      ctx.fillStyle = 'rgba(150,176,214,0.16)';
+      ctx.fill();
+      ui.roundRectPath(ctx, rx, ty, 4, th, 2);
+      ctx.fillStyle = C.orange;
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   /* ------------------------------------------------------------- footers */
@@ -1810,6 +1998,12 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     if (next === 'CABAL_NETWORK_REVEAL') { chainPinned = false; chainSel = 0; chainFade = 1; }
     if (next === 'NEXT_TARGET_REVEAL') revealT = 0;
     if (next === 'CABAL_NETWORK_REVEAL') cabalT = 0;
+    /* Arriving on the chooser: the focus is a real card and it is on screen. */
+    if (next === 'LEVEL_SELECT') {
+      select = clamp(select, 0, Math.max(0, selectCards().length - 1));
+      selDrag = null;
+      selReveal(select, true);
+    }
     /* THE TRACING AUDIO IS RESET WHEN ITS CLOCK IS, AND NOT OTHERWISE.
      *
      * Five of these states share ONE clock — the narration's — and the board
@@ -1835,6 +2029,13 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     hadTarget = nowHasTarget;
     if (bgFade < 1 && state !== 'MISSION_COMPLETE' && state !== 'WAIT_FOR_X') {
       bgFade = Math.min(1, bgFade + dt / 0.65);
+    }
+
+    /* The card grid eases to wherever the wheel or a focus move asked; a drag
+     * sets it directly and is never fought by the ease. */
+    if (state === 'LEVEL_SELECT' && !selDrag?.moved) {
+      selScroll += (selScrollTarget - selScroll) * (1 - Math.exp(-dt * 14));
+      if (Math.abs(selScrollTarget - selScroll) < 0.25) selScroll = selScrollTarget;
     }
 
     switch (state) {
@@ -2030,6 +2231,15 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
        * horizontal file and the shoulders own it; letting the stick page it too
        * would make the same input mean "walk the network" on one screen and
        * "turn the page" on the next. */
+      if (state === 'LEVEL_SELECT' && (action === 'up' || action === 'down')) {
+        const n = selectCards().length;
+        const rowOf = (i) => Math.floor(i / 2);
+        const to = step > 0
+          ? (rowOf(select) < rowOf(n - 1) ? Math.min(n - 1, select + 2) : select)
+          : select - 2;
+        if (selMove(to)) { if (step > 0) ui?.navForward(); else ui?.navBack(); }
+        return true;
+      }
       if (action === 'up' || action === 'down') return false;
       if (!PAGED_STATES.has(state)) return false;
       const { pages, idx } = activePage();
@@ -2162,8 +2372,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
           cabalT = cabalResume;
           return true;
         }
-        if (action === 'left' && select !== 0) { select = 0; ui?.navForward(); return true; }
-        if (action === 'right' && select !== 1) { select = 1; ui?.navForward(); return true; }
+        /* Left/right walk the cards in order; up/down move a row of the grid.
+         * Every move scrolls the focused card fully into view. */
+        if (action === 'left') { if (selMove(select - 1)) ui?.navForward(); return true; }
+        if (action === 'right') { if (selMove(select + 1)) ui?.navForward(); return true; }
         if (action === 'accept') {
           if (chosen) return true;               // one commit per sequence
           const card = selectCards()[select];
@@ -2272,7 +2484,9 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       reached = levelId;
       stats = opts.stats ?? null;
       state = 'MISSION_COMPLETE';
-      stateT = 0; bgFade = 0; revealT = 0; cabalT = 0; select = 1; chosen = null;
+      stateT = 0; bgFade = 0; revealT = 0; cabalT = 0; chosen = null;
+      select = defaultSelect();                  // the next level, as before
+      selScroll = selScrollTarget = 0; selDrag = null;
       page = null; pageFade = 1; hadTarget = false;
       chainSel = 0; chainPinned = false; chainFade = 1; fromCabal = false;
       /* The case the sequence is ABOUT is the one whose mission just ended, and

@@ -1,5 +1,5 @@
 import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v81';
-import { createAftermath } from './aftermath.js?v=ratelrage-kiwe-v3';
+import { createAftermath } from './aftermath.js?v=ratelrage-kiwe-v4';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -1245,6 +1245,21 @@ const RUSH_SHEET = {
   // charging as he is squared up.
   drawH: capMatched(197, 36.5),
   workH: 345,
+};
+/* RAMRAGE (request 501) — the shoulder charge. Built by _chromakey/req501/ramprep.js
+ * from ASSETS/NEW SPRITES/ramrage_1024x886_sheet.png: 8 frames, 30 fps, play once.
+ * Frame 0 is his upright guard (850 source px, the same stance the pulls are sized
+ * by); 1-7 drop him into the charge. No travel is baked in — the sim moves him
+ * (see RAM / updateRamRage), so the sheet only ever supplies the pose. */
+const RAMRAGE_SHEET = {
+  src: 'sprites/darki-ramrage.png',
+  metaSrc: 'sprites/darki-ramrage.json',
+  cols: 3, rows: 3,            // 8 frames in 9 cells
+  faces: 1,
+  drawH: capMatched(SHEET.drawH, 36.5),
+  bodyFrame: 0,
+  anchorFrame: 0,              // planted: the feet do not slide as he drops into it
+  workH: 443,
 };
 
 /* ------------------------------------------ pickup / carry / throw (L2) ---
@@ -4233,6 +4248,7 @@ let grabFailSprite = null;
 let contComboSprite = null;
 let darkiCarrySprite = null;   // L2 pickup / carry / throw, one high-resolution take
 let rushSprite = null;         // the forward-forward charge
+let ramRageSprite = null;      // back-then-forward: the RamRage shoulder charge (request 501)
 let hitSprite = null;          // Darki's standing flinch
 let hitLiftSprite = null;      // â€¦and the launch chain: off the ground,
 let hitAirSprite = null;       //    tumbling,
@@ -10594,6 +10610,7 @@ function spriteFor(anim) {
   if (anim === 'contCombo') return contComboSprite;
   if (anim === 'pickup' || anim === 'carry' || anim === 'throwEnemy') return darkiCarrySprite;
   if (anim === 'rush') return rushSprite;
+  if (anim === 'ramRage') return ramRageSprite ?? rushSprite;
   // Two sheets for the vertical game, and the line between them moved: the jump
   // sheet now owns the rise, the KICK, the fall and the landing, and the strike
   // sheet is left with only the descent that follows its own kick.
@@ -11726,6 +11743,7 @@ ATTACKS.rushKick = {
 
 const RUSH_STATE = {
   NONE: 'None', CHARGE: 'Rush', FREE: 'FreeRun', WINDOW: 'RushCombatWindow',
+  RAM: 'RamRage',
 };
 let rushState = RUSH_STATE.NONE;
 let rushTargetRef = null;
@@ -11733,6 +11751,52 @@ let rushTargetRef = null;
 // press counts; `rushTapAt` is when each side was last tapped.
 const rushTapPrev = { left: false, right: false };
 const rushTapAt = { left: -Infinity, right: -Infinity };
+
+/* RAMRAGE (request 501) — BACK, THEN FORWARD. A brief flick of the stick away from
+ * the way he means to go and straight back toward it throws the shoulder charge.
+ *
+ * THE GESTURE is read off the same `input.left/right` edges the double-tap reads,
+ * so the keyboard, a pad and the touch stick all speak it without a second input
+ * path. What separates it from ordinary movement is that the BACK flick is brief:
+ * a walk the other way that lasted longer than `flickMax` is a walk, not a flick,
+ * and a forward press that comes later than `gap` after it is a turn, not a ram.
+ *
+ * THE DISTANCE is the sim's, not the sheet's (the art has no travel in it). From
+ * a standstill the charge carries him ~`reach` px; a mark already inside
+ * `immediate` gets it at once. A mark further out (up to RUSH.maxRange) gets the
+ * existing run.rush first — the same charge, the same loop — and the ram fires
+ * on its own the moment the gap closes to `launchAt`, which is set so contact
+ * lands while he is still at full speed. No reachable mark: the charge is thrown at
+ * once into open floor anyway (request 502), stopped by walls like any move.
+ *
+ * THE COST is the rush gauge, and it only fires on a FULL one (the sheet's own
+ * note: "fired once stamina is full"). Rage lifts that, exactly as it lifts every
+ * other gate on the gauge, and hits harder (`rageForce`). */
+const RAM = {
+  flickMax: 0.26,        // s: the back flick may be held this long and still be a flick
+  gap: 0.22,             // s: from letting the back flick go to pressing forward
+  fullStam: 0.98,        // the gauge must be (all but) full…
+  cost: 0.60,            // …and the charge takes this much of it
+  immediate: 330,        // px: a mark this close gets the ram straight away
+  launchAt: 300,         // px: …a farther one is rushed until the gap is this
+  laneTol: 120,          // px of depth a mark may sit off his row and still be his
+  peak: 1350,            // px/s at full charge
+  accelT: 0.09,          // s to reach `peak` (from the rush's 1000 it is shorter)
+  glideT: 0.24,          // s held at speed — the shoulder is down
+  decelT: 0.20,          // s of controlled deceleration after the glide
+  recoverT: 0.10,        // s holding the last frame, planted, before control returns
+  contact: 78,           // px ahead of his centre the shoulder meets a body
+  hitLane: 62,           // px of depth inside which it connects
+  laneRate: 320,         // px/s of lane convergence onto the mark
+  damage: 26,            // at full speed; scales down with what is left of it
+  kb: { x: 760, y: -380 },
+  missileAt: 0.55,       // speed fraction above which the man becomes a projectile
+  impactKeep: 0.42,      // fraction of his speed he keeps through each body
+  rageForce: 1.2,        // knock multiplier while raging
+  stallEps: 1.5,         // px: moved less than this in a frame against a wall → stopped
+};
+// Each side's last press and release, on the mobClock — the gesture's memory.
+const ramFlick = { left: { down: -Infinity, up: -Infinity }, right: { down: -Infinity, up: -Infinity } };
 
 // Max ms between consecutive LMB clicks that count toward the 2-click combo run.
 const COMBO_CLICK_WINDOW = 350;
@@ -12013,7 +12077,8 @@ const airStrike = () => !!(ATTACKS[player.attack]?.air || ATTACKS[player.attack]
  * moves, or any strike carrying a leap's momentum — floors a man who then
  * BOUNCES (RUSH_BOUNCE) and skids before he gets up or dies. */
 const RUSH_MOVES = new Set(['rushKick', 'macheteRush', 'batRush']);
-const rushStrike = () => RUSH_MOVES.has(player.attack) || strikeMomentum() > 1;
+const rushStrike = () => RUSH_MOVES.has(player.attack) || strikeMomentum() > 1
+  || rushState === RUSH_STATE.RAM;
 
 /* KEPT IN SHOT (request 335): "the force is throwing them out of frame 90% of
  * the time". The knock is not weakened at the moment of the blow — the speed is
@@ -13261,8 +13326,25 @@ const canRush = () => player.state === 'normal' && !player.react && !player.atta
 function updateRushInput() {
   for (const side of ['left', 'right']) {
     const now = !!input[side];
+    if (!now && rushTapPrev[side]) ramFlick[side].up = mobClock;
     if (now && !rushTapPrev[side]) {
       const other = side === 'left' ? 'right' : 'left';
+      ramFlick[side].down = mobClock;
+      /* BACK, THEN FORWARD — checked first, so a recognised ram never also
+       * counts as the first tap of a double-tap. The back flick was brief, and
+       * this press follows its release (or replaces it on the same frame — a
+       * fast thumb crosses the dead zone between two reads). */
+      const back = ramFlick[other];
+      const backHeld = (input[other] ? mobClock : back.up) - back.down;
+      const sinceBack = input[other] ? 0 : mobClock - back.up;
+      if (Number.isFinite(back.down) && back.down < mobClock
+          && backHeld <= RAM.flickMax && sinceBack <= RAM.gap
+          && tryStartRamRage(side === 'right' ? 1 : -1)) {
+        back.down = -Infinity;                     // spent
+        rushTapAt.left = rushTapAt.right = -Infinity;
+        rushTapPrev[side] = now;
+        continue;
+      }
       if (mobClock - rushTapAt[side] <= RUSH.tapWindow) {
         rushTapAt[side] = -Infinity;               // spent: no triple-tap chaining
         tryStartRush(side === 'right' ? 1 : -1);
@@ -13326,7 +13408,7 @@ function updateRushStamina(dt) {
     player.rushDeniedT = Math.max(0, player.rushDeniedT - dt);
     return;
   }
-  if (rushState === RUSH_STATE.CHARGE || rushState === RUSH_STATE.FREE) return;
+  if (rushState === RUSH_STATE.CHARGE || rushState === RUSH_STATE.FREE || rushState === RUSH_STATE.RAM) return;
   player.rushDeniedT = Math.max(0, player.rushDeniedT - dt);
   if (player.rushStamDelay > 0) {
     player.rushStamDelay = Math.max(0, player.rushStamDelay - dt);
@@ -13387,6 +13469,9 @@ function tryStartRush(dir) {
   const t = rushTarget(dir);
   rushTargetRef = t;
   rushState = t ? RUSH_STATE.CHARGE : RUSH_STATE.FREE;
+  // What the gauge held before this run, so a ram that overrides it in its first
+  // instants (the touch stick's back flick IS a double-tap) can refund it.
+  player.rushStartStam = player.rushStam;
   // Charged before he has moved an inch, which is what stops stutter-dashing:
   // see the arithmetic on RUSH.stamina.
   if (!rushInexhaustible()) {
@@ -13429,6 +13514,227 @@ function tryStartRush(dir) {
    * and the jump deliberately sits under it. */
   playDarkiHeave(1);
   return true;
+}
+
+/* ================================================= RAMRAGE (request 501) ===
+ *
+ * Is the street between here and `toX` open to a body on row `y`? Asked of the
+ * same geometry that moves him — the level's navigable band (the PSD region on
+ * Level 02), the arena walls and gates, and the solid props (vehicles, the desk,
+ * the racks) through resolveVehicleCollision — by walking a probe along the line
+ * in short steps. A probe the geometry shoves sideways or holds back means the
+ * charge would end in an obstruction, and he does not throw it. */
+function ramPathClear(fromX, toX, y) {
+  const dir = Math.sign(toX - fromX) || 1;
+  const half = PLAYER.hitW / 2;
+  const b = arenaBounds();
+  const span = Math.abs(toX - fromX);
+  for (let d = 24; d < span; d += 24) {
+    const x = fromX + dir * d;
+    if (x < b.left - 1 || x > b.right + 1) return false;
+    if (waveState === 'fighting' && x > currentGate() - 60) return false;
+    const band = laneBandAt(x);
+    if (y < band.laneTop - RAM.laneTol || y > band.laneBottom + RAM.laneTol) return false;
+    const probe = { x, y: clampPlayerLane(y, x), jumpY: 0, state: 'normal' };
+    resolveVehicleCollision(probe, half);
+    if (Math.abs(probe.x - x) > 4) return false;
+  }
+  return true;
+}
+
+// The mark: the nearest live body ahead, on (near enough) his row, with an open
+// line to it. Same hittable predicate as the rush, so a man on the floor never is.
+function ramTarget(dir) {
+  let best = null, bestD = Infinity;
+  for (const e of enemies) {
+    if (e.benched || e.offstage || e.hp <= 0 || e.grabbed || e.carried) continue;
+    if (!isEnemyHittable(e)) continue;
+    const forward = (e.x - player.x) * dir;
+    if (forward < -20 || forward > RUSH.maxRange) continue;
+    if (Math.abs(e.y - player.y) > RAM.laneTol) continue;
+    if (forward >= bestD) continue;
+    if (!ramPathClear(player.x, e.x - dir * RAM.contact, player.y)) continue;
+    bestD = forward; best = e;
+  }
+  return best;
+}
+
+/* The command. Returns true only if it did something — a refused ram leaves the
+ * flick as the movement it was. */
+function tryStartRamRage(dir) {
+  if (player.weapon || player.carrying) return false;       // the art is his bare shoulder
+  /* The touch stick's back flick is itself a double-tap, so it has usually just
+   * started a rush the OTHER way. Inside the flick window that rush is the
+   * gesture's first half, not a decision: it is unwound and its cost refunded. */
+  const freshOpposite = (rushState === RUSH_STATE.CHARGE || rushState === RUSH_STATE.FREE)
+    && player.facing === -dir && player.rushT <= RAM.flickMax + 0.08;
+  if (rushState !== RUSH_STATE.NONE && !freshOpposite) return false;
+  if (freshOpposite) {
+    const refund = player.rushStartStam;
+    endRush();
+    if (Number.isFinite(refund)) { player.rushStam = refund; player.rushStamDelay = 0; player.rushWinded = false; }
+  }
+  if (!canRush()) return false;
+  if (!rushInexhaustible() && player.rushStam < RAM.fullStam) { rushDeniedTell(); return false; }
+  const t = ramTarget(dir);
+  if (!rushInexhaustible()) {
+    player.rushStam = Math.max(0, player.rushStam - RAM.cost);
+    player.rushStamDelay = RUSH.stamina.regenDelay;
+  }
+  player.facing = dir;
+  rushTargetRef = t;
+  player.ramCount = (player.ramCount || 0) + 1;
+  /* NOBODY TO HIT (request 502): the charge goes anyway — at once, no run-in —
+   * into open floor, for the fun of it. Same physics, same clamps: a wall or a
+   * parked car still stops him dead. */
+  const gap = t ? Math.abs(t.x - player.x) : 0;
+  if (gap <= RAM.immediate) {
+    rushFxBegin();
+    startRamRage(dir, 0);
+    return true;
+  }
+  /* Too far: the existing run.rush closes the distance first, and updateRushCharge
+   * hands over to the ram at `launchAt`. Paid already, so the run is free. */
+  rushState = RUSH_STATE.CHARGE;
+  player.ramPending = true;
+  player.ramDir = dir;
+  player.rushT = 0;
+  rushFxBegin();
+  player.rushBuffered = null;
+  player.anim = 'rush';
+  player.animTime = 0;
+  player.frame = rushSprite.anims.rush.frames[0];
+  player.vx = 0;
+  player.bufferedAttack = null;
+  spawnEmbers(player.x - dir * 22, player.y - 18, 10, '#ffd9a0', 90);
+  playDarkiHeave(1);
+  return true;
+}
+
+// Into the shoulder charge proper. `v0` is the speed he brings into it — the
+// rush's, when it was rushed into, so it builds from there instead of from rest.
+function startRamRage(dir, v0) {
+  rushState = RUSH_STATE.RAM;
+  player.ramPending = false;
+  player.facing = dir;
+  player.ramDir = dir;
+  player.ramT = 0;
+  player.ramV = Math.max(0, v0);
+  player.ramV0 = player.ramV;
+  player.ramHits = new Set();
+  player.ramCap = Infinity;
+  player.ramStopped = false;
+  player.ramDustAcc = 0;
+  player.anim = 'ramRage';
+  player.animTime = 0;
+  player.frame = (ramRageSprite ?? rushSprite).anims[ramRageSprite ? 'ramRage' : 'rush'].frames[0];
+  player.vx = 0;
+  player.bufferedAttack = null;
+  player.ramStarts = (player.ramStarts || 0) + 1;
+  // the effort, once, on the commitment (the rush's own groan, heavier)
+  playCue('darkiRush', player.x, 1.15, 0.92);
+  spawnRushDust(6, 90, dir);
+  triggerHitFx(player.x, player.y - 60, 0, 5, false);
+}
+
+// The speed curve: build to peak, hold it with the shoulder down, then bleed it
+// off under control. A body or a wall can cut it short (see updateRamRage).
+function ramSpeedAt(t) {
+  const R = RAM, peak = R.peak * (player.rageActive ? RAGE_SPEED_MUL * 0.85 : 1);
+  const v0 = Math.min(player.ramV0 ?? 0, peak);
+  if (t < R.accelT) {
+    const k = t / R.accelT;
+    return v0 + (peak - v0) * (1 - (1 - k) * (1 - k));     // ease-out: the shove off the back foot
+  }
+  if (t < R.accelT + R.glideT) return peak;
+  const k = Math.min(1, (t - R.accelT - R.glideT) / R.decelT);
+  return peak * (1 - k) * (1 - k);                          // friction, not a wall
+}
+
+function updateRamRage(dt) {
+  const R = RAM, dir = player.ramDir || player.facing || 1;
+  if (player.react || player.state !== 'normal') { endRush(); return; }
+  player.ramT += dt;
+  const total = R.accelT + R.glideT + R.decelT;
+  // The curve says what he would be doing; a body he has hit already took some
+  // of it, so the speed is the lower of the two and never climbs back.
+  const curve = player.ramStopped ? 0 : ramSpeedAt(player.ramT);
+  player.ramV = Math.min(curve, player.ramCap);
+  const v = player.ramV;
+  // Move on the real body, through the real clamps — never a sprite sliding away
+  // from its collision position.
+  const before = player.x;
+  player.x += dir * v * dt;
+  const t = rushTargetRef;
+  if (t && !t.benched && t.hp > 0) {
+    const dy = t.y - player.y;
+    if (Math.abs(dy) > 2) player.y += Math.sign(dy) * Math.min(Math.abs(dy), R.laneRate * dt);
+  }
+  clampPlayerToArena();
+  const moved = Math.abs(player.x - before);
+  if (v > 200 && moved < Math.min(R.stallEps, v * dt * 0.25)) {
+    // Shoulder into a wall, a gate or a parked car: he stops, and it is felt.
+    player.ramStopped = true;
+    player.ramV = 0;
+    triggerHitFx(player.x + dir * 40, player.y - 80, 0.03, 8, false);
+    spawnRushDust(5, 70, dir);
+  }
+
+  // ---- the shoulder meets bodies: each once per charge
+  const s = Math.min(1, v / R.peak);
+  if (s > 0.12) {
+    for (const e of enemies) {
+      if (player.ramHits.has(e) || !isEnemyHittable(e) || e.benched || e.offstage || e.hp <= 0) continue;
+      const ahead = (e.x - player.x) * dir;
+      if (ahead < -24 || ahead > R.contact) continue;
+      if (Math.abs(e.y - player.y) > R.hitLane) continue;
+      player.ramHits.add(e);
+      ramImpact(e, dir, s);
+    }
+  }
+
+  // ---- the pose: frames 0-7 across the build and the glide, then held planted
+  const spr = ramRageSprite;
+  if (spr) {
+    const frames = spr.anims.ramRage?.frames ?? spr.anims.walk.frames;
+    const k = Math.min(1, player.ramT / (R.accelT + R.glideT));
+    player.frame = frames[Math.min(frames.length - 1, Math.floor(k * frames.length))];
+  } else {
+    advanceRushStride(dir, 0);
+  }
+  // ---- speed made visible: echoes, streaks and dust that scale with it
+  if (v > 120) {
+    rushFxTrail(dir);
+    player.ramDustAcc += dt * (8 + 30 * s);
+    while (player.ramDustAcc >= 1) { player.ramDustAcc -= 1; spawnRushDust(1, 40 + 90 * s, dir); }
+  }
+  if (player.ramT >= total + R.recoverT || (player.ramStopped && player.ramT >= R.accelT + R.recoverT)) {
+    endRush();
+  }
+}
+
+/* One body, one blow. The weight of it comes off the speed he actually had at
+ * contact: damage, knock, freeze and shake all scale with `s`, and above
+ * `missileAt` the man is thrown into his friends by the existing thrown-body
+ * collision (updateThrownBody), which owns the once-per-body bookkeeping for the
+ * secondary hits. He keeps `impactKeep` of his speed through each man. */
+function ramImpact(e, dir, s) {
+  const R = RAM, force = player.rageActive ? R.rageForce : 1;
+  const win = {
+    damage: R.damage * (0.55 + 0.45 * s),
+    kb: { x: R.kb.x * (0.55 + 0.45 * s) * force, y: R.kb.y * (0.7 + 0.3 * s) },
+    launch: true, big: true,
+    hitstop: 0.05 + 0.07 * s, shake: Math.round(8 + 12 * s),
+    rage: 14, dir,
+    missile: s >= R.missileAt ? { power: Math.min(1, s * force), pierce: player.rageActive ? 2 : 1 } : undefined,
+  };
+  hitEnemy(e, win);
+  // the low end: the deck answering a man driven into it, scaled by the blow
+  groundSlam(e.x, e.y, 0.5 + 0.8 * s);
+  spawnRushDust(Math.round(4 + 8 * s), 60 + 120 * s, dir);
+  player.ramCap = (player.ramV ?? 0) * R.impactKeep;
+  player.ramV = player.ramCap;
+  player.ramImpacts = (player.ramImpacts || 0) + 1;
 }
 
 // Drive the charge. Runs from the animation branch, so it owns the picture on
@@ -13683,6 +13989,28 @@ function drawRushFx() {
     ctx.drawImage(frame, -anchor, -spr.drawH + lift);
     ctx.restore();
   }
+  /* ---- RamRage body blur (request 501) ----
+   * Three copies of the pose he is in NOW, laid back along his travel and
+   * fading, under him — a directional smear in proportion to his speed. He is
+   * drawn on top of them, solid, so it never makes him see-through or unreadable. */
+  if (rushState === RUSH_STATE.RAM && (player.ramV ?? 0) > 200) {
+    const spr = spriteFor(player.anim);
+    const frame = spr?.frames[player.frame], anchor = spr?.anchors[player.frame] ?? spr?.anchors[0];
+    if (frame) {
+      const s = Math.min(1, player.ramV / RAM.peak), dir = player.ramDir || player.facing || 1;
+      const key = darkiSheetKey(player.anim);
+      const ps = tune.playerScale * (tune['dScale' + key] ?? 1);
+      const lift = spr.lifts?.[player.frame] ?? 0;
+      for (let k = 3; k >= 1; k--) {
+        ctx.save();
+        ctx.translate(player.x - dir * k * 13 * s - cameraX, player.y + player.jumpY + (tune['dOffY' + key] ?? 0));
+        ctx.scale(player.facing !== (spr.faces ?? SHEET.faces) ? -ps : ps, ps);
+        ctx.globalAlpha = 0.22 * s * (1 - (k - 1) / 3);
+        ctx.drawImage(frame, -anchor, -spr.drawH + lift);
+        ctx.restore();
+      }
+    }
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -13698,9 +14026,20 @@ function updateRushCharge(dt) {
   // The charge pays the same rate as the sprint. It is usually cheap simply
   // because it is short â€” it stops itself the moment it arrives â€” which is the
   // whole reason one drain rate can serve both without a special case.
-  if (!drainRushStamina(dt)) { endRush(); return; }
+  // (A RamRage run-in was paid for up front, so it does not drain.)
+  if (!player.ramPending && !drainRushStamina(dt)) { endRush(); return; }
 
   const dir = Math.sign(t.x - player.x) || player.facing || 1;
+  /* RAMRAGE'S RUN-IN (request 501): keep closing on the mark the ram was thrown
+   * at, re-checking the line every frame, and hand over to the shoulder charge
+   * the moment the gap is `launchAt` — never past it, so he never runs through
+   * the man before the charge starts. A line that closes ends the run, uncharged. */
+  if (player.ramPending) {
+    if (dir !== player.ramDir) { endRush(); return; }        // the mark got behind him
+    const gap = Math.abs(t.x - player.x);
+    if (gap <= RAM.launchAt) { startRamRage(dir, RUSH.speed); return; }
+    if (!ramPathClear(player.x, t.x - dir * RAM.contact, player.y)) { endRush(); return; }
+  }
   player.facing = dir;                              // faces the mark the whole way
   // ARRIVE when the mark is within one frame's travel, and cover that last
   // stretch in the same frame so he lands exactly on it.
@@ -13874,10 +14213,20 @@ function endRush({ keepFx = false } = {}) {
   // `drainRushStamina` running the bar to zero, so the long penalty is earned by
   // redlining and never by choosing to stop â€” which is the whole point of having
   // two delays instead of one.
-  if (rushState === RUSH_STATE.CHARGE || rushState === RUSH_STATE.FREE) {
+  if (rushState === RUSH_STATE.CHARGE || rushState === RUSH_STATE.FREE || rushState === RUSH_STATE.RAM) {
     player.rushStamDelay = player.rushWinded
       ? RUSH.stamina.windedDelay : RUSH.stamina.regenDelay;
   }
+  // A ram leaves him planted in his own pose's last frame; hand the picture back
+  // to the locomotion branch from the guard, on this frame, so there is no blank.
+  if (rushState === RUSH_STATE.RAM) {
+    player.anim = 'idle';
+    player.animTime = 0;
+    player.frame = idleSprite?.anims?.idle?.frames?.[0] ?? 0;
+    player.ramEnds = (player.ramEnds || 0) + 1;
+  }
+  player.ramPending = false;
+  player.ramV = 0;
   rushState = RUSH_STATE.NONE;
   rushTargetRef = null;
   player.rushT = 0;
@@ -14238,7 +14587,16 @@ function consumeAttackInput(dt) {
   // Striking early instead of closing all the way is a real choice, the lunge
   // covers most of the ground that gives up, and a kick that waits for a stop
   // point would just be the â–¡/R1 window with extra steps.
-  if (rushState === RUSH_STATE.CHARGE || rushState === RUSH_STATE.FREE) {
+  // RamRage is committed from the flick to the recovery: nothing cancels it and
+  // nothing is buffered out of it (request 501).
+  if (rushState === RUSH_STATE.RAM) {
+    input.comboPressed = input.kickPressed = input.leftJabPressed = false;
+    input.upperPressed = input.grabPressed = input.executePressed = false;
+    input.lmbRaw = input.rmbRaw = false;
+    player.bufferedAttack = null;
+    return;
+  }
+  if ((rushState === RUSH_STATE.CHARGE || rushState === RUSH_STATE.FREE) && !player.ramPending) {
     if (input.kickPressed) {
       input.kickPressed = false; input.rmbRaw = false;
       fireRushFollowUp('kick');
@@ -19223,19 +19581,22 @@ function updateL2Scene(dt) {
      *   doorCue   he hears it — a reaction beat — and turns to the entrance
      *   reveal    the camera has gone to the door; once it is open the line
      *             starts, the men walking in under it (vo2, as before) */
+    /* REQUEST 501: the take ends and he is straight back in his idle — the brief
+     * input is over, he does not stand frozen on its last frame — and the idle
+     * keeps running through the 0.5 s wait, the copy and the door cue. */
     case 'typing':
-      if (l2PlayOnce(dt)) l2Next('copyWait');
+      if (l2PlayOnce(dt)) { l2SetPose('idle'); l2Next('copyWait'); }
       break;
     case 'copyWait':
-      l2PlayOnce(dt);                           // holds the take's last frame
+      advancePlayerAnim(dt);
       if (l2m.t >= L2_COPY.delay) { l2m.copyOn = true; l2m.powered = true; l2Next('copying'); }
       break;
     case 'copying':
-      l2PlayOnce(dt);
+      advancePlayerAnim(dt);
       if (l2m.t >= L2_COPY.doorAfter) { stageL2Wave(); l2Next('doorCue'); }
       break;
     case 'doorCue':
-      l2PlayOnce(dt);
+      advancePlayerAnim(dt);
       if (l2m.t >= L2_COPY.react) {
         player.facing = -1;
         player.y = S.laptop.y;                  // back off the keys, out of the desk's band (request 474)
@@ -19609,7 +19970,12 @@ function updateL2Defense(dt) {
  * the door's own travel); the only timed holds are the close-up's reading beats. */
 const L2_END = {
   zoom: 2.5,             // the close-up's scene zoom (gameplay is 1.2)
-  zoomIn: 1.2, zoomOut: 1.0,
+  zoomIn: 1.2, zoomOut: 1.8,  // the pull-back is the slower of the two: eased, never a snap (request 501)
+  /* The ending's camera never leaves the strong room (request 501): the front
+   * door pillar (art 11976, the layer drawn in front of the doorway) is the
+   * frame's left edge, so nothing outside the room is shown and Darki, once he
+   * is behind it on his way out, stays out of sight. */
+  camInLeft: 11976,
   showFull: 0.7, showDone: 1.9, fade: 0.6,   // close-up beats: full bar, "Upload completed", fade
   /* The inside switch: the keypad on the door's right-hand jamb (art 12287..12323,
    * keys ~row 444, read off the PSD composite). The wall-switch take's fingertip
@@ -19667,19 +20033,24 @@ function updateL2Ending(dt) {
     case 'toDesk2':
       if (l2WalkTo(keys.x, keys.y, dt)) { player.facing = 1; l2SetPose('computer'); l2HandSfx('l2Keyboard'); l2EndNext('typing'); }
       break;
+    /* REQUEST 501: the close-up is a CAMERA move, never a freeze. The take plays
+     * out once; the moment it ends he is back in his idle, and that idle runs on
+     * (advancePlayerAnim) through the whole push-in, the close-up and the pull-back. */
     case 'typing':
       l2m.eZoom = Math.min(1, l2m.eZoom + dt / L2_END.zoomIn);
-      if (l2PlayOnce(dt) && l2m.eZoom >= 1) { l2m.status = 'copying'; l2m.barAlpha = 1; l2EndNext('closeUp'); }
+      if (player.anim === 'computer') { if (l2PlayOnce(dt)) l2SetPose('idle'); }
+      else advancePlayerAnim(dt);
+      if (player.anim !== 'computer' && l2m.eZoom >= 1) { l2m.status = 'copying'; l2m.barAlpha = 1; l2EndNext('closeUp'); }
       break;
     case 'closeUp':
-      l2PlayOnce(dt);
+      advancePlayerAnim(dt);
       if (l2m.eT >= L2_END.showFull) l2m.status = 'done';           // synchronized: the copy IS complete
       if (l2m.eT >= L2_END.showFull + L2_END.showDone)
         l2m.barAlpha = Math.max(0, 1 - (l2m.eT - L2_END.showFull - L2_END.showDone) / L2_END.fade);
       if (l2m.eT >= L2_END.showFull + L2_END.showDone + L2_END.fade) { l2m.barAlpha = 0; l2m.copyOn = false; l2EndNext('zoomOut'); }
       break;
     case 'zoomOut':
-      l2PlayOnce(dt);
+      advancePlayerAnim(dt);
       l2m.eZoom = Math.max(0, l2m.eZoom - dt / L2_END.zoomOut);
       if (l2m.eZoom <= 0) {
         player.facing = -1;
@@ -19752,17 +20123,21 @@ function updateL2EndingCamera(dt) {
     // from the room shot (desk at the right) into the laptop at the frame's centre
     const room = player.x - vw * 0.5, lap = L.x - vw / 2;
     want = room + (lap - room) * k;
-    const lo = S.camLeft, hi = levelRightEdge() - vw;
+    const lo = l2X(L2_END.camInLeft), hi = levelRightEdge() - vw;
     cameraX = Math.max(lo, Math.min(hi, k > 0 ? want : damp(cameraX, want, 2.4, dt)));
     const roomY = followCamY() + CUT.barH * l2m.letterbox / (tune.zoom || 1);
     const lapY = L.y - vh * 0.5;
     cameraY = clampCamY(k > 0 ? roomY + (lapY - roomY) * k : damp(cameraY, roomY, 3, dt));
     return;
   }
+  /* Bounded to the room's interior throughout (request 501): the switch, the
+   * door and the exit are framed from INSIDE with the front pillar as the left
+   * edge — the camera never follows him through the doorway, never pulls back
+   * far enough to show the street, and once he is behind the pillar he is gone. */
+  const lo = l2X(L2_END.camInLeft);
   if (ph === 'toSwitch' || ph === 'switch' || ph === 'doorOpen') want = (player.x + S.doorway.x) / 2 - vw / 2;
-  else if (ph === 'exit1' || ph === 'exit2' || ph === 'exit3' || ph === 'doorShut') want = S.doorway.x - vw * 0.45;
+  else if (ph === 'exit1' || ph === 'exit2' || ph === 'exit3' || ph === 'doorShut') want = lo;
   else want = player.x - vw * 0.5;
-  const lo = ph && ph.startsWith('exit') || ph === 'doorShut' ? PLAYAREA.minX : S.camLeft;
   const hi = levelRightEdge() - vw;
   cameraX = Math.max(lo, Math.min(hi, damp(cameraX, Math.max(lo, Math.min(hi, want)), 2.4, dt)));
   let wantY = followCamY() + CUT.barH * l2m.letterbox / (tune.zoom || 1);
@@ -19882,10 +20257,11 @@ function drawCopyBar(x, y, w, frac, label, alpha = 1) {
   };
   ctx.save();
   ctx.globalAlpha = alpha;
-  /* The label (request 495): the game's own Montserrat, all caps, small — sized
-   * off the bar's width so it scales with the laptop it sits on. */
-  const px = Math.max(8, Math.min(22, w * 0.085));
-  ctx.font = uiFont(800, +px.toFixed(1));
+  /* The label (request 501): the reference's gold SERIF, sentence case
+   * ("Copying files..." / "Upload completed") — sized off the bar's width so it
+   * scales with the laptop it sits on. */
+  const px = Math.max(8, Math.min(26, w * 0.1));
+  ctx.font = `700 ${px.toFixed(1)}px Georgia, "Times New Roman", Times, serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.75)';
@@ -19913,7 +20289,7 @@ function drawCopyBar(x, y, w, frac, label, alpha = 1) {
  * gameplay zoom (1.2): the bar's width, and how far above the screen's centre
  * its top sits. The System HP indicator stays on the HUD by Darki's bar. */
 const COPY_LAP = { w: 112, rise: 44, zoom: 1.2 };
-const copyLabel = () => (l2m.status === 'done' ? 'UPLOAD COMPLETED' : 'COPYING FILES...');
+const copyLabel = () => (l2m.status === 'done' ? 'Upload completed' : 'Copying files...');
 function drawCopyOnLaptop() {
   if (!l2m.copyOn || l2m.barAlpha <= 0) return;
   const L = l2LaptopPoint(), z = tune.zoom || 1, s = z / COPY_LAP.zoom;
@@ -20350,6 +20726,8 @@ function update(dt) {
     advanceReaction(dt);
   } else if (player.attack) {
     advanceAttack(dt);
+  } else if (rushState === RUSH_STATE.RAM) {
+    updateRamRage(dt);               // the shoulder charge: owns body, pose and feet (request 501)
   } else if (rushState === RUSH_STATE.CHARGE) {
     updateRushCharge(dt);            // owns his frame, his facing and his feet
   } else if (rushState === RUSH_STATE.FREE) {
@@ -21744,6 +22122,7 @@ function darkiSheetKey(anim) {
   if (anim === 'carry') return 'Carry';
   if (anim === 'throwEnemy') return 'Throw';
   if (anim === 'rush') return 'Rush';
+  if (anim === 'ramRage') return 'RamRage';
   if (anim === 'wallSwitch') return 'WallSwitch';
   if (anim === 'computer') return 'Computer';
   if (anim === 'pullBat') return 'PullBat';             // the rack pulls (request 489)
@@ -22616,6 +22995,7 @@ function drawHud() {
     // Names the state rather than the number: "WINDED" tells the player why the
     // dash was refused, which a percentage never does.
     const label = player.rushWinded ? 'WINDED'
+      : rushState === RUSH_STATE.RAM || player.ramPending ? 'RAMRAGE'
       : rushInexhaustible() && rushState === RUSH_STATE.FREE ? 'RAGE  SPRINT'
       : rushInexhaustible() && rushState === RUSH_STATE.CHARGE ? 'RAGE  RUSH'
       : rushState === RUSH_STATE.FREE ? 'SPRINT'
@@ -24261,7 +24641,7 @@ window.__ror = {
   get prepMaxSlice() { return Math.round(prepMaxSlice); },   // longest block the prep held the thread
   get prepNow() { return prepNow; },                          // the sheet the lane is working on
   get sprites() { return { sprite, idleSprite, uppercutSprite, jabLeftSprite, highKickSprite, backKickSprite, comboSprite, combatWalkSprite,
-    grabSprite, grabFailSprite, contComboSprite, darkiCarrySprite, rushSprite,
+    grabSprite, grabFailSprite, contComboSprite, darkiCarrySprite, rushSprite, ramRageSprite,
     hitSprite, hitLiftSprite, hitAirSprite, fallSprite, blockSprite,
     gingerSprite, gingerWalkSprite, gingerJabSprite, gingerKickSprite,
     gingerCarrySprite, gingerFallSprite, gingerDeathSprite,
@@ -24966,6 +25346,17 @@ window.__ror = {
   thrownBodies() { return enemies.filter((e) => e.thrownByCarry); },
   // --- RUSH (forward, forward) ---
   get rushState() { return rushState; },
+  // RamRage (request 501): its tuning, and what the current/last charge did.
+  get RAM() { return RAM; },
+  get ram() {
+    return { state: rushState, pending: !!player.ramPending, v: player.ramV ?? 0, t: player.ramT ?? 0,
+      starts: player.ramStarts ?? 0, ends: player.ramEnds ?? 0, impacts: player.ramImpacts ?? 0,
+      commands: player.ramCount ?? 0, target: rushTargetRef ? enemies.indexOf(rushTargetRef) : -1,
+      anim: player.anim, frame: player.frame, sprite: !!ramRageSprite,
+      ghosts: rushFx.ghosts.filter((g) => g.live).length, dust: rushFx.dust.filter((d) => d.live).length };
+  },
+  ramPathClear(x0, x1, y) { return ramPathClear(x0, x1, y); },
+  startL2Outro() { startL2Outro(); },             // test: straight to Level 02's closing card (request 501)
   get lastLaunchFit() { return lastLaunchFit; },
   // request 338: the run ledger, the medpacks and the game-over screen
   get run() { return { ...run, final: run.final && { ...run.final } }; },
@@ -25040,6 +25431,8 @@ window.__ror = {
       door: { dy: l2Door.dy, target: l2Door.target, open: l2DoorIsOpen(), shut: l2DoorIsShut() },
       reason: gameOver.reason, t: l2m.t,
       handSfx: !!l2HandSrc,                  // the keypad / keyboard take's own sound is playing (request 473)
+      // the ending's interior bound and the front pillar's inner edge, world px (request 501)
+      camInLeft: l2X(L2_END.camInLeft), pillarRight: l2X(L2.pillarFront.left + L2.pillarFront.w),
     };
   },
   missionStage: L2M_STAGE, missionDesk: L2_DESK, missionRaid: L2_RAID, defense: L2_DEFENSE,
@@ -26205,6 +26598,7 @@ async function loadWorld() {
       // and key it once instead of decoding the same large sheet three times.
       loadSpriteFrames(DARKICARRY_SHEET),
       loadSpriteFrames(RUSH_SHEET, 'rush'),         // forward-forward: the charge
+      loadSpriteFrames(RAMRAGE_SHEET, 'ramRage'),   // back-forward: the shoulder charge (request 501)
       loadSpriteFrames(HIT_SHEET, 'hitReact'),      // Darki: standing flinch
       loadSpriteFrames(HITLIFT_SHEET, 'hitLift'),   // â€¦and the launch chain
       loadSpriteFrames(HITAIR_SHEET, 'hitAir'),
@@ -26267,7 +26661,7 @@ async function loadWorld() {
     [sprite, idleSprite, uppercutSprite, jumpSprite, jumpStrikeSprite, combatWalkSprite,
       jabLeftSprite, highKickSprite, backKickSprite, comboSprite,
       grabSprite, grabFailSprite, contComboSprite,
-      darkiCarrySprite, rushSprite,
+      darkiCarrySprite, rushSprite, ramRageSprite,
       hitSprite, hitLiftSprite, hitAirSprite, fallSprite, blockSprite,
       gingerSprite, gingerWalkSprite, gingerJabSprite, gingerKickSprite,
       gingerCarrySprite, gingerFallSprite, gingerDeathSprite,
