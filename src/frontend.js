@@ -621,6 +621,18 @@ export function keepAwake(reason, on) {
     navigator.wakeLock?.request?.('screen').then((l) => { wakeLock = l; if (!awakeOn) l.release(); }).catch(() => {});
   } else if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
 }
+/* …AND NEVER, FROM LAUNCH (request 510). The 'session' reason holds for as long
+ * as the game is open. A browser drops its wake lock whenever the tab is hidden
+ * (and may refuse one before the first gesture), so it is asked for again on
+ * every return to the tab and on the first presses. */
+keepAwake('session', true);
+function reacquireWake() {
+  if (!awakeOn || document.visibilityState !== 'visible' || window.RatelHost?.keepScreenOn) return;
+  if (wakeLock && !wakeLock.released) return;
+  navigator.wakeLock?.request?.('screen').then((l) => { wakeLock = l; if (!awakeOn) l.release(); }).catch(() => {});
+}
+document.addEventListener('visibilitychange', reacquireWake);
+for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, reacquireWake, { passive: true });
 
 /* …AND HOLD A WEB AUDIO CONTEXT RUNNING (request 348). A phone can suspend or
  * interrupt one at any time; every sound on it then stops while <audio> music
@@ -4797,24 +4809,6 @@ export function createFrontEnd({
   /* `inkW` still sets the WIDTH — the bar is the mark's width by design, and
    * that tie is the one thing about it that should follow a re-cut. Only the
    * vertical position left the mark's orbit; see TITLE.barY. */
-  /* MEGABYTES IN (request 507). The percentage counts SHEETS, and on a slow
-   * connection one big sheet can hold it still for a minute, which reads as a
-   * hang. The art that has actually arrived, summed off the browser's own
-   * resource timing (twice a second, not every frame), keeps moving instead. */
-  let loadedMB = 0, loadedMBAt = -1;
-  try { performance.setResourceTimingBufferSize?.(3000); } catch {}
-  function artMBIn() {
-    const now = performance.now();
-    if (now - loadedMBAt < 500) return loadedMB;
-    loadedMBAt = now;
-    let b = 0;
-    try {
-      for (const e of performance.getEntriesByType('resource'))
-        if (/\.(webp|png|jpe?g)(\?|$)/i.test(e.name)) b += e.encodedBodySize || e.transferSize || 0;
-    } catch {}
-    loadedMB = b / 1048576;
-    return loadedMB;
-  }
   function drawTitleLoadBar(inkW) {
     const k = easeOut((phaseT - TITLE.barAt) / TITLE.barIn);
     if (k <= 0) return;
@@ -4839,8 +4833,7 @@ export function createFrontEnd({
       ctx.textBaseline = 'alphabetic';
       setFont(700, 9.5, 3.2);
       ctx.fillStyle = 'rgba(207,216,234,0.75)';
-      const mb = artMBIn();
-      ctx.fillText(`LOADING  ${Math.round(p * 100)}%${mb >= 0.1 ? `  ·  ${mb.toFixed(1)} MB` : ''}`, W / 2, y + 20);
+      ctx.fillText(`LOADING  ${Math.round(p * 100)}%`, W / 2, y + 20);
     }
     ctx.restore();
   }

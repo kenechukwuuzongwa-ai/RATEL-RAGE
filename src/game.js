@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v81';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v86';
 import { createAftermath } from './aftermath.js?v=ratelrage-kiwe-v4';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -3528,7 +3528,7 @@ function togglePause() {
   if (outro.active || bossBeaten() || gameOver.active) return;
   paused = !paused;
   l2VoicePause(paused);                         // a strong-room line holds its place (request 454)
-  if (paused) { stopControllerRumble(); pauseChoice = 0; frontEnd?.ui.uiSfx?.('pause'); }   // request 453
+  if (paused) { stopControllerRumble(); stopGlide(); pauseChoice = 0; frontEnd?.ui.uiSfx?.('pause'); }   // request 453
   pauseAd = paused ? pauseAdRow() : null;   // the posts are captured once, as the menu opens (request 454)
   if (!paused) adDeckClose();
   if (paused) flushAds();
@@ -3747,7 +3747,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyM') {
     e.preventDefault();
     audioMuted = !audioMuted;
-    if (audioMuted) { queuedVoice = null; stopDarkiVoice(); }
+    if (audioMuted) { queuedVoice = null; stopDarkiVoice(); stopGlide(); }
   }
 });
 
@@ -6032,6 +6032,82 @@ function playSwing(kind = 'jab', atX = null) {
   } catch {}
 }
 
+/* THE GLIDE (request 510): his soles sliding on the deck under RamRage. No
+ * recording of it exists, so it is made the way the swings are — but as a BED
+ * rather than a one-shot: a looped grit buffer (pink noise for the rasp, sparse
+ * sharp grains for the gravel catching under the sole) through a bandpass, and
+ * the charge's own speed drives it every frame. Faster = louder and brighter;
+ * the braking skid is the loudest part; it stops the moment the feet stop. The
+ * street is dry asphalt (low, gritty); the facility floor is wet concrete
+ * (brighter, a hiss with a squeak in it). */
+const GLIDE = {
+  gain: 0.62,
+  tau: 0.035,                               // s: how fast it follows the speed
+  street: { lo: 650, hi: 2100, q: 0.9, squeak: 0 },
+  wet:    { lo: 1100, hi: 3000, q: 1.3, squeak: 5 },
+};
+let glideBuf = null;
+const glide = { src: null, bp: null, pk: null, g: null, sp: null, level: 0, plays: 0 };
+function glideNoise() {
+  if (!audioCtx || glideBuf) return glideBuf;
+  const sr = audioCtx.sampleRate, n = Math.floor(sr * 1.6), m = Math.floor(sr * 0.04);
+  const raw = new Float32Array(n + m);
+  let b0 = 0, b1 = 0, b2 = 0, grain = 0;
+  for (let i = 0; i < n + m; i++) {
+    const w = Math.random() * 2 - 1;                      // Math.random, NOT combatRng
+    b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913;
+    if (Math.random() < 0.0035) grain = 0.6 + Math.random() * 0.4;
+    grain *= 0.935;
+    raw[i] = (b0 + b1 + b2 + w * 0.1848) * 0.12 + w * grain * 0.8;
+  }
+  const buf = audioCtx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+  // the loop's seam: the tail crossfaded into the head, so it never clicks
+  for (let i = 0; i < n; i++) d[i] = i < m ? raw[i] * (i / m) + raw[n + i] * (1 - i / m) : raw[i];
+  return (glideBuf = buf);
+}
+/* `level` 0..1 (0 stops it), `s` the speed fraction (brightness), `x` world x. */
+function setGlide(level, s, x) {
+  glide.level = level;
+  if (!audioCtx || audioMuted || paused || level <= 0.02) { stopGlide(); return; }
+  const P = activeLevel === 2 ? GLIDE.wet : GLIDE.street;
+  const t = audioCtx.currentTime;
+  try {
+    if (!glide.src) {
+      const buf = glideNoise();
+      if (!buf) return;
+      resumeAudio();
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 220;
+      const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = P.q;
+      const pk = audioCtx.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 2600; pk.Q.value = 7; pk.gain.value = P.squeak;
+      const g = audioCtx.createGain(); g.gain.value = 0.0001;
+      const sp = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+      src.connect(hp); hp.connect(bp); bp.connect(pk); pk.connect(g);
+      if (sp) { g.connect(sp); sp.connect(sfxGain); } else g.connect(sfxGain);
+      src.start(t, Math.random() * buf.duration);
+      Object.assign(glide, { src, bp, pk, g, sp });
+      glide.plays++;
+    }
+    glide.bp.frequency.setTargetAtTime(P.lo + (P.hi - P.lo) * s, t, GLIDE.tau);
+    glide.src.playbackRate.setTargetAtTime(0.8 + 0.45 * s, t, GLIDE.tau);
+    glide.g.gain.setTargetAtTime(GLIDE.gain * level, t, GLIDE.tau);
+    if (glide.sp) glide.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, ((x - cameraX) / VIEW_W) * 2 - 1)), t, 0.05);
+  } catch { stopGlide(); }
+}
+function stopGlide() {
+  glide.level = 0;
+  if (!glide.src) return;
+  const { src, g } = glide;
+  glide.src = glide.bp = glide.pk = glide.g = glide.sp = null;
+  try {
+    const t = audioCtx.currentTime;
+    g.gain.cancelScheduledValues(t);
+    g.gain.setTargetAtTime(0.0001, t, 0.03);              // a short release, never a click
+    src.stop(t + 0.2);
+  } catch {}
+}
+
 // Darki's lines are authored gameplay events, never a random taunt bag. Keeping
 // filenames and durations together makes the long Olodo handoff a real state
 // transition while the short combat lines remain one-shots.
@@ -6342,7 +6418,9 @@ function advanceFx(dt) {
   /* Ages the speed trail alongside every other effect — and unconditionally, so
    * an echo cannot be stranded live by a state change that skipped endRush. */
   rushFxUpdate(dt);
-  updateDamageFx(dt);                     // the danger dim and the blood (request 483)
+  ramDustUpdate(dt);                      // RamRage's dust settles on its own clock (request 510)
+  if (glide.src && rushState !== RUSH_STATE.RAM) stopGlide();   // no way out of a ram leaves it sounding
+  updateDamageFx(dt);                    // the danger dim and the blood (request 483)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
   for (let i = sparks.length - 1; i >= 0; i--)
@@ -13648,7 +13726,9 @@ function startRamRage(dir, v0) {
   player.ramStarts = (player.ramStarts || 0) + 1;
   // the effort, once, on the commitment (the rush's own groan, heavier)
   playCue('darkiRush', player.x, 1.15, 0.92);
-  spawnRushDust(6, 90, dir);
+  // the push-off: the less speed he brings into it, the harder the back foot drives
+  ramDustEndSkid();
+  ramDustLaunch(dir, 1 - Math.min(1, player.ramV0 / RAM.peak));
   triggerHitFx(player.x, player.y - 60, 0, 5, false);
 }
 
@@ -13692,7 +13772,8 @@ function updateRamRage(dt) {
     player.ramStopped = true;
     player.ramV = 0;
     triggerHitFx(player.x + dir * 40, player.y - 80, 0.03, 8, false);
-    spawnRushDust(5, 70, dir);
+    ramDustWall(dir, Math.min(1, v / R.peak));
+    ramDustEndSkid();
   }
 
   // ---- the shoulder meets bodies: each once per charge
@@ -13717,12 +13798,20 @@ function updateRamRage(dt) {
   } else {
     advanceRushStride(dir, 0);
   }
-  // ---- speed made visible: echoes, streaks and dust that scale with it
+  /* ---- speed made visible and audible (request 510): the echoes and streaks,
+   * and the deck's own answer — dust laid by the distance the soles slide, and
+   * the glide's sound — both off the same phase of the curve. The push is the
+   * back foot driving; the glide is the soles sliding at speed; the brake is the
+   * feet ploughing in (most dust thrown forward, the loudest skid). The rush's
+   * own footfall dust is left out here (`airborne`): his feet are not stepping. */
+  const ph = player.ramStopped ? 'stop' : player.ramT < R.accelT ? 'push' : player.ramT < R.accelT + R.glideT ? 'glide' : 'brake';
   if (v > 120) {
-    rushFxTrail(dir);
-    player.ramDustAcc += dt * (8 + 30 * s);
-    while (player.ramDustAcc >= 1) { player.ramDustAcc -= 1; spawnRushDust(1, 40 + 90 * s, dir); }
-  }
+    rushFxTrail(dir, { airborne: true });
+    if (ph === 'glide' || ph === 'brake') ramDustSkid(dir, v, moved, ph === 'brake' ? 1 : 0.15);
+  } else ramDustEndSkid();
+  const glideLevel = ph === 'stop' || v < 60 ? 0
+    : ph === 'push' ? 0.3 * s : ph === 'glide' ? 0.72 * s : Math.min(1, 0.45 + 0.75 * Math.sqrt(s));
+  setGlide(glideLevel, s, player.x);
   if (player.ramT >= total + R.recoverT || (player.ramStopped && player.ramT >= R.accelT + R.recoverT)) {
     endRush();
   }
@@ -13746,7 +13835,7 @@ function ramImpact(e, dir, s) {
   hitEnemy(e, win);
   // the low end: the deck answering a man driven into it, scaled by the blow
   groundSlam(e.x, e.y, 0.5 + 0.8 * s);
-  spawnRushDust(Math.round(4 + 8 * s), 60 + 120 * s, dir);
+  ramDustImpact(e.x, e.y, dir, s);
   player.ramCap = (player.ramV ?? 0) * R.impactKeep;
   player.ramV = player.ramCap;
   player.ramImpacts = (player.ramImpacts || 0) + 1;
@@ -14029,6 +14118,148 @@ function drawRushFx() {
   ctx.globalAlpha = 1;
 }
 
+/* ====================================================== RAMRAGE DUST (510) ===
+ * The ground answering the charge, by its physics rather than on a timer:
+ *   - PUSH-OFF: the back foot drives the deck away — a burst thrown BACKWARD,
+ *     sized by how much speed he has to find (from rest more than from a rush);
+ *   - GLIDE: laid by DISTANCE under the soles, so a faster slide lays more; the
+ *     puffs are dragged along with the feet (a share of his speed) and stall;
+ *   - BRAKE: the feet plough the deck — the dust is shoved FORWARD and higher,
+ *     with grit, and the skid mark darkens behind him;
+ *   - IMPACT: a ring kicked out round the man's feet, biased along the blow;
+ *   - WALL: the charge stopped dead — the dust rebounds off it.
+ * Every particle lives on the floor plane: `y` is its ground row, `z` its height
+ * above it (gravity pulls grit back down; puffs rise a little and spread). Pooled
+ * and capped (never allocates), short-lived, and it outlives the charge only as
+ * long as dust takes to settle. Drawn in two passes so dust behind his feet is
+ * under him and dust toward the camera is over his feet — never over his body. */
+const RAM_DUST = {
+  cap: 90, scuffCap: 6,
+  perPx: 1 / 15,          // glide puffs per px travelled at full speed
+  street: { puff: [214, 196, 162], grit: [168, 150, 124], scuff: 'rgba(40,30,22,', a: 0.62 },
+  wet:    { puff: [205, 214, 224], grit: [150, 162, 176], scuff: 'rgba(8,12,18,', a: 0.5 },
+};
+const ramDust = {
+  p: makePool(RAM_DUST.cap, { kind: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 0, grow: 0, age: 0, life: 0 }),
+  scuffs: makePool(RAM_DUST.scuffCap, { x0: 0, x1: 0, y: 0, age: 0, life: 0, w: 0 }),
+  acc: 0, scuff: null, spawned: 0,
+};
+const ramDustTone = () => (activeLevel === 2 ? RAM_DUST.wet : RAM_DUST.street);
+// kind 0 = puff (billows, drags, rises), 1 = grit (thrown, falls, settles)
+function ramDustEmit(kind, x, y, vx, vy, vz, r, life) {
+  const d = claim(ramDust.p);
+  d.live = true; d.kind = kind; d.age = 0; d.life = life;
+  d.x = x; d.y = y; d.z = kind ? -2 : -(2 + fxRng() * 6);
+  d.vx = vx; d.vy = vy; d.vz = vz; d.r = r; d.grow = kind ? 0 : 22 + fxRng() * 30;
+  ramDust.spawned++;
+}
+// the back foot shoving off: `need` 0..1 is how much speed there was to find
+function ramDustLaunch(dir, need) {
+  const n = Math.round(6 + 10 * need);
+  for (let i = 0; i < n; i++)
+    ramDustEmit(0, player.x - dir * (20 + fxRng() * 30), player.y + (fxRng() - 0.5) * 10,
+      -dir * (140 + fxRng() * 220) * (0.6 + need), (fxRng() - 0.5) * 70, -(30 + fxRng() * 70), 7 + fxRng() * 8, 0.45 + fxRng() * 0.35);
+  for (let i = 0; i < Math.round(3 + 6 * need); i++)
+    ramDustEmit(1, player.x - dir * (14 + fxRng() * 20), player.y, -dir * (180 + fxRng() * 260), (fxRng() - 0.5) * 90,
+      -(120 + fxRng() * 160), 1.4 + fxRng() * 1.6, 0.5 + fxRng() * 0.3);
+}
+// under the soles while they slide; `brake` 0..1 is how hard the feet are dragging
+function ramDustSkid(dir, v, travelled, brake) {
+  const s = Math.min(1, v / RAM.peak);
+  ramDust.acc += travelled * RAM_DUST.perPx * (0.5 + 0.5 * s) * (1 + brake);
+  while (ramDust.acc >= 1) {
+    ramDust.acc -= 1;
+    const foot = fxRng() < 0.5 ? -26 : 18;                // the trailing foot and the leading one
+    const fwd = brake > 0.3 ? 0.45 + 0.3 * fxRng() : 0.12 + 0.18 * fxRng();
+    ramDustEmit(0, player.x + dir * foot, player.y + (fxRng() - 0.5) * 8,
+      dir * v * fwd, (fxRng() - 0.5) * 50, -(10 + fxRng() * 40) * (1 + brake), 9 + fxRng() * 9 + 8 * s, 0.45 + fxRng() * 0.4);
+    if (brake > 0.3 && fxRng() < 0.6)
+      ramDustEmit(1, player.x + dir * 30, player.y, dir * v * (0.5 + 0.4 * fxRng()), (fxRng() - 0.5) * 60,
+        -(60 + fxRng() * 140), 1.2 + fxRng() * 1.4, 0.4 + fxRng() * 0.25);
+  }
+  // the scuff the soles leave, stretched to where the feet are now
+  if (!ramDust.scuff || !ramDust.scuff.live) {
+    const m = claim(ramDust.scuffs);
+    m.live = true; m.age = 0; m.life = 1.1; m.x0 = m.x1 = player.x; m.y = player.y; m.w = 0;
+    ramDust.scuff = m;
+  }
+  const m = ramDust.scuff;
+  m.x1 = player.x; m.y += (player.y - m.y) * 0.3; m.age = 0;
+  m.w = Math.max(m.w, 0.4 + 0.6 * brake);
+}
+function ramDustEndSkid() { ramDust.scuff = null; ramDust.acc = 0; }
+// a body met at speed `s`: a ring round his feet, kicked along the blow
+function ramDustImpact(x, y, dir, s) {
+  const n = Math.round(8 + 12 * s);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2, sp = (90 + fxRng() * 140) * (0.5 + s);
+    ramDustEmit(0, x + Math.cos(a) * 14, y + Math.sin(a) * 6, Math.cos(a) * sp + dir * 160 * s, Math.sin(a) * sp * 0.35,
+      -(20 + fxRng() * 60), 8 + fxRng() * 9, 0.5 + fxRng() * 0.4);
+  }
+  for (let i = 0; i < Math.round(4 + 8 * s); i++)
+    ramDustEmit(1, x, y, dir * (120 + fxRng() * 260) * (0.4 + s) + (fxRng() - 0.5) * 120, (fxRng() - 0.5) * 80,
+      -(140 + fxRng() * 200) * (0.5 + s), 1.3 + fxRng() * 1.8, 0.55 + fxRng() * 0.3);
+}
+// stopped dead against something solid: it rebounds off the obstruction
+function ramDustWall(dir, s) {
+  const x = player.x + dir * 44;
+  for (let i = 0; i < Math.round(8 + 8 * s); i++)
+    ramDustEmit(0, x, player.y + (fxRng() - 0.5) * 10, -dir * (60 + fxRng() * 160), (fxRng() - 0.5) * 90,
+      -(40 + fxRng() * 90), 8 + fxRng() * 8, 0.5 + fxRng() * 0.4);
+}
+function ramDustUpdate(dt) {
+  for (const d of ramDust.p) {
+    if (!d.live) continue;
+    if ((d.age += dt) >= d.life) { d.live = false; continue; }
+    d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+    if (d.kind) {                                          // grit: ballistic, then lies still
+      d.vz += 900 * dt;
+      if (d.z >= 0) { d.z = 0; d.vz = -d.vz * 0.25; d.vx *= 0.5; d.vy *= 0.5; }
+      d.vx *= 1 - 1.2 * dt;
+    } else {                                               // a puff: drag stalls it, it lifts and spreads
+      const drag = 1 - Math.min(0.95, 4.2 * dt);
+      d.vx *= drag; d.vy *= drag;
+      d.vz = d.vz * drag - 14 * dt;
+      d.r += d.grow * dt;
+    }
+  }
+  for (const m of ramDust.scuffs) if (m.live && (m.age += dt) >= m.life) { m.live = false; if (ramDust.scuff === m) ramDust.scuff = null; }
+}
+/* `front`: false = behind his feet (drawn before him), true = toward the camera. */
+function drawRamDust(front) {
+  const T = ramDustTone();
+  if (!front) {
+    for (const m of ramDust.scuffs) {
+      if (!m.live || Math.abs(m.x1 - m.x0) < 6) continue;
+      const k = 1 - m.age / m.life;
+      ctx.fillStyle = `${T.scuff}${(0.16 * m.w * k).toFixed(3)})`;
+      const a = Math.min(m.x0, m.x1) - cameraX, b = Math.max(m.x0, m.x1) - cameraX;
+      ctx.beginPath();
+      ctx.ellipse((a + b) / 2, m.y + 2, (b - a) / 2, 4 + 3 * m.w, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  for (const d of ramDust.p) {
+    if (!d.live || (d.y > player.y + 3) !== front) continue;
+    const p = d.age / d.life, x = d.x - cameraX;
+    if (d.kind) {
+      const c = T.grit;
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(0.85 * (1 - p)).toFixed(3)})`;
+      ctx.fillRect(x - d.r / 2, d.y + d.z - d.r / 2, d.r, d.r);
+      continue;
+    }
+    const c = T.puff, a = T.a * Math.pow(1 - p, 1.5) * Math.min(1, d.age / 0.05);
+    if (a < 0.01) continue;
+    // its contact shade on the deck, then the puff lit from above (the scene's lamps)
+    ctx.fillStyle = `rgba(0,0,0,${(a * 0.35).toFixed(3)})`;
+    ctx.beginPath(); ctx.ellipse(x, d.y + 1, d.r * 1.1, d.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(${c[0] - 30},${c[1] - 30},${c[2] - 30},${a.toFixed(3)})`;
+    ctx.beginPath(); ctx.ellipse(x, d.y + d.z, d.r, d.r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(a * 0.8).toFixed(3)})`;
+    ctx.beginPath(); ctx.ellipse(x - d.r * 0.15, d.y + d.z - d.r * 0.18, d.r * 0.62, d.r * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 function updateRushCharge(dt) {
   const t = rushTargetRef;
   // Bailing out: hit, blocked, or the mark left. Blocking ends it rather than
@@ -14239,6 +14470,8 @@ function endRush({ keepFx = false } = {}) {
     player.animTime = 0;
     player.frame = idleSprite?.anims?.idle?.frames?.[0] ?? 0;
     player.ramEnds = (player.ramEnds || 0) + 1;
+    stopGlide();                    // the soles have stopped: so has their sound (request 510)
+    ramDustEndSkid();
   }
   player.ramPending = false;
   player.ramV = 0;
@@ -19989,8 +20222,11 @@ const L2_END = {
   /* The ending's camera never leaves the strong room (request 501): the front
    * door pillar (art 11976, the layer drawn in front of the doorway) is the
    * frame's left edge, so nothing outside the room is shown and Darki, once he
-   * is behind it on his way out, stays out of sight. */
-  camInLeft: 11976,
+   * is behind it on his way out, stays out of sight. Request 510: the edge is the
+   * pillar's SHAFT, not its layer box — pillar-front.png is transparent for its
+   * first ~33 px above the base, and that sliver showed the plate behind the wall
+   * and Darki's body standing at exitX. The shaft is solid from art x 32-34. */
+  camInLeft: 12011,
   showFull: 0.7, showDone: 1.9, fade: 0.6,   // close-up beats: full bar, "Upload completed", fade
   /* The inside switch: the keypad on the door's right-hand jamb (art 12287..12323,
    * keys ~row 444, read off the PSD composite). The wall-switch take's fingertip
@@ -20272,16 +20508,16 @@ function drawCopyBar(x, y, w, frac, label, alpha = 1) {
   };
   ctx.save();
   ctx.globalAlpha = alpha;
-  /* The label (request 501): the reference's gold SERIF, sentence case
+  /* The label (request 501): the reference's SERIF, sentence case
    * ("Copying files..." / "Upload completed") — sized off the bar's width so it
-   * scales with the laptop it sits on. */
+   * scales with the laptop it sits on. White since request 510. */
   const px = Math.max(8, Math.min(26, w * 0.1));
   ctx.font = `700 ${px.toFixed(1)}px Georgia, "Times New Roman", Times, serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.75)';
   ctx.fillText(label, x + 1 + h * 0.25, y - px * 0.45 + 1);
-  ctx.fillStyle = 'rgb(229,184,33)';
+  ctx.fillStyle = '#ffffff';
   ctx.fillText(label, x + h * 0.25, y - px * 0.45);
   capsule(x, y, w, h);
   ctx.fillStyle = '#ffffff';
@@ -21908,9 +22144,30 @@ const AD_VIDEO = (live) => {
 };
 /* Which boards' faces intersect the frame right now, in the space drawAdverts
  * draws them in (x relative to the camera, y in world rows under cameraY). */
-function adDeckCapture() {
+/* REQUEST 510 — …but only THIS stretch's posts. The deck follows the boards the
+ * player is actually among: the ones standing in the current section of Level
+ * 01's street (plus any board on screen right now, e.g. just past a gate). A level
+ * or section without boards (Level 02 has none) has no deck, so a post never
+ * carries over to a place that does not show it. */
+function adBoardWorldX(slot) {
+  const par = tune.streetParallax || 1;
+  return ((slot.x + slot.w / 2) * tune.streetScale + tune.streetX) / par;
+}
+function adBoardSection(slot) {
+  const x = adBoardWorldX(slot);
+  const i = SECTIONS_L1.findIndex((s) => x < s.gateX);
+  return i < 0 ? SECTIONS_L1.length - 1 : i;
+}
+function adDeckHere() {
+  if (activeLevel !== 1) return new Set();
+  const here = adDeckInView();
+  for (const { slot } of advertArt) if (adBoardSection(slot) === section) here.add(slot.id);
+  return here;
+}
+function adDeckCapture(only = adDeckHere()) {
   const found = [], bookings = new Set();
   for (const { slot, img } of [...advertArt].sort((a, b) => a.slot.x - b.slot.x)) {
+    if (only && !only.has(slot.id)) continue;
     const rotation = ADS.endpoint ? (ADS.slots.get(slot.id)?.rotation ?? []) : [];
     let booked = false;
     for (const r of rotation) {
@@ -22194,6 +22451,7 @@ function drawPlayer() {
    * must never sort in front of him (he is the sharp, opaque, dominant one), and
    * they must sort against the street exactly as he does, which they get for
    * free by riding inside his draw. */
+  drawRamDust(false);       // RamRage's dust behind his feet, and its skid mark (request 510)
   drawRushFx();
   }
 
@@ -22246,6 +22504,8 @@ function drawPlayer() {
   // lifts: see feetOnGround; sink: see groundRow (both 0 on a sheet that sets neither)
   ctx.drawImage(img, -anchor, -drawH + (animationSprite.lifts?.[player.frame] ?? 0) + (animationSprite.sink || 0));
   ctx.restore();
+  ctx.globalAlpha = 1;
+  if (!reflecting) drawRamDust(true);   // …and the dust on the camera's side of his feet
   ctx.globalAlpha = 1;
 
   if (window.__ror?.debugHitboxes && player.attack && !reflecting) {
@@ -25368,8 +25628,15 @@ window.__ror = {
       starts: player.ramStarts ?? 0, ends: player.ramEnds ?? 0, impacts: player.ramImpacts ?? 0,
       commands: player.ramCount ?? 0, target: rushTargetRef ? enemies.indexOf(rushTargetRef) : -1,
       anim: player.anim, frame: player.frame, sprite: !!ramRageSprite,
-      ghosts: rushFx.ghosts.filter((g) => g.live).length, dust: rushFx.dust.filter((d) => d.live).length };
+      ghosts: rushFx.ghosts.filter((g) => g.live).length, dust: rushFx.dust.filter((d) => d.live).length,
+      // request 510: the deck's dust and the glide's sound
+      ramDust: ramDust.p.filter((d) => d.live).length, ramDustSpawned: ramDust.spawned,
+      ramDustFwd: ramDust.p.filter((d) => d.live && !d.kind && Math.sign(d.vx) === (player.ramDir || 1)).length,
+      ramDustGrit: ramDust.p.filter((d) => d.live && d.kind).length, ramDustAboveFloor: ramDust.p.some((d) => d.live && d.z > 0.01),
+      scuffs: ramDust.scuffs.filter((m) => m.live).length,
+      glide: { on: !!glide.src, level: glide.level, plays: glide.plays } };
   },
+  stopGlide() { stopGlide(); },
   ramPathClear(x0, x1, y) { return ramPathClear(x0, x1, y); },
   startL2Outro() { startL2Outro(); },             // test: straight to Level 02's closing card (request 501)
   get lastLaunchFit() { return lastLaunchFit; },
@@ -25482,7 +25749,9 @@ window.__ror = {
   adDeckProbe() {
     return { level: activeLevel, art: advertArt.map((a) => ({ id: a.slot.id, img: !!a.img, gap: a.gap })),
       camX: cameraX, camY: cameraY, vw: viewW(), vh: viewH(), streetY: tune.streetY, scale: tune.streetScale,
-      par: tune.streetParallax, sx: tune.streetX, endpoint: ADS.endpoint, found: adDeckCapture().map((c) => c.slot) };
+      par: tune.streetParallax, sx: tune.streetX, endpoint: ADS.endpoint, found: adDeckCapture().map((c) => c.slot),
+      all: adDeckCapture(null).map((c) => c.slot), here: [...adDeckHere()], section,
+      boardSections: Object.fromEntries(advertArt.map(({ slot }) => [slot.id, adBoardSection(slot)])) };
   },
   get advertBoards() {
     // each board's FACE as drawAdverts places it (its own fit included), camera-relative
@@ -26006,6 +26275,7 @@ window.__ror = {
   get frontEndPhase() { return frontEnd?.phase ?? null; },
   frames: 0,
   step(dt) { update(dt); draw(); }, // deterministic tick for tests
+  drawOnly() { draw(); },           // test: repaint this frame without advancing it (request 510)
   // Re-draw the CURRENT state without advancing it. A test that needs two
   // renders of one frame (shoot a body, hide it, diff the two to get its
   // silhouette) cannot use step() â€” that would move the world between them.
