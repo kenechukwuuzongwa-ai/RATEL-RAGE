@@ -6032,38 +6032,102 @@ function playSwing(kind = 'jab', atX = null) {
   } catch {}
 }
 
-/* THE GLIDE (request 510): his soles sliding on the deck under RamRage. No
- * recording of it exists, so it is made the way the swings are — but as a BED
- * rather than a one-shot: a looped grit buffer (pink noise for the rasp, sparse
- * sharp grains for the gravel catching under the sole) through a bandpass, and
- * the charge's own speed drives it every frame. Faster = louder and brighter;
- * the braking skid is the loudest part; it stops the moment the feet stop. The
- * street is dry asphalt (low, gritty); the facility floor is wet concrete
- * (brighter, a hiss with a squeak in it). */
+/* THE GLIDE (request 510; a screech since 512): his soles sliding on the deck
+ * under RamRage. No recording of it exists, so it is synthesised — as a BED that
+ * the charge's own speed drives every frame, like a tyre skidding on asphalt:
+ *   - the RASP: a looped grit buffer (pink noise, sparse sharp grains for the
+ *     gravel catching) through a bandpass that brightens with speed;
+ *   - the SQUEAL: two detuned saw tones (rubber's stick-slip resonance) whose
+ *     pitch wanders (two slow LFOs plus a per-frame random walk) and whose level
+ *     CHATTERS at 30-55 Hz — the grip catching and letting go;
+ *   - both driven into a soft clipper for the roughness, then tamed above 7 kHz.
+ * Faster = louder, brighter, higher; the braking skid is the loudest part (its
+ * level comes from the caller); it stops the moment the feet stop. The street is
+ * dry asphalt; the facility floor is wet concrete (a higher squeal, more hiss). */
 const GLIDE = {
-  gain: 0.62,
-  tau: 0.035,                               // s: how fast it follows the speed
-  street: { lo: 650, hi: 2100, q: 0.9, squeak: 0 },
-  wet:    { lo: 1100, hi: 3000, q: 1.3, squeak: 5 },
+  gain: 1.0,
+  tau: 0.03,                                // s: how fast it follows the speed
+  drive: 3.2,                               // the clipper: how rough
+  street: { lo: 700, hi: 2300, q: 0.8, f0: 820, f1: 1420, squeal: 0.62, rasp: 0.85 },
+  wet:    { lo: 1100, hi: 3200, q: 1.1, f0: 1150, f1: 1900, squeal: 0.55, rasp: 0.95 },
 };
 let glideBuf = null;
-const glide = { src: null, bp: null, pk: null, g: null, sp: null, level: 0, plays: 0 };
-function glideNoise() {
-  if (!audioCtx || glideBuf) return glideBuf;
-  const sr = audioCtx.sampleRate, n = Math.floor(sr * 1.6), m = Math.floor(sr * 0.04);
+const glide = { nodes: null, level: 0, plays: 0, walk: 0 };
+function glideNoise(ac = audioCtx) {
+  if (!ac) return null;
+  if (ac === audioCtx && glideBuf) return glideBuf;
+  const sr = ac.sampleRate, n = Math.floor(sr * 1.6), m = Math.floor(sr * 0.04);
   const raw = new Float32Array(n + m);
   let b0 = 0, b1 = 0, b2 = 0, grain = 0;
   for (let i = 0; i < n + m; i++) {
     const w = Math.random() * 2 - 1;                      // Math.random, NOT combatRng
     b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913;
-    if (Math.random() < 0.0035) grain = 0.6 + Math.random() * 0.4;
-    grain *= 0.935;
-    raw[i] = (b0 + b1 + b2 + w * 0.1848) * 0.12 + w * grain * 0.8;
+    if (Math.random() < 0.006) grain = 0.6 + Math.random() * 0.4;
+    grain *= 0.93;
+    raw[i] = (b0 + b1 + b2 + w * 0.1848) * 0.14 + w * grain * 0.9;
   }
-  const buf = audioCtx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+  const buf = ac.createBuffer(1, n, sr), d = buf.getChannelData(0);
   // the loop's seam: the tail crossfaded into the head, so it never clicks
   for (let i = 0; i < n; i++) d[i] = i < m ? raw[i] * (i / m) + raw[n + i] * (1 - i / m) : raw[i];
-  return (glideBuf = buf);
+  if (ac === audioCtx) glideBuf = buf;
+  return buf;
+}
+let glideCurve = null;
+function glideShaper(ac) {
+  if (!glideCurve) {
+    glideCurve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; glideCurve[i] = Math.tanh(GLIDE.drive * x) / Math.tanh(GLIDE.drive); }
+  }
+  const ws = ac.createWaveShaper(); ws.curve = glideCurve; ws.oversample = '2x';
+  return ws;
+}
+/* The graph, on any context (the game's, or an offline one for a preview). */
+function buildGlide(ac, dest, P) {
+  const t = ac.currentTime;
+  const src = ac.createBufferSource(); src.buffer = glideNoise(ac); src.loop = true;
+  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
+  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = P.q;
+  const rasp = ac.createGain(); rasp.gain.value = 0;
+  src.connect(hp); hp.connect(bp); bp.connect(rasp);
+  // the squeal: two detuned saws, their pitch wandering, their level chattering
+  const oA = ac.createOscillator(); oA.type = 'sawtooth'; oA.frequency.value = P.f0;
+  const oB = ac.createOscillator(); oB.type = 'sawtooth'; oB.frequency.value = P.f0 * 1.5; oB.detune.value = 9;
+  const l1 = ac.createOscillator(); l1.frequency.value = 6.3;
+  const l2 = ac.createOscillator(); l2.frequency.value = 17.7;
+  const d1 = ac.createGain(); d1.gain.value = 55;
+  const d2 = ac.createGain(); d2.gain.value = 22;
+  l1.connect(d1); l2.connect(d2);
+  d1.connect(oA.frequency); d2.connect(oA.frequency); d1.connect(oB.frequency); d2.connect(oB.frequency);
+  const sbp = ac.createBiquadFilter(); sbp.type = 'bandpass'; sbp.Q.value = 2.6; sbp.frequency.value = P.f0 * 1.3;
+  const am = ac.createGain(); am.gain.value = 0.55;
+  const chat = ac.createOscillator(); chat.type = 'square'; chat.frequency.value = 38;
+  const chatD = ac.createGain(); chatD.gain.value = 0.45;
+  chat.connect(chatD); chatD.connect(am.gain);
+  const squeal = ac.createGain(); squeal.gain.value = 0;
+  oA.connect(sbp); oB.connect(sbp); sbp.connect(am); am.connect(squeal);
+  // rough, then tamed
+  const ws = glideShaper(ac);
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000;
+  const g = ac.createGain(); g.gain.value = 0.0001;
+  rasp.connect(ws); squeal.connect(ws); ws.connect(lp); lp.connect(g);
+  const sp = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  if (sp) { g.connect(sp); sp.connect(dest); } else g.connect(dest);
+  src.start(t, Math.random() * src.buffer.duration);
+  for (const o of [oA, oB, l1, l2, chat]) o.start(t);
+  return { src, oscs: [oA, oB, l1, l2, chat], oA, oB, bp, sbp, chat, rasp, squeal, g, sp };
+}
+/* Every frame's targets: speed -> brightness, pitch, chatter; level -> loudness. */
+function steerGlide(N, P, level, s, t, walk) {
+  const f0 = (P.f0 + (P.f1 - P.f0) * s) * (1 + walk);
+  N.bp.frequency.setTargetAtTime(P.lo + (P.hi - P.lo) * s, t, GLIDE.tau);
+  N.src.playbackRate.setTargetAtTime(0.85 + 0.45 * s, t, GLIDE.tau);
+  N.oA.frequency.setTargetAtTime(f0, t, 0.02);
+  N.oB.frequency.setTargetAtTime(f0 * 1.5, t, 0.02);
+  N.sbp.frequency.setTargetAtTime(f0 * 1.3, t, 0.03);
+  N.chat.frequency.setTargetAtTime(30 + 25 * s, t, 0.05);
+  N.rasp.gain.setTargetAtTime(P.rasp * level, t, GLIDE.tau);
+  N.squeal.gain.setTargetAtTime(P.squeal * Math.pow(level, 1.4), t, GLIDE.tau);   // the squeal rides the hard skid
+  N.g.gain.setTargetAtTime(level > 0 ? GLIDE.gain * Math.min(1, 0.35 + level) : 0.0001, t, GLIDE.tau);
 }
 /* `level` 0..1 (0 stops it), `s` the speed fraction (brightness), `x` world x. */
 function setGlide(level, s, x) {
@@ -6072,40 +6136,52 @@ function setGlide(level, s, x) {
   const P = activeLevel === 2 ? GLIDE.wet : GLIDE.street;
   const t = audioCtx.currentTime;
   try {
-    if (!glide.src) {
-      const buf = glideNoise();
-      if (!buf) return;
+    if (!glide.nodes) {
+      if (!glideNoise()) return;
       resumeAudio();
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf; src.loop = true;
-      const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 220;
-      const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = P.q;
-      const pk = audioCtx.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 2600; pk.Q.value = 7; pk.gain.value = P.squeak;
-      const g = audioCtx.createGain(); g.gain.value = 0.0001;
-      const sp = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
-      src.connect(hp); hp.connect(bp); bp.connect(pk); pk.connect(g);
-      if (sp) { g.connect(sp); sp.connect(sfxGain); } else g.connect(sfxGain);
-      src.start(t, Math.random() * buf.duration);
-      Object.assign(glide, { src, bp, pk, g, sp });
+      glide.nodes = buildGlide(audioCtx, sfxGain, P);
+      glide.walk = 0;
       glide.plays++;
     }
-    glide.bp.frequency.setTargetAtTime(P.lo + (P.hi - P.lo) * s, t, GLIDE.tau);
-    glide.src.playbackRate.setTargetAtTime(0.8 + 0.45 * s, t, GLIDE.tau);
-    glide.g.gain.setTargetAtTime(GLIDE.gain * level, t, GLIDE.tau);
-    if (glide.sp) glide.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, ((x - cameraX) / VIEW_W) * 2 - 1)), t, 0.05);
+    // the squeal's pitch never sits still: a bounded random walk, frame to frame
+    glide.walk = Math.max(-0.08, Math.min(0.08, glide.walk + (Math.random() - 0.5) * 0.03));
+    steerGlide(glide.nodes, P, level, s, t, glide.walk);
+    if (glide.nodes.sp) glide.nodes.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, ((x - cameraX) / VIEW_W) * 2 - 1)), t, 0.05);
   } catch { stopGlide(); }
 }
 function stopGlide() {
   glide.level = 0;
-  if (!glide.src) return;
-  const { src, g } = glide;
-  glide.src = glide.bp = glide.pk = glide.g = glide.sp = null;
+  const N = glide.nodes;
+  if (!N) return;
+  glide.nodes = null;
   try {
     const t = audioCtx.currentTime;
-    g.gain.cancelScheduledValues(t);
-    g.gain.setTargetAtTime(0.0001, t, 0.03);              // a short release, never a click
-    src.stop(t + 0.2);
+    N.g.gain.cancelScheduledValues(t);
+    N.g.gain.setTargetAtTime(0.0001, t, 0.03);              // a short release, never a click
+    N.src.stop(t + 0.2);
+    for (const o of N.oscs) o.stop(t + 0.2);
   } catch {}
+}
+/* A preview of one charge's glide (push, glide, brake), rendered offline with the
+ * same graph and the same per-frame steering — for listening outside the game.
+ * Returns { rate, data }. */
+async function renderGlidePreview(level2 = false) {
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const sr = 44100, R = RAM, total = R.accelT + R.glideT + R.decelT;
+  const ac = new OAC(1, Math.floor(sr * (total + 0.5)), sr);
+  const P = level2 ? GLIDE.wet : GLIDE.street;
+  const N = buildGlide(ac, ac.destination, P);
+  let walk = 0;
+  for (let t = 0; t < total; t += 1 / 60) {
+    const v = ramSpeedAt(t), sp = Math.min(1, v / R.peak);
+    const ph = t < R.accelT ? 'push' : t < R.accelT + R.glideT ? 'glide' : 'brake';
+    const lv = v < 60 ? 0 : ph === 'push' ? 0.3 * sp : ph === 'glide' ? 0.72 * sp : Math.min(1, 0.45 + 0.75 * Math.sqrt(sp));
+    walk = Math.max(-0.08, Math.min(0.08, walk + (Math.random() - 0.5) * 0.03));
+    steerGlide(N, P, lv, sp, t + 0.05, walk);
+  }
+  N.g.gain.setTargetAtTime(0.0001, total + 0.05, 0.03);
+  const out = await ac.startRendering();
+  return { rate: sr, data: Array.from(out.getChannelData(0)) };
 }
 
 // Darki's lines are authored gameplay events, never a random taunt bag. Keeping
@@ -6419,7 +6495,7 @@ function advanceFx(dt) {
    * an echo cannot be stranded live by a state change that skipped endRush. */
   rushFxUpdate(dt);
   ramDustUpdate(dt);                      // RamRage's dust settles on its own clock (request 510)
-  if (glide.src && rushState !== RUSH_STATE.RAM) stopGlide();   // no way out of a ram leaves it sounding
+  if (glide.nodes && rushState !== RUSH_STATE.RAM) stopGlide();   // no way out of a ram leaves it sounding
   updateDamageFx(dt);                    // the danger dim and the blood (request 483)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
@@ -14136,8 +14212,9 @@ function drawRushFx() {
 const RAM_DUST = {
   cap: 90, scuffCap: 6,
   perPx: 1 / 15,          // glide puffs per px travelled at full speed
-  street: { puff: [214, 196, 162], grit: [168, 150, 124], scuff: 'rgba(40,30,22,', a: 0.62 },
-  wet:    { puff: [205, 214, 224], grit: [150, 162, 176], scuff: 'rgba(8,12,18,', a: 0.5 },
+  // cloud grey on both floors (request 512): neutral on the street, a touch cooler in the facility
+  street: { puff: [192, 192, 194], grit: [132, 132, 134], scuff: 'rgba(30,30,32,', a: 0.62 },
+  wet:    { puff: [186, 190, 196], grit: [124, 128, 134], scuff: 'rgba(8,12,18,', a: 0.55 },
 };
 const ramDust = {
   p: makePool(RAM_DUST.cap, { kind: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 0, grow: 0, age: 0, life: 0 }),
@@ -25634,9 +25711,10 @@ window.__ror = {
       ramDustFwd: ramDust.p.filter((d) => d.live && !d.kind && Math.sign(d.vx) === (player.ramDir || 1)).length,
       ramDustGrit: ramDust.p.filter((d) => d.live && d.kind).length, ramDustAboveFloor: ramDust.p.some((d) => d.live && d.z > 0.01),
       scuffs: ramDust.scuffs.filter((m) => m.live).length,
-      glide: { on: !!glide.src, level: glide.level, plays: glide.plays } };
+      glide: { on: !!glide.nodes, level: glide.level, plays: glide.plays } };
   },
   stopGlide() { stopGlide(); },
+  renderGlidePreview(l2) { return renderGlidePreview(l2); },   // test: the glide, offline (request 512)
   ramPathClear(x0, x1, y) { return ramPathClear(x0, x1, y); },
   startL2Outro() { startL2Outro(); },             // test: straight to Level 02's closing card (request 501)
   get lastLaunchFit() { return lastLaunchFit; },
