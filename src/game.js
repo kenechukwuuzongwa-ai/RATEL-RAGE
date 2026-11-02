@@ -1,5 +1,5 @@
 import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v86';
-import { createAftermath } from './aftermath.js?v=ratelrage-kiwe-v4';
+import { createAftermath } from './aftermath.js?v=ratelrage-strip-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -4861,7 +4861,7 @@ const WEAPONS = {
     // this instead of the fist bag. See CUE_BAGS.batHit.
     hitCue: 'batHit',
     whip: 'batWhip',           // request 331: wooden swish per turn in flight
-    crib: 'BAT: LMB / LMBx2 Swing · fwd,fwd Bat Rush · Jump+LMB Jump Kick · E / L2 Throw it · knocked down, you drop it',
+    crib: 'BAT: LMB / LMBx2 Swing · fwd,fwd Bat Rush · Space+LMB Jump Kick · E Throw it · knocked down, you drop it',
   },
   knife: {
     /* HIS BARE-HANDED KIT, PLUS A THROW — which is the honest description of what
@@ -4889,7 +4889,7 @@ const WEAPONS = {
       maxBounces: 1, minBounceV: 100, radius: 18 }),
     look: { sprite: () => sarsKnifeSprite, frame: 0, scale: 0.72, faces: -1, lieRot: 0.08, thick: (w, h) => h },
     whip: 'bladeWhip',
-    crib: 'KNIFE: E / L2 Throw it · knocked down, you drop it',
+    crib: 'KNIFE: E Throw it · knocked down, you drop it',
   },
   machete: {
     // `rage`: HIT, HIT and hold, with the rage bar full or burning (request 370)
@@ -4905,7 +4905,7 @@ const WEAPONS = {
     }),
     look: { sprite: () => macheteSprite, frame: 0, scale: 1, faces: MACHETE_SHEET.faces, lieRot: 0, thick: (w, h) => h },
     whip: 'bladeWhip',         // request 331: thin steel swish per turn in flight
-    crib: 'MACHETE: LMB Chop · LMB,LMB Machete Combo · RAGE: LMB,LMB+hold Tornado · fwd,fwd Rush Slash · Jump+LMB Air Strike · E / L2 Throw it',
+    crib: 'MACHETE: LMB Chop · LMB,LMB Machete Combo · RAGE: LMB,LMB+hold Tornado · fwd,fwd Rush Slash · Space+LMB Air Strike · E Throw it',
   },
 };
 
@@ -5843,6 +5843,13 @@ const CUES = {
    * loudness-normalised. Played whole, from the take's first frame. */
   l2Keypad:   { src: 'sounds/l2-keypad.mp3',   onset: 0, gain: 0.85 },
   l2Keyboard: { src: 'sounds/l2-keyboard.mp3', onset: 0, gain: 0.85 },
+  /* RAMRAGE'S SLIDE (request 513): two takes generated for this game (Sorceress,
+   * _chromakey/req513/sfx). The slide is a body scraping over gritty concrete —
+   * its scrape starts 0.28 s in and runs ~1.5 s, played as the glide's bed (see
+   * setGlide). The push is the other take's opening hit (0.06-0.38 s), on the
+   * shove off the back foot. */
+  ramSlide:     { src: 'sounds/ramrage-slide.mp3',      onset: 0.28, gain: 2.4 },
+  ramSlidePush: { src: 'sounds/ramrage-slide-push.mp3', onset: 0.06, dur: 0.32, gain: 1.3 },
 };
 // Cut a sharpen scrape / chop swoosh short (he was interrupted). Safe on null
 // and on a source that has already finished.
@@ -6032,154 +6039,89 @@ function playSwing(kind = 'jab', atX = null) {
   } catch {}
 }
 
-/* THE GLIDE (request 510; a screech since 512): his soles sliding on the deck
- * under RamRage. No recording of it exists, so it is synthesised — as a BED that
- * the charge's own speed drives every frame, like a tyre skidding on asphalt:
- *   - the RASP: a looped grit buffer (pink noise, sparse sharp grains for the
- *     gravel catching) through a bandpass that brightens with speed;
- *   - the SQUEAL: two detuned saw tones (rubber's stick-slip resonance) whose
- *     pitch wanders (two slow LFOs plus a per-frame random walk) and whose level
- *     CHATTERS at 30-55 Hz — the grip catching and letting go;
- *   - both driven into a soft clipper for the roughness, then tamed above 7 kHz.
- * Faster = louder, brighter, higher; the braking skid is the loudest part (its
- * level comes from the caller); it stops the moment the feet stop. The street is
- * dry asphalt; the facility floor is wet concrete (a higher squeal, more hiss). */
+/* THE GLIDE (request 510; a RECORDING since 513): his soles sliding on the deck
+ * under RamRage. The synthesised screech read as fake, so it is now a real slide
+ * take (sounds/ramrage-slide.mp3 — a body sliding hard over gritty concrete,
+ * generated for this game) played as a BED the charge's own speed drives every
+ * frame: it starts with the slide, its level follows the speed (the braking skid
+ * loudest), its rate rises a touch with speed, and it is cut with a short
+ * release the moment the feet stop. The push-off gets its own hit
+ * (ramSlidePush, played in startRamRage). */
 const GLIDE = {
-  gain: 1.0,
   tau: 0.03,                                // s: how fast it follows the speed
-  drive: 3.2,                               // the clipper: how rough
-  street: { lo: 700, hi: 2300, q: 0.8, f0: 820, f1: 1420, squeal: 0.62, rasp: 0.85 },
-  wet:    { lo: 1100, hi: 3200, q: 1.1, f0: 1150, f1: 1900, squeal: 0.55, rasp: 0.95 },
+  release: 0.05,                            // s: the fade when the feet stop
 };
-let glideBuf = null;
-const glide = { nodes: null, level: 0, plays: 0, walk: 0 };
-function glideNoise(ac = audioCtx) {
-  if (!ac) return null;
-  if (ac === audioCtx && glideBuf) return glideBuf;
-  const sr = ac.sampleRate, n = Math.floor(sr * 1.6), m = Math.floor(sr * 0.04);
-  const raw = new Float32Array(n + m);
-  let b0 = 0, b1 = 0, b2 = 0, grain = 0;
-  for (let i = 0; i < n + m; i++) {
-    const w = Math.random() * 2 - 1;                      // Math.random, NOT combatRng
-    b0 = 0.99765 * b0 + w * 0.0990460; b1 = 0.96300 * b1 + w * 0.2965164; b2 = 0.57000 * b2 + w * 1.0526913;
-    if (Math.random() < 0.006) grain = 0.6 + Math.random() * 0.4;
-    grain *= 0.93;
-    raw[i] = (b0 + b1 + b2 + w * 0.1848) * 0.14 + w * grain * 0.9;
-  }
-  const buf = ac.createBuffer(1, n, sr), d = buf.getChannelData(0);
-  // the loop's seam: the tail crossfaded into the head, so it never clicks
-  for (let i = 0; i < n; i++) d[i] = i < m ? raw[i] * (i / m) + raw[n + i] * (1 - i / m) : raw[i];
-  if (ac === audioCtx) glideBuf = buf;
-  return buf;
-}
-let glideCurve = null;
-function glideShaper(ac) {
-  if (!glideCurve) {
-    glideCurve = new Float32Array(1024);
-    for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; glideCurve[i] = Math.tanh(GLIDE.drive * x) / Math.tanh(GLIDE.drive); }
-  }
-  const ws = ac.createWaveShaper(); ws.curve = glideCurve; ws.oversample = '2x';
-  return ws;
-}
-/* The graph, on any context (the game's, or an offline one for a preview). */
-function buildGlide(ac, dest, P) {
-  const t = ac.currentTime;
-  const src = ac.createBufferSource(); src.buffer = glideNoise(ac); src.loop = true;
-  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
-  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = P.q;
-  const rasp = ac.createGain(); rasp.gain.value = 0;
-  src.connect(hp); hp.connect(bp); bp.connect(rasp);
-  // the squeal: two detuned saws, their pitch wandering, their level chattering
-  const oA = ac.createOscillator(); oA.type = 'sawtooth'; oA.frequency.value = P.f0;
-  const oB = ac.createOscillator(); oB.type = 'sawtooth'; oB.frequency.value = P.f0 * 1.5; oB.detune.value = 9;
-  const l1 = ac.createOscillator(); l1.frequency.value = 6.3;
-  const l2 = ac.createOscillator(); l2.frequency.value = 17.7;
-  const d1 = ac.createGain(); d1.gain.value = 55;
-  const d2 = ac.createGain(); d2.gain.value = 22;
-  l1.connect(d1); l2.connect(d2);
-  d1.connect(oA.frequency); d2.connect(oA.frequency); d1.connect(oB.frequency); d2.connect(oB.frequency);
-  const sbp = ac.createBiquadFilter(); sbp.type = 'bandpass'; sbp.Q.value = 2.6; sbp.frequency.value = P.f0 * 1.3;
-  const am = ac.createGain(); am.gain.value = 0.55;
-  const chat = ac.createOscillator(); chat.type = 'square'; chat.frequency.value = 38;
-  const chatD = ac.createGain(); chatD.gain.value = 0.45;
-  chat.connect(chatD); chatD.connect(am.gain);
-  const squeal = ac.createGain(); squeal.gain.value = 0;
-  oA.connect(sbp); oB.connect(sbp); sbp.connect(am); am.connect(squeal);
-  // rough, then tamed
-  const ws = glideShaper(ac);
-  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000;
+const glide = { src: null, g: null, sp: null, level: 0, plays: 0 };
+/* The bed, on any context (the game's, or an offline one for a preview). */
+function buildGlide(ac, dest, buf, at = ac.currentTime) {
+  const def = CUES.ramSlide;
+  const src = ac.createBufferSource(); src.buffer = buf;
   const g = ac.createGain(); g.gain.value = 0.0001;
-  rasp.connect(ws); squeal.connect(ws); ws.connect(lp); lp.connect(g);
   const sp = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  src.connect(g);
   if (sp) { g.connect(sp); sp.connect(dest); } else g.connect(dest);
-  src.start(t, Math.random() * src.buffer.duration);
-  for (const o of [oA, oB, l1, l2, chat]) o.start(t);
-  return { src, oscs: [oA, oB, l1, l2, chat], oA, oB, bp, sbp, chat, rasp, squeal, g, sp };
+  src.start(at, def.onset ?? 0);
+  return { src, g, sp };
 }
-/* Every frame's targets: speed -> brightness, pitch, chatter; level -> loudness. */
-function steerGlide(N, P, level, s, t, walk) {
-  const f0 = (P.f0 + (P.f1 - P.f0) * s) * (1 + walk);
-  N.bp.frequency.setTargetAtTime(P.lo + (P.hi - P.lo) * s, t, GLIDE.tau);
-  N.src.playbackRate.setTargetAtTime(0.85 + 0.45 * s, t, GLIDE.tau);
-  N.oA.frequency.setTargetAtTime(f0, t, 0.02);
-  N.oB.frequency.setTargetAtTime(f0 * 1.5, t, 0.02);
-  N.sbp.frequency.setTargetAtTime(f0 * 1.3, t, 0.03);
-  N.chat.frequency.setTargetAtTime(30 + 25 * s, t, 0.05);
-  N.rasp.gain.setTargetAtTime(P.rasp * level, t, GLIDE.tau);
-  N.squeal.gain.setTargetAtTime(P.squeal * Math.pow(level, 1.4), t, GLIDE.tau);   // the squeal rides the hard skid
-  N.g.gain.setTargetAtTime(level > 0 ? GLIDE.gain * Math.min(1, 0.35 + level) : 0.0001, t, GLIDE.tau);
+/* Every frame's targets: level -> loudness, speed -> a touch of rate. */
+function steerGlide(N, level, s, t) {
+  N.src.playbackRate.setTargetAtTime(0.94 + 0.16 * s, t, 0.05);
+  N.g.gain.setTargetAtTime(Math.max(0.0001, (CUES.ramSlide.gain ?? 1) * (0.3 + 0.7 * level)), t, GLIDE.tau);
 }
-/* `level` 0..1 (0 stops it), `s` the speed fraction (brightness), `x` world x. */
+/* `level` 0..1 (0 stops it), `s` the speed fraction, `x` world x. */
 function setGlide(level, s, x) {
   glide.level = level;
   if (!audioCtx || audioMuted || paused || level <= 0.02) { stopGlide(); return; }
-  const P = activeLevel === 2 ? GLIDE.wet : GLIDE.street;
   const t = audioCtx.currentTime;
   try {
-    if (!glide.nodes) {
-      if (!glideNoise()) return;
+    if (!glide.src) {
+      const buf = cueBuf.ramSlide;
+      if (!buf) return;
       resumeAudio();
-      glide.nodes = buildGlide(audioCtx, sfxGain, P);
-      glide.walk = 0;
+      Object.assign(glide, buildGlide(audioCtx, sfxGain, buf));
       glide.plays++;
+      cueFired.ramSlide = (cueFired.ramSlide ?? 0) + 1;
     }
-    // the squeal's pitch never sits still: a bounded random walk, frame to frame
-    glide.walk = Math.max(-0.08, Math.min(0.08, glide.walk + (Math.random() - 0.5) * 0.03));
-    steerGlide(glide.nodes, P, level, s, t, glide.walk);
-    if (glide.nodes.sp) glide.nodes.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, ((x - cameraX) / VIEW_W) * 2 - 1)), t, 0.05);
+    steerGlide(glide, level, s, t);
+    if (glide.sp) glide.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, ((x - cameraX) / VIEW_W) * 2 - 1)), t, 0.05);
   } catch { stopGlide(); }
 }
 function stopGlide() {
   glide.level = 0;
-  const N = glide.nodes;
-  if (!N) return;
-  glide.nodes = null;
+  if (!glide.src) return;
+  const { src, g } = glide;
+  glide.src = glide.g = glide.sp = null;
   try {
     const t = audioCtx.currentTime;
-    N.g.gain.cancelScheduledValues(t);
-    N.g.gain.setTargetAtTime(0.0001, t, 0.03);              // a short release, never a click
-    N.src.stop(t + 0.2);
-    for (const o of N.oscs) o.stop(t + 0.2);
+    g.gain.cancelScheduledValues(t);
+    g.gain.setTargetAtTime(0.0001, t, GLIDE.release / 3);   // a short release, never a click
+    src.stop(t + GLIDE.release * 3);
   } catch {}
 }
-/* A preview of one charge's glide (push, glide, brake), rendered offline with the
- * same graph and the same per-frame steering — for listening outside the game.
+/* A preview of one charge (the push-off hit and the slide under the same
+ * per-frame steering), rendered offline — for listening outside the game.
  * Returns { rate, data }. */
-async function renderGlidePreview(level2 = false) {
+async function renderGlidePreview() {
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const sr = 44100, R = RAM, total = R.accelT + R.glideT + R.decelT;
-  const ac = new OAC(1, Math.floor(sr * (total + 0.5)), sr);
-  const P = level2 ? GLIDE.wet : GLIDE.street;
-  const N = buildGlide(ac, ac.destination, P);
-  let walk = 0;
+  const R = RAM, total = R.accelT + R.glideT + R.decelT, sr = 44100;
+  const slide = cueBuf.ramSlide, push = cueBuf.ramSlidePush;
+  if (!slide) return null;
+  const ac = new OAC(1, Math.floor(sr * (total + 0.6)), sr);
+  if (push) {
+    const P = CUES.ramSlidePush, s0 = ac.createBufferSource(), g0 = ac.createGain();
+    s0.buffer = push; g0.gain.value = P.gain ?? 1; s0.connect(g0); g0.connect(ac.destination);
+    s0.start(0.05, P.onset ?? 0); if (P.dur) s0.stop(0.05 + P.dur);
+  }
+  const N = buildGlide(ac, ac.destination, slide, 0.05);
+  let started = false;
   for (let t = 0; t < total; t += 1 / 60) {
     const v = ramSpeedAt(t), sp = Math.min(1, v / R.peak);
     const ph = t < R.accelT ? 'push' : t < R.accelT + R.glideT ? 'glide' : 'brake';
     const lv = v < 60 ? 0 : ph === 'push' ? 0.3 * sp : ph === 'glide' ? 0.72 * sp : Math.min(1, 0.45 + 0.75 * Math.sqrt(sp));
-    walk = Math.max(-0.08, Math.min(0.08, walk + (Math.random() - 0.5) * 0.03));
-    steerGlide(N, P, lv, sp, t + 0.05, walk);
+    if (lv > 0.02) started = true;
+    if (started) steerGlide(N, lv, sp, t + 0.05);
   }
-  N.g.gain.setTargetAtTime(0.0001, total + 0.05, 0.03);
+  N.g.gain.setTargetAtTime(0.0001, total + 0.05, GLIDE.release / 3);
   const out = await ac.startRendering();
   return { rate: sr, data: Array.from(out.getChannelData(0)) };
 }
@@ -6495,7 +6437,7 @@ function advanceFx(dt) {
    * an echo cannot be stranded live by a state change that skipped endRush. */
   rushFxUpdate(dt);
   ramDustUpdate(dt);                      // RamRage's dust settles on its own clock (request 510)
-  if (glide.nodes && rushState !== RUSH_STATE.RAM) stopGlide();   // no way out of a ram leaves it sounding
+  if (glide.src && rushState !== RUSH_STATE.RAM) stopGlide();   // no way out of a ram leaves it sounding
   updateDamageFx(dt);                    // the danger dim and the blood (request 483)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
@@ -13802,6 +13744,7 @@ function startRamRage(dir, v0) {
   player.ramStarts = (player.ramStarts || 0) + 1;
   // the effort, once, on the commitment (the rush's own groan, heavier)
   playCue('darkiRush', player.x, 1.15, 0.92);
+  playCue('ramSlidePush', player.x, 0.6 + 0.6 * (1 - Math.min(1, (player.ramV0 ?? 0) / RAM.peak)), 1);   // the shove off the back foot (request 513)
   // the push-off: the less speed he brings into it, the harder the back foot drives
   ramDustEndSkid();
   ramDustLaunch(dir, 1 - Math.min(1, player.ramV0 / RAM.peak));
@@ -23371,13 +23314,18 @@ function drawHud() {
   const cribW = VIEW_W - px * 2;
   /* While an authoring overlay is open its own crib takes this strip — the
    * bindings behind the tool are noise the tool has already replaced. */
-  if (!RE.on && !AM.on) {
-    fitText('WASD · Jump · Jab LMB · High-Kick RMB · Back-Kick back+RMB · 5-Hit Combo LMBx2 · Uppercut hold-RMB+LMB / K · Grab G / MMB / R2 · Block hold L / Shift / L1 · EXECUTE / PICK UP / THROW E / L2 · Pause P · Mute M',
+  /* REQUEST 513: the crib is a KEYBOARD AND MOUSE card, so it is not drawn on a
+   * touch screen at all (the buttons there carry their own icons), and it names
+   * only real keys: Jump is Space, J is the jab too, the pad's R2/L1/L2 are gone
+   * (they belong to the CONTROLS screen, not to a keyboard line), and RamRage —
+   * a real command — is listed. */
+  if (!RE.on && !AM.on && !isTouchUI()) {
+    fitText('WASD Move · Space Jump · LMB / J Jab · RMB High-Kick · back+RMB Back-Kick · LMBx2 5-Hit Combo · hold RMB+LMB / K Uppercut · G / MMB Grab · hold L / Shift Block · E Execute / Pick up / Throw · P Pause · M Mute',
       px, VIEW_H - 42, cribW);
     ctx.fillStyle = 'rgba(255,210,122,0.85)';
     // Armed, the second line is that weapon's own moves (WEAPONS[type].crib).
     fitText(player.weapon ? WEAPONS[player.weapon].crib
-      : 'SPRINT fwd,fwd (hold to keep running) · out of a sprint: RMB Dash Kick · LMB Running Grab · LMBx2 Running Combo',
+      : 'fwd,fwd Sprint (hold to keep running) · out of a sprint: RMB Dash Kick · LMB Running Grab · LMBx2 Running Combo · full gauge: back,fwd RamRage',
       px, VIEW_H - 24, cribW);
   }
 
@@ -25711,10 +25659,10 @@ window.__ror = {
       ramDustFwd: ramDust.p.filter((d) => d.live && !d.kind && Math.sign(d.vx) === (player.ramDir || 1)).length,
       ramDustGrit: ramDust.p.filter((d) => d.live && d.kind).length, ramDustAboveFloor: ramDust.p.some((d) => d.live && d.z > 0.01),
       scuffs: ramDust.scuffs.filter((m) => m.live).length,
-      glide: { on: !!glide.nodes, level: glide.level, plays: glide.plays } };
+      glide: { on: !!glide.src, level: glide.level, plays: glide.plays, loaded: !!cueBuf.ramSlide && !!cueBuf.ramSlidePush } };
   },
   stopGlide() { stopGlide(); },
-  renderGlidePreview(l2) { return renderGlidePreview(l2); },   // test: the glide, offline (request 512)
+  renderGlidePreview() { return renderGlidePreview(); },   // test: one charge's glide, offline (requests 512/513)
   ramPathClear(x0, x1, y) { return ramPathClear(x0, x1, y); },
   startL2Outro() { startL2Outro(); },             // test: straight to Level 02's closing card (request 501)
   get lastLaunchFit() { return lastLaunchFit; },

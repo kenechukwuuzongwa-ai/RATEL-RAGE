@@ -1560,52 +1560,51 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   const defaultSelect = () => Math.max(0, selectCards().length - 1);
   const nextPlayable = () => !!LEVELS[reached + 1]?.playable;
 
-  /* --------------------------------------------- THE SCROLLING CARD GRID ---
-   * Two cards a row at the size they were designed at, centred on the frame.
-   * More than one row does not fit between the header and the prompt, so the
-   * grid lives in a clipped viewport that scrolls: wheel/trackpad, a drag with
-   * the mouse or a finger, and focus moves scroll the focused card into view.
-   * Content y 0 is the viewport top; the first row sits at the old y = 214. */
-  const SEL = { cw: 496, ch: 316, gapX: 48, gapY: 26, top: 190, bottom: 650, pad: 24, slop: 8 };
+  /* ----------------------------------------------- THE MISSION STRIP (513) ---
+   * ONE horizontal row of cards at the size they were designed at, TWO in view
+   * at a time, centred on the frame (request 513; it was a two-column grid that
+   * scrolled vertically). The highlight steps one card at a time and the strip
+   * slides SIDEWAYS so the highlighted card is always one of the two in view —
+   * the window moves only when the highlight walks off its edge. A vertical
+   * swipe steps it (up = the next card, down = the previous one), as do the
+   * arrows and the wheel; a tap anywhere launches the highlighted mission.
+   * `selScroll` is the strip's x offset: content x 0 is the first card's left edge. */
+  /* `swipe` and `stepPx` are SCREEN (CSS) pixels, not frame pixels: a phone shows
+   * the 1280-wide frame at ~844 px, so the same finger travel would otherwise step
+   * twice as far there. One ordinary swipe = one card, on any screen. */
+  const SEL = { cw: 496, ch: 316, gap: 48, top: 214, swipe: 24, stepPx: 110, slop: 8, wheelStep: 60 };
+  const selPitch = SEL.cw + SEL.gap;
   let selScroll = 0, selScrollTarget = 0;
-  let selDrag = null;               // { id, x0, y0, p0, s0, moved, axis }
+  let selWin = 0;                   // the first of the (up to) two cards in view
+  let selDrag = null;               // { id, x0, y0, p0, sel0, steps, moved, axis }
+  let selWheel = 0;                 // wheel travel not yet spent on a step
   function selLayout() {
     const cards = selectCards();
-    const rows = Math.ceil(cards.length / 2);
-    const x0 = Math.round(W / 2 - (SEL.cw * 2 + SEL.gapX) / 2);
-    const boxes = cards.map((card, i) => {
-      const row = Math.floor(i / 2), col = i % 2;
-      const inRow = Math.min(2, cards.length - row * 2);
-      /* A row with one card centres it, rather than leaving it hanging left. */
-      const x = inRow === 2 ? x0 + col * (SEL.cw + SEL.gapX) : Math.round(W / 2 - SEL.cw / 2);
-      return { card, x, y: SEL.pad + row * (SEL.ch + SEL.gapY), w: SEL.cw, h: SEL.ch };
-    });
-    const contentH = SEL.pad * 2 + rows * SEL.ch + Math.max(0, rows - 1) * SEL.gapY;
-    const viewH = SEL.bottom - SEL.top;
-    return { cards, boxes, contentH, viewH, max: Math.max(0, contentH - viewH) };
+    const shown = Math.min(2, cards.length);
+    const viewW = shown * SEL.cw + Math.max(0, shown - 1) * SEL.gap;
+    const x0 = Math.round(W / 2 - viewW / 2);
+    const boxes = cards.map((card, i) => ({ card, cx: i * selPitch, y: SEL.top, w: SEL.cw, h: SEL.ch }));
+    const maxWin = Math.max(0, cards.length - 2);
+    return { cards, boxes, x0, viewW, maxWin, max: maxWin * selPitch };
   }
-  const selClamp = (v) => clamp(v, 0, selLayout().max);
-  /* The smallest scroll that shows the whole of card `i` (with the grid's own
-   * padding around it). `instant` for arriving; otherwise it eases. */
+  /* Keep card `i` in the two-card window, moving the window as little as
+   * possible. `instant` for arriving; otherwise the strip eases there. */
   function selReveal(i, instant = false) {
     const L = selLayout();
-    const b = L.boxes[i];
-    if (!b) return;
-    let t = selScrollTarget;
-    if (b.y - SEL.pad < t) t = b.y - SEL.pad;
-    if (b.y + b.h + SEL.pad > t + L.viewH) t = b.y + b.h + SEL.pad - L.viewH;
-    selScrollTarget = clamp(t, 0, L.max);
+    if (i < selWin) selWin = i;
+    else if (i > selWin + 1) selWin = i - 1;
+    selWin = clamp(selWin, 0, L.maxWin);
+    selScrollTarget = selWin * selPitch;
     if (instant) selScroll = selScrollTarget;
   }
   function selMove(to) {
     const n = selectCards().length;
-    /* At an edge the focus stays put, but a direction press still brings the
-     * focused card back into view (it may have been scrolled away by hand). */
     if (to < 0 || to >= n || to === select) { selReveal(select); return false; }
     select = to;
     selReveal(select);
     return true;
   }
+  const selStep = (d) => { if (selMove(select + d)) { if (d > 0) getUi()?.navForward(); else getUi()?.navBack(); return true; } return false; };
 
   /* POINTER INPUT FOR THIS SCREEN. game.js's mouse path accepts on mousedown
    * and touch.js's gesture layer turns a swipe into arrow keys or Enter — both
@@ -1613,12 +1612,14 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * level select is up, this screen takes the pointer itself (window capture,
    * ahead of both), and only for events aimed at the game: the canvas, or the
    * gesture layer laid over it on touch devices.
-   *   move < 8 px and release  -> a TAP: pick the card under it and launch it
-   *                               (the old click/tap contract — a tap off the
-   *                               cards confirms the focused one, as before)
-   *   move >= 8 px vertically  -> a DRAG: scrolls; never selects or launches
+   *   move < 8 px and release  -> a TAP: launches the HIGHLIGHTED mission
+   *                               (request 513; a mouse click on a card is on
+   *                               the card its hover already highlighted)
+   *   vertical swipe           -> steps the highlight: up = next, down = back;
+   *                               a long drag steps once per SEL.stepPx, a short
+   *                               flick (>= SEL.swipe) steps once; never launches
    *   move >= 8 px sideways    -> a swipe; left goes back (touch.js's meaning)
-   *   mouse hover              -> focuses the card under it (as before) */
+   *   mouse hover              -> highlights the card under it (as before) */
   const selCanvas = ctx.canvas;
   const selOwns = () => active && state === 'LEVEL_SELECT';
   const selTarget = (e) => !!e.target && (e.target === selCanvas || e.target.id === 'ror-gest');
@@ -1637,7 +1638,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       try { selCanvas.focus({ preventScroll: true }); } catch {}
       const ui = getUi();
       selDrag = { id: e.pointerId, x0: e.clientX, y0: e.clientY,
-        p0: ui ? ui.pointerPos(e) : { x: 0, y: 0 }, s0: selScroll, moved: false, axis: null };
+        p0: ui ? ui.pointerPos(e) : { x: 0, y: 0 }, sel0: select, steps: 0, moved: false, axis: null };
     }, true);
     window.addEventListener('pointermove', (e) => {
       if (!selOwns()) { selDrag = null; return; }
@@ -1649,9 +1650,11 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
           selDrag.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
         }
         if (selDrag.moved && selDrag.axis === 'y') {
-          const ui = getUi();
-          const p = ui ? ui.pointerPos(e) : selDrag.p0;
-          selScroll = selScrollTarget = selClamp(selDrag.s0 - (p.y - selDrag.p0.y));
+          // one step per SEL.stepPx of travel, live: the highlight and the strip follow the finger
+          const want = Math.trunc((selDrag.y0 - e.clientY) / SEL.stepPx);
+          while (selDrag.steps < want && selStep(1)) selDrag.steps++;
+          while (selDrag.steps > want && selStep(-1)) selDrag.steps--;
+          if (selDrag.steps !== want) selDrag.steps = want;     // pinned at an end
         }
         return;
       }
@@ -1670,10 +1673,15 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       if (d.moved) {
         const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
         if (d.axis === 'x' && e.pointerType !== 'mouse' && dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.2) press('back');
-        return;                                  // a drag or a swipe never picks or launches
+        if (d.axis === 'y' && d.steps === 0) {
+          const ty = d.y0 - e.clientY;
+          if (Math.abs(ty) >= SEL.swipe) selStep(ty > 0 ? 1 : -1);
+        }
+        return;                                  // a swipe never launches
       }
-      const h = selHit(e);
-      if (h) select = h.index;
+      // a mouse click lands on the card it is over (hover already highlighted it);
+      // a tap anywhere launches the highlighted mission (request 513)
+      if (e.pointerType === 'mouse') { const h = selHit(e); if (h) select = h.index; }
       press('accept');
     }, true);
     window.addEventListener('pointercancel', (e) => {
@@ -1688,8 +1696,13 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     window.addEventListener('wheel', (e) => {
       if (!selOwns() || !selTarget(e)) return;
       swallow(e);
-      const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? SEL.bottom - SEL.top : 1;
-      selScrollTarget = selClamp(selScrollTarget + e.deltaY * k);
+      const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1;
+      selWheel += (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * k;
+      while (Math.abs(selWheel) >= SEL.wheelStep) {
+        const d = Math.sign(selWheel);
+        selWheel -= d * SEL.wheelStep;
+        if (!selStep(d)) { selWheel = 0; break; }
+      }
     }, { capture: true, passive: false });
     /* Test surface (game.js's `__ror.aftermath` snapshot is a fixed list): the
      * grid as drawn — cards in frame coordinates at the CURRENT scroll. */
@@ -1697,13 +1710,13 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       const L = selLayout();
       return {
         state, select, chosen, reached,
-        scroll: +selScroll.toFixed(2), target: +selScrollTarget.toFixed(2), max: L.max,
-        viewport: { top: SEL.top, bottom: SEL.bottom, W },
+        scroll: +selScroll.toFixed(2), target: +selScrollTarget.toFixed(2), max: L.max, win: selWin,
+        viewport: { x: L.x0, w: L.viewW, top: SEL.top, bottom: SEL.top + SEL.ch, W },
         dragging: !!selDrag?.moved,
         cards: L.boxes.map((b, i) => ({
           i, id: b.card.id, level: b.card.level, playable: !!LEVELS[b.card.level]?.playable,
           action: cardAction(b.card),
-          x: b.x, y: SEL.top + b.y - Math.round(selScroll), w: b.w, h: b.h,
+          x: L.x0 + b.cx - Math.round(selScroll), y: b.y, w: b.w, h: b.h,
         })),
       };
     };
@@ -1852,18 +1865,19 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const ch = SEL.ch;
     selScroll = clamp(selScroll, 0, L.max);
     selScrollTarget = clamp(selScrollTarget, 0, L.max);
-    /* The viewport. Cards outside it are not drawn and push no hitbox; a card
-     * half in pushes only its visible part, so nothing under the header or the
-     * prompt can be clicked. */
+    /* The two-card window. Cards outside it are not drawn and push no hitbox; a
+     * card sliding through its edge is clipped there and pushes only its visible
+     * part. Vertically it has room for the highlighted card's lift. */
+    const vx0 = L.x0 - 8, vx1 = L.x0 + L.viewW + 8;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, SEL.top, W, L.viewH);
+    ctx.rect(vx0, SEL.top - 24, vx1 - vx0, SEL.ch + 48);
     ctx.clip();
 
     L.boxes.forEach((b, i) => {
       const card = b.card;
-      const box = { x: b.x, y: SEL.top + b.y - Math.round(selScroll), w: b.w, h: b.h };
-      if (box.y >= SEL.bottom || box.y + box.h <= SEL.top) return;
+      const box = { x: L.x0 + b.cx - Math.round(selScroll), y: b.y, w: b.w, h: b.h };
+      if (box.x >= vx1 || box.x + box.w <= vx0) return;
       const on = select === i;
       const lvl = LEVELS[card.level];
       const who = resolveIdentity(lvl.boss);
@@ -1940,26 +1954,31 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
 
       /* A real hitbox, so the mouse can pick a card exactly like every other
        * screen in this game — clipped to the viewport like the card is. */
-      const y0 = Math.max(box.y, SEL.top), y1 = Math.min(box.y + box.h, SEL.bottom);
-      if (y1 - y0 > 0) ui.hitboxes.push({ x: box.x, y: y0, w: box.w, h: y1 - y0, index: i, id: `after:${i}` });
+      const x0 = Math.max(box.x, vx0), x1 = Math.min(box.x + box.w, vx1);
+      if (x1 - x0 > 0) ui.hitboxes.push({ x: x0, y: box.y, w: x1 - x0, h: box.h, index: i, id: `after:${i}` });
     });
     ctx.restore();                                   // drop the viewport clip
 
-    /* The scroll position, only when there is somewhere to scroll: a thin rail
-     * just right of the grid, in the screen's own blue-grey and orange. */
+    /* Where the strip is, only when there is more than the two in view: a thin
+     * horizontal rail under the cards, in the screen's own blue-grey and orange,
+     * with a tick per mission so the count reads at a glance. */
     if (L.max > 0) {
-      const rx = Math.round(W / 2 + (SEL.cw * 2 + SEL.gapX) / 2 + 20);
-      const ry = SEL.top + SEL.pad, rh = L.viewH - SEL.pad * 2;
-      const th = Math.max(36, rh * (L.viewH / L.contentH));
-      const ty = ry + (rh - th) * (selScroll / L.max);
+      const n = L.cards.length;
+      const rw = L.viewW, rx = L.x0, ry = SEL.top + SEL.ch + 22;
+      const tw = Math.max(36, rw * (2 / n));
+      const tx = rx + (rw - tw) * (selScroll / L.max);
       ctx.save();
       ctx.globalAlpha *= clamp(stateT / 0.5, 0, 1);
-      ui.roundRectPath(ctx, rx, ry, 4, rh, 2);
+      ui.roundRectPath(ctx, rx, ry, rw, 4, 2);
       ctx.fillStyle = 'rgba(150,176,214,0.16)';
       ctx.fill();
-      ui.roundRectPath(ctx, rx, ty, 4, th, 2);
+      ui.roundRectPath(ctx, tx, ry, tw, 4, 2);
       ctx.fillStyle = C.orange;
       ctx.fill();
+      for (let k = 0; k < n; k++) {
+        ctx.fillStyle = k === select ? C.orange : 'rgba(150,176,214,0.35)';
+        ctx.beginPath(); ctx.arc(rx + rw / 2 + (k - (n - 1) / 2) * 16, ry + 16, k === select ? 3.5 : 2.5, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.restore();
     }
   }
@@ -2031,9 +2050,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       bgFade = Math.min(1, bgFade + dt / 0.65);
     }
 
-    /* The card grid eases to wherever the wheel or a focus move asked; a drag
-     * sets it directly and is never fought by the ease. */
-    if (state === 'LEVEL_SELECT' && !selDrag?.moved) {
+    /* The strip eases sideways to wherever the highlight moved its window. */
+    if (state === 'LEVEL_SELECT') {
       selScroll += (selScrollTarget - selScroll) * (1 - Math.exp(-dt * 14));
       if (Math.abs(selScrollTarget - selScroll) < 0.25) selScroll = selScrollTarget;
     }
@@ -2231,13 +2249,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
        * horizontal file and the shoulders own it; letting the stick page it too
        * would make the same input mean "walk the network" on one screen and
        * "turn the page" on the next. */
+      /* The strip (request 513) is one line: up/down step it one card, like
+       * left/right — down (and a swipe up) to the next, up to the previous. */
       if (state === 'LEVEL_SELECT' && (action === 'up' || action === 'down')) {
-        const n = selectCards().length;
-        const rowOf = (i) => Math.floor(i / 2);
-        const to = step > 0
-          ? (rowOf(select) < rowOf(n - 1) ? Math.min(n - 1, select + 2) : select)
-          : select - 2;
-        if (selMove(to)) { if (step > 0) ui?.navForward(); else ui?.navBack(); }
+        selStep(step > 0 ? 1 : -1);
         return true;
       }
       if (action === 'up' || action === 'down') return false;
@@ -2372,8 +2387,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
           cabalT = cabalResume;
           return true;
         }
-        /* Left/right walk the cards in order; up/down move a row of the grid.
-         * Every move scrolls the focused card fully into view. */
+        /* Left/right walk the strip in order (as do up/down, above); every move
+         * keeps the highlighted card in the two-card window. */
         if (action === 'left') { if (selMove(select - 1)) ui?.navForward(); return true; }
         if (action === 'right') { if (selMove(select + 1)) ui?.navForward(); return true; }
         if (action === 'accept') {
@@ -2486,7 +2501,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       state = 'MISSION_COMPLETE';
       stateT = 0; bgFade = 0; revealT = 0; cabalT = 0; chosen = null;
       select = defaultSelect();                  // the next level, as before
-      selScroll = selScrollTarget = 0; selDrag = null;
+      selScroll = selScrollTarget = 0; selWin = 0; selWheel = 0; selDrag = null;
       page = null; pageFade = 1; hadTarget = false;
       chainSel = 0; chainPinned = false; chainFade = 1; fromCabal = false;
       /* The case the sequence is ABOUT is the one whose mission just ended, and
