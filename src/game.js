@@ -5850,6 +5850,10 @@ const CUES = {
    * shove off the back foot. */
   ramSlide:     { src: 'sounds/ramrage-slide.mp3',      onset: 0.28, gain: 2.4 },
   ramSlidePush: { src: 'sounds/ramrage-slide-push.mp3', onset: 0.06, dur: 0.32, gain: 1.3 },
+  /* …AND THE BODY (request 514): a shoulder driven into a man's chest — a deep,
+   * single thud generated for this game (_chromakey/req514/sfx). Its hit lands
+   * 0.5 s into the file; played from just before it, on each man RamRage meets. */
+  ramBodyHit:   { src: 'sounds/ramrage-bodyhit.mp3',    onset: 0.47, dur: 0.40, gain: 1.6 },
 };
 // Cut a sharpen scrape / chop swoosh short (he was interrupted). Safe on null
 // and on a source that has already finished.
@@ -6046,12 +6050,21 @@ function playSwing(kind = 'jab', atX = null) {
  * frame: it starts with the slide, its level follows the speed (the braking skid
  * loudest), its rate rises a touch with speed, and it is cut with a short
  * release the moment the feet stop. The push-off gets its own hit
- * (ramSlidePush, played in startRamRage). */
+ * (ramSlidePush, played in startRamRage).
+ *
+ * REQUEST 514: it is the sound of EVERY glide in the game now, not RamRage's
+ * alone. The bed belongs to whichever move is feeding it this frame (`owner`):
+ * RamRage, and the sliding plant of the rush attacks (the dash kick's lunge, the
+ * bat/machete rush's plant — advanceAttackLunge). A bed nobody fed for a moment
+ * of game time is stopped by advanceFx, so no way out of a move leaves it
+ * sounding. The short glides (the rack-pull slide onto the mark, a knocked-down
+ * body skidding on the deck) get a one-shot cut of the same take (playSlideOnce). */
 const GLIDE = {
   tau: 0.03,                                // s: how fast it follows the speed
   release: 0.05,                            // s: the fade when the feet stop
+  starve: 0.08,                             // s of game time unfed before the bed stops
 };
-const glide = { src: null, g: null, sp: null, level: 0, plays: 0 };
+const glide = { src: null, g: null, sp: null, level: 0, plays: 0, owner: null, fedAt: 0, owners: {} };
 /* The bed, on any context (the game's, or an offline one for a preview). */
 function buildGlide(ac, dest, buf, at = ac.currentTime) {
   const def = CUES.ramSlide;
@@ -6068,9 +6081,13 @@ function steerGlide(N, level, s, t) {
   N.src.playbackRate.setTargetAtTime(0.94 + 0.16 * s, t, 0.05);
   N.g.gain.setTargetAtTime(Math.max(0.0001, (CUES.ramSlide.gain ?? 1) * (0.3 + 0.7 * level)), t, GLIDE.tau);
 }
-/* `level` 0..1 (0 stops it), `s` the speed fraction, `x` world x. */
-function setGlide(level, s, x) {
+/* `level` 0..1 (0 stops it), `s` the speed fraction, `x` world x; `owner` names
+ * the move feeding it (another owner's bed is replaced, never doubled). */
+function setGlide(level, s, x, owner = 'ram') {
+  if (glide.owner && glide.owner !== owner && glide.src) stopGlide();
   glide.level = level;
+  glide.owner = owner;
+  glide.fedAt = mobClock;
   if (!audioCtx || audioMuted || paused || level <= 0.02) { stopGlide(); return; }
   const t = audioCtx.currentTime;
   try {
@@ -6080,6 +6097,7 @@ function setGlide(level, s, x) {
       resumeAudio();
       Object.assign(glide, buildGlide(audioCtx, sfxGain, buf));
       glide.plays++;
+      glide.owners[owner] = (glide.owners[owner] ?? 0) + 1;
       cueFired.ramSlide = (cueFired.ramSlide ?? 0) + 1;
     }
     steerGlide(glide, level, s, t);
@@ -6088,6 +6106,7 @@ function setGlide(level, s, x) {
 }
 function stopGlide() {
   glide.level = 0;
+  glide.owner = null;
   if (!glide.src) return;
   const { src, g } = glide;
   glide.src = glide.g = glide.sp = null;
@@ -6097,6 +6116,35 @@ function stopGlide() {
     g.gain.setTargetAtTime(0.0001, t, GLIDE.release / 3);   // a short release, never a click
     src.stop(t + GLIDE.release * 3);
   } catch {}
+}
+/* A SHORT GLIDE, fire-and-forget: a cut of the same slide take, `dur` seconds
+ * long (a fast attack, then faded over its back half), at `weight`. */
+const slideOnces = { plays: 0, live: 0 };
+function playSlideOnce(x, weight = 1, dur = 0.3) {
+  slideOnces.plays++;
+  cueFired.slideOnce = (cueFired.slideOnce ?? 0) + 1;
+  const buf = cueBuf.ramSlide, def = CUES.ramSlide;
+  if (!buf || !audioCtx || audioMuted || weight <= 0.02) return false;
+  if (slideOnces.live >= 3) return false;             // a pile-up of bodies is one skid, not six
+  try {
+    resumeAudio();
+    const t = audioCtx.currentTime;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.97 + Math.random() * 0.1;
+    const g = audioCtx.createGain(), peak = (def.gain ?? 1) * Math.min(1, weight);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + 0.015);
+    g.gain.setValueAtTime(peak, t + dur * 0.5);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    panTo(src, x).connect(g); g.connect(sfxGain);
+    // from inside the scrape (past its onset), so the cut starts on the friction itself
+    src.start(t, (def.onset ?? 0) + 0.25 + Math.random() * 0.3);
+    src.stop(t + dur + 0.02);
+    slideOnces.live++;
+    src.onended = () => { slideOnces.live = Math.max(0, slideOnces.live - 1); };
+    return true;
+  } catch { return false; }
 }
 /* A preview of one charge (the push-off hit and the slide under the same
  * per-frame steering), rendered offline — for listening outside the game.
@@ -6437,7 +6485,8 @@ function advanceFx(dt) {
    * an echo cannot be stranded live by a state change that skipped endRush. */
   rushFxUpdate(dt);
   ramDustUpdate(dt);                      // RamRage's dust settles on its own clock (request 510)
-  if (glide.src && rushState !== RUSH_STATE.RAM) stopGlide();   // no way out of a ram leaves it sounding
+  // no way out of a glide leaves it sounding: a ram that ended, or a bed nobody fed (request 514)
+  if (glide.src && ((glide.owner === 'ram' && rushState !== RUSH_STATE.RAM) || mobClock - glide.fedAt > GLIDE.starve)) stopGlide();
   updateDamageFx(dt);                    // the danger dim and the blood (request 483)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
@@ -11270,6 +11319,9 @@ function startRackPull(ri) {
   // eased onto the mark over the take's first beat, not snapped (request 495)
   player.rackPullFrom = { ri, ii, kind: r.kind, slide: { t: 0, fx: player.x, fy: player.y, tx: m.x, ty: m.y } };
   player.vx = 0; player.depthV = 0; player.facing = m.facing;
+  // the slide onto the mark is a glide too (request 514): as loud as it is long
+  const dist = Math.hypot(m.x - player.x, m.y - player.y);
+  if (dist > 14) playSlideOnce(player.x, Math.min(0.75, dist / 120), RACK_PULL.slide + 0.12);
   return r.kind === 'bat' ? 'rackPullBat' : 'rackPullMachete';
 }
 function stepRackPullSlide(dt) {
@@ -13852,6 +13904,8 @@ function ramImpact(e, dir, s) {
     missile: s >= R.missileAt ? { power: Math.min(1, s * force), pierce: player.rageActive ? 2 : 1 } : undefined,
   };
   hitEnemy(e, win);
+  // the BODY: shoulder into a man, the meat of it, as hard as he was going (request 514)
+  playCue('ramBodyHit', e.x, 0.65 + 0.6 * s, 0.94 + 0.1 * (1 - s));
   // the low end: the deck answering a man driven into it, scaled by the blow
   groundSlam(e.x, e.y, 0.5 + 0.8 * s);
   ramDustImpact(e.x, e.y, dir, s);
@@ -19182,6 +19236,12 @@ function advanceAttackLunge(move, step, dt) {
       && (e.x - player.x) * dir > 0 && (e.x - player.x) * dir < L.contact)) return;
   player.x += dir * L.speed * k * dt;
   clampPlayerToArena();
+  /* THE GLIDE UNDER IT (request 514): the dash kick's lunge decays from its
+   * first step — he slides into it on his standing foot — and a bat/machete
+   * rush SLIDES its plant once the run lets go. A stride (the run's held part)
+   * is feet stepping, not gliding, so it is silent here. */
+  const sliding = player.grounded && !player.runOn && step >= hold;
+  if (sliding && k > 0.05) setGlide(Math.min(1, 0.35 + 0.75 * k), Math.min(1, L.speed * k / RAM.peak), player.x, 'lunge');
 }
 
 // Attacks drive their frames straight from the ATTACKS table (curated, so the
@@ -21204,6 +21264,8 @@ function update(dt) {
           enemy.bounceScale = Math.max(lo, Math.min(hi, enemy.bounceScale));
           enemy.slideVx = enemy.vx * RUSH_KNOCK.slideKeep;
           enemy.bounceHop = 0;
+          // …and the body GLIDES on the deck: the same slide, as hard as he skids (request 514)
+          if (Math.abs(enemy.slideVx) > 40) playSlideOnce(enemy.x, Math.min(0.9, 0.3 + Math.abs(enemy.slideVx) / 300), 0.45);
         }
         const thrownWeight = enemy.thrownByCarry
           ? 0.90 + 0.35 * (enemy.throwPower ?? 0)
@@ -25659,7 +25721,8 @@ window.__ror = {
       ramDustFwd: ramDust.p.filter((d) => d.live && !d.kind && Math.sign(d.vx) === (player.ramDir || 1)).length,
       ramDustGrit: ramDust.p.filter((d) => d.live && d.kind).length, ramDustAboveFloor: ramDust.p.some((d) => d.live && d.z > 0.01),
       scuffs: ramDust.scuffs.filter((m) => m.live).length,
-      glide: { on: !!glide.src, level: glide.level, plays: glide.plays, loaded: !!cueBuf.ramSlide && !!cueBuf.ramSlidePush } };
+      glide: { on: !!glide.src, level: glide.level, plays: glide.plays, owner: glide.owner, owners: { ...glide.owners },
+        loaded: !!cueBuf.ramSlide && !!cueBuf.ramSlidePush, bodyHit: !!cueBuf.ramBodyHit, slideOnces: slideOnces.plays } };
   },
   stopGlide() { stopGlide(); },
   renderGlidePreview() { return renderGlidePreview(); },   // test: one charge's glide, offline (requests 512/513)
