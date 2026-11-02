@@ -5850,10 +5850,6 @@ const CUES = {
    * shove off the back foot. */
   ramSlide:     { src: 'sounds/ramrage-slide.mp3',      onset: 0.28, gain: 2.4 },
   ramSlidePush: { src: 'sounds/ramrage-slide-push.mp3', onset: 0.06, dur: 0.32, gain: 1.3 },
-  /* …AND THE BODY (request 514): a shoulder driven into a man's chest — a deep,
-   * single thud generated for this game (_chromakey/req514/sfx). Its hit lands
-   * 0.5 s into the file; played from just before it, on each man RamRage meets. */
-  ramBodyHit:   { src: 'sounds/ramrage-bodyhit.mp3',    onset: 0.47, dur: 0.40, gain: 1.6 },
 };
 // Cut a sharpen scrape / chop swoosh short (he was interrupted). Safe on null
 // and on a source that has already finished.
@@ -6057,8 +6053,9 @@ function playSwing(kind = 'jab', atX = null) {
  * RamRage, and the sliding plant of the rush attacks (the dash kick's lunge, the
  * bat/machete rush's plant — advanceAttackLunge). A bed nobody fed for a moment
  * of game time is stopped by advanceFx, so no way out of a move leaves it
- * sounding. The short glides (the rack-pull slide onto the mark, a knocked-down
- * body skidding on the deck) get a one-shot cut of the same take (playSlideOnce). */
+ * sounding. The short glide (the rack-pull slide onto the mark) gets a one-shot
+ * cut of the same take (playSlideOnce). A knocked-down body keeps the original
+ * fall sound (request 516). */
 const GLIDE = {
   tau: 0.03,                                // s: how fast it follows the speed
   release: 0.05,                            // s: the fade when the feet stop
@@ -13903,9 +13900,7 @@ function ramImpact(e, dir, s) {
     rage: 14, dir,
     missile: s >= R.missileAt ? { power: Math.min(1, s * force), pierce: player.rageActive ? 2 : 1 } : undefined,
   };
-  hitEnemy(e, win);
-  // the BODY: shoulder into a man, the meat of it, as hard as he was going (request 514)
-  playCue('ramBodyHit', e.x, 0.65 + 0.6 * s, 0.94 + 0.1 * (1 - s));
+  hitEnemy(e, win);   // its impact is Darki's own punch-hit (playHit), as asked in request 516
   // the low end: the deck answering a man driven into it, scaled by the blow
   groundSlam(e.x, e.y, 0.5 + 0.8 * s);
   ramDustImpact(e.x, e.y, dir, s);
@@ -21264,8 +21259,7 @@ function update(dt) {
           enemy.bounceScale = Math.max(lo, Math.min(hi, enemy.bounceScale));
           enemy.slideVx = enemy.vx * RUSH_KNOCK.slideKeep;
           enemy.bounceHop = 0;
-          // …and the body GLIDES on the deck: the same slide, as hard as he skids (request 514)
-          if (Math.abs(enemy.slideVx) > 40) playSlideOnce(enemy.x, Math.min(0.9, 0.3 + Math.abs(enemy.slideVx) / 300), 0.45);
+          // (request 516: his fall keeps the original fall sound — no slide on the body)
         }
         const thrownWeight = enemy.thrownByCarry
           ? 0.90 + 0.35 * (enemy.throwPower ?? 0)
@@ -25237,6 +25231,7 @@ window.__ror = {
   get sparkCount() { return sparks.length; },
   get flash() { return flashTimer; },
   get sfxHits() { return sfxHits; },        // # of hit-SFX triggers (wiring check)
+  get sfxThuds() { return sfxThuds; },      // # of body-landing thuds (the enemy fall sound; request 516)
   get sfxLoaded() { return hitBuffers.length; },
   // What the bag ACCEPTED, and what it threw away for being empty. A clip that
   // decodes to silence passes every other check there is, so this is the only
@@ -25722,7 +25717,7 @@ window.__ror = {
       ramDustGrit: ramDust.p.filter((d) => d.live && d.kind).length, ramDustAboveFloor: ramDust.p.some((d) => d.live && d.z > 0.01),
       scuffs: ramDust.scuffs.filter((m) => m.live).length,
       glide: { on: !!glide.src, level: glide.level, plays: glide.plays, owner: glide.owner, owners: { ...glide.owners },
-        loaded: !!cueBuf.ramSlide && !!cueBuf.ramSlidePush, bodyHit: !!cueBuf.ramBodyHit, slideOnces: slideOnces.plays } };
+        loaded: !!cueBuf.ramSlide && !!cueBuf.ramSlidePush, slideOnces: slideOnces.plays } };
   },
   stopGlide() { stopGlide(); },
   renderGlidePreview() { return renderGlidePreview(); },   // test: one charge's glide, offline (requests 512/513)
