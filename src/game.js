@@ -5846,10 +5846,9 @@ const CUES = {
   /* RAMRAGE'S SLIDE (request 513): two takes generated for this game (Sorceress,
    * _chromakey/req513/sfx). The slide is a body scraping over gritty concrete —
    * its scrape starts 0.28 s in and runs ~1.5 s, played as the glide's bed (see
-   * setGlide). The push is the other take's opening hit (0.06-0.38 s), on the
-   * shove off the back foot. */
+   * setGlide). (The push-off hit that rode the shove read as a gunshot and was
+   * removed in request 517.) */
   ramSlide:     { src: 'sounds/ramrage-slide.mp3',      onset: 0.28, gain: 2.4 },
-  ramSlidePush: { src: 'sounds/ramrage-slide-push.mp3', onset: 0.06, dur: 0.32, gain: 1.3 },
 };
 // Cut a sharpen scrape / chop swoosh short (he was interrupted). Safe on null
 // and on a source that has already finished.
@@ -6045,8 +6044,7 @@ function playSwing(kind = 'jab', atX = null) {
  * generated for this game) played as a BED the charge's own speed drives every
  * frame: it starts with the slide, its level follows the speed (the braking skid
  * loudest), its rate rises a touch with speed, and it is cut with a short
- * release the moment the feet stop. The push-off gets its own hit
- * (ramSlidePush, played in startRamRage).
+ * release the moment the feet stop.
  *
  * REQUEST 514: it is the sound of EVERY glide in the game now, not RamRage's
  * alone. The bed belongs to whichever move is feeding it this frame (`owner`):
@@ -6149,14 +6147,9 @@ function playSlideOnce(x, weight = 1, dur = 0.3) {
 async function renderGlidePreview() {
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   const R = RAM, total = R.accelT + R.glideT + R.decelT, sr = 44100;
-  const slide = cueBuf.ramSlide, push = cueBuf.ramSlidePush;
+  const slide = cueBuf.ramSlide;
   if (!slide) return null;
   const ac = new OAC(1, Math.floor(sr * (total + 0.6)), sr);
-  if (push) {
-    const P = CUES.ramSlidePush, s0 = ac.createBufferSource(), g0 = ac.createGain();
-    s0.buffer = push; g0.gain.value = P.gain ?? 1; s0.connect(g0); g0.connect(ac.destination);
-    s0.start(0.05, P.onset ?? 0); if (P.dur) s0.stop(0.05 + P.dur);
-  }
   const N = buildGlide(ac, ac.destination, slide, 0.05);
   let started = false;
   for (let t = 0; t < total; t += 1 / 60) {
@@ -13793,7 +13786,6 @@ function startRamRage(dir, v0) {
   player.ramStarts = (player.ramStarts || 0) + 1;
   // the effort, once, on the commitment (the rush's own groan, heavier)
   playCue('darkiRush', player.x, 1.15, 0.92);
-  playCue('ramSlidePush', player.x, 0.6 + 0.6 * (1 - Math.min(1, (player.ramV0 ?? 0) / RAM.peak)), 1);   // the shove off the back foot (request 513)
   // the push-off: the less speed he brings into it, the harder the back foot drives
   ramDustEndSkid();
   ramDustLaunch(dir, 1 - Math.min(1, player.ramV0 / RAM.peak));
@@ -25717,7 +25709,7 @@ window.__ror = {
       ramDustGrit: ramDust.p.filter((d) => d.live && d.kind).length, ramDustAboveFloor: ramDust.p.some((d) => d.live && d.z > 0.01),
       scuffs: ramDust.scuffs.filter((m) => m.live).length,
       glide: { on: !!glide.src, level: glide.level, plays: glide.plays, owner: glide.owner, owners: { ...glide.owners },
-        loaded: !!cueBuf.ramSlide && !!cueBuf.ramSlidePush, slideOnces: slideOnces.plays } };
+        loaded: !!cueBuf.ramSlide, slideOnces: slideOnces.plays } };
   },
   stopGlide() { stopGlide(); },
   renderGlidePreview() { return renderGlidePreview(); },   // test: one charge's glide, offline (requests 512/513)
