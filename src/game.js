@@ -1890,6 +1890,22 @@ const AYEUATTACK_SHEET = {
 const SARS_WALK_SHEET = { src: 'sprites/sars-walk.png', metaSrc: 'sprites/sars-walk.json', cols: 8, rows: 8, faces: 1, drawH: 220, bodyFrame: 0, workH: 440 };
 const SARS_ATTACK_SHEET = { src: 'sprites/sars-attack.png', metaSrc: 'sprites/sars-attack.json', cols: 9, rows: 9, faces: 1, drawH: 217, bodyFrame: 0, workH: 440 };
 const SARS_THROW_SHEET = { src: 'sprites/sars-throw.png', metaSrc: 'sprites/sars-throw.json', cols: 9, rows: 8, faces: 1, drawH: 213, bodyFrame: 0, workH: 440 };
+/* HIS OWN CARRY (request 518): ASSETS/NEW SPRITES/Sars-Struggle-Throw — the Agbero
+ * stand-in is gone from every phase of it. 'Struggle' (0-39) is the lift and the
+ * hold; 'Throw Pair' (40-52) is the curl, the tucked anticipation and the tumble
+ * out of Darki's hands. Union-anchored and anchorFrame-frozen for the reasons
+ * SENIORCARRY_SHEET gives; head on the LEFT like the Aye's, hence faces -1. Its
+ * size and nudge are REGISTERED onto the senior's carry box (Darki's hands and
+ * head are drawn inside the held body), measured by _chromakey/req518/align.js. */
+const SARS_CARRY_SHEET = {
+  src: 'sprites/sars-carry.png', metaSrc: 'sprites/sars-carry.json',
+  cols: 8, rows: 7,            // 53 frames; cells 53-55 are empty and not listed
+  faces: -1,
+  drawH: 242,
+  anchorFrame: 0,
+  workH: 288,
+  nudge: { x: 28, y: 9 },
+};
 const SARS_REACT_SHEET = { src: 'sprites/sars-react.png', metaSrc: 'sprites/sars-react.json', cols: 9, rows: 9, faces: 1, drawH: 223, bodyFrame: 0, workH: 440 };
 const SARS_KNIFE_SHEET = { src: 'sprites/sars-knife.png', metaSrc: 'sprites/sars-knife.json', cols: 1, rows: 1, faces: -1, drawH: 24, bodyFrame: 0, workH: 109 };
 
@@ -4303,6 +4319,7 @@ let ayeUAttackSprite = null;   // UNARMED: his side kick
 let sarsWalkSprite = null;
 let sarsAttackSprite = null;
 let sarsThrowSprite = null;
+let sarsCarrySprite = null;   // his own carry: struggle + throw (request 518)
 let sarsReactSprite = null;
 let sarsKnifeSprite = null;
 let batPickupSprite = null;    // the floating bat Darki collects
@@ -10326,7 +10343,10 @@ const enemyKit = (enemy) => (enemy.kind === 'sars' ? {
   idle: { s: sarsAttackSprite, c: SARS_ATTACK_SHEET }, walk: { s: sarsWalkSprite, c: SARS_WALK_SHEET },
   atk: { s: sarsAttackSprite, c: SARS_ATTACK_SHEET }, throw: { s: sarsThrowSprite, c: SARS_THROW_SHEET },
   fall: { s: sarsReactSprite, c: SARS_REACT_SHEET }, hurt: { s: sarsReactSprite, c: SARS_REACT_SHEET },
-  death: { s: sarsReactSprite, c: SARS_REACT_SHEET }, carry: { s: gingerCarrySprite, c: ENEMYCARRY_SHEET },
+  death: { s: sarsReactSprite, c: SARS_REACT_SHEET },
+  /* NO AGBERO IN HIS CARRY (request 518): the lift, the hold and the throw all come
+   * off his own Struggle-Throw sheet (see the carried branch of enemyAnimRaw). */
+  carry: { s: sarsCarrySprite, c: SARS_CARRY_SHEET }, struggle: { s: sarsCarrySprite, c: SARS_CARRY_SHEET },
 } : enemy.kind === 'senior' ? {
   idle: { s: seniorSprite, c: SENIOR_SHEET },        // guard + the ginger bounce
   walk: { s: seniorWalkSprite, c: SENIORWALK_SHEET },
@@ -10527,8 +10547,10 @@ function enemyAnimRaw(enemy) {
      *
      * The LABEL stays the phase name, not the clip name, so the three phases
      * remain distinguishable to the harnesses and to `enemyAnimFull`. */
+    /* A sheet that names the phase itself (the SARS's 'Throw Pair', request 518)
+     * plays it; otherwise the struggle covers the phase, as above. */
     if (K.struggle?.s)
-      return kitAnim(K.struggle, 'struggle', name) ?? kitAnim(K.carry, name, name);
+      return kitAnim(K.struggle, name, name) ?? kitAnim(K.struggle, 'struggle', name) ?? kitAnim(K.carry, name, name);
     return kitAnim(K.carry, name, name);
   }
   // Thrown BY THE CARRY, and still alive: hand straight into the canonical
@@ -24999,7 +25021,7 @@ window.__ror = {
     macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteTornadoSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite, macheteThrowSprite, batJumpSprite, batStrikeSprite,
     jumpSprite, jumpStrikeSprite,
     olodoStanceSprite, olodoSpecialSprite, olodoHookSprite, olodoFallSprite,
-    sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite, wallSwitchSprite, systemSprite }; },
+    sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite, sarsCarrySprite, wallSwitchSprite, systemSprite }; },
   /* What a class is DRAWN at, resolved the way the renderer resolves it. Two
    * classes only read as two classes if one is visibly bigger, so that claim
    * needs to be measurable rather than taken on trust from a config constant. */
@@ -26989,6 +27011,7 @@ async function loadWorld() {
       loadSpriteFrames(SARS_THROW_SHEET),
       loadSpriteFrames(SARS_REACT_SHEET),
       loadSpriteFrames(SARS_KNIFE_SHEET),     // UNARMED Aye: his side kick
+      loadSpriteFrames(SARS_CARRY_SHEET),     // SARS carried: struggle + throw (request 518)
       loadSpriteFrames(MACHETE_SHEET),        // the weapon itself, as a world object
       loadSpriteFrames(BATPICKUP_SHEET),      // the floating bat pickup (request 303)
       loadSpriteFrames(BATWALK_SHEET),        // Darki + bat: walk
@@ -27029,7 +27052,7 @@ async function loadWorld() {
       seniorSprite, seniorWalkSprite, seniorFallSprite, seniorCarrySprite,
       shavedWalkSprite, shavedArmedSprite, shavedAttackSprite,
       shavedSharpenSprite, ayeFallSprite, ayeStruggleSprite, ayeUWalkSprite, ayeUAttackSprite,
-      sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite, sarsKnifeSprite, macheteSprite, batPickupSprite, batWalkSprite, batIdleSprite, batSwingSprite, batRushSprite,
+      sarsWalkSprite, sarsAttackSprite, sarsThrowSprite, sarsReactSprite, sarsKnifeSprite, sarsCarrySprite, macheteSprite, batPickupSprite, batWalkSprite, batIdleSprite, batSwingSprite, batRushSprite,
       macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteTornadoSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite,
       macheteThrowSprite, batJumpSprite, batStrikeSprite,
       olodoStanceSprite, olodoSpecialSprite, olodoHookSprite, olodoFallSprite] = assets;

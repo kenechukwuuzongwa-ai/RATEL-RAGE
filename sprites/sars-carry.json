@@ -1,0 +1,97 @@
+{
+  "generatedBy": "Hand-written for ASSETS/NEW SPRITES/Sars-Struggle-Throw.png (copied byte-for-byte as sars-carry.png). Grid from its supplied sibling JSON, confirmed against the PNG: 8x7, 53 drawn cells, 8192x4032, cell 1024x576; cells 53-55 empty. Sections read off the frames (_chromakey/req518/contact.png): 0-39 the held struggle (39 returns to 0's pose, so it loops); 40-44 he curls out of it, 45-47 the tucked hold (the anticipation), 48-52 the tumble out of Darki's hands (the throw).",
+  "sprite": "SarsCarry",
+  "image": "sars-carry.png",
+  "frameWidth": 1024,
+  "frameHeight": 576,
+  "sheet": {
+    "cols": 8,
+    "rows": 7,
+    "frames": 53,
+    "imageWidth": 8192,
+    "imageHeight": 4032
+  },
+  "animation": {
+    "sections": [
+      {
+        "id": "struggle",
+        "role": "custom",
+        "name": "Struggle",
+        "frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39
+        ],
+        "fps": 30,
+        "loop": true,
+        "description": "Carried overhead and fighting it. Looped: the hold runs up to CARRY.maxHold (6 s) against the clip's 1.33 s."
+      },
+      {
+        "id": "throwPair",
+        "role": "custom",
+        "name": "Throw Pair",
+        "frames": [
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52
+        ],
+        "fps": 36,
+        "loop": false,
+        "description": "The throw: curl (40-44), tucked anticipation (45-47), the tumble out (48-52). 36 fps so all 13 land inside Darki's paired throw window (80-90 @ 30 = 0.37 s) before the release."
+      }
+    ]
+  },
+  "defaultAnimation": {
+    "start": 0,
+    "end": 39,
+    "fps": 30,
+    "loop": true
+  }
+}
