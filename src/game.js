@@ -6078,10 +6078,10 @@ function playSwing(kind = 'jab', atX = null) {
  * loudest), its rate rises a touch with speed, and it is cut with a short
  * release the moment the feet stop.
  *
- * REQUEST 514: it is the sound of EVERY glide in the game now, not RamRage's
- * alone. The bed belongs to whichever move is feeding it this frame (`owner`):
- * RamRage, and the sliding plant of the rush attacks (the dash kick's lunge, the
- * bat/machete rush's plant — advanceAttackLunge). A bed nobody fed for a moment
+ * REQUEST 514 made it the sound of every glide — RamRage and the rush attacks'
+ * lunges — but requests 529-530 took it back off the dash kick and the bat and
+ * machete rushes (they swing-whoosh instead), so the bed is RamRage's again.
+ * `owner` still names the move feeding it this frame. A bed nobody fed for a moment
  * of game time is stopped by advanceFx, so no way out of a move leaves it
  * sounding. The short glide (the rack-pull slide onto the mark) gets a one-shot
  * cut of the same take (playSlideOnce). A knocked-down body keeps the original
@@ -6090,10 +6090,6 @@ const GLIDE = {
   tau: 0.03,                                // s: how fast it follows the speed
   release: 0.05,                            // s: the fade when the feet stop
   starve: 0.08,                             // s of game time unfed before the bed stops
-  // s: a rush attack's slide let go mid-sound (the kick halted on a body) fades
-  // out over this rather than being cut at full level, which cracked like a shot
-  // (request 525). Same take, same level; only the tail is longer.
-  lungeRelease: 0.22,
 };
 const glide = { src: null, g: null, sp: null, level: 0, plays: 0, owner: null, fedAt: 0, owners: {} };
 /* The bed, on any context (the game's, or an offline one for a preview). */
@@ -6513,7 +6509,7 @@ function advanceFx(dt) {
   ramDustUpdate(dt);                      // RamRage's dust settles on its own clock (request 510)
   // no way out of a glide leaves it sounding: a ram that ended, or a bed nobody fed (request 514)
   if (glide.src && ((glide.owner === 'ram' && rushState !== RUSH_STATE.RAM) || mobClock - glide.fedAt > GLIDE.starve))
-    stopGlide(glide.owner === 'lunge' ? GLIDE.lungeRelease : GLIDE.release);
+    stopGlide();
   updateDamageFx(dt);                    // the danger dim and the blood (request 483)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
@@ -11557,6 +11553,9 @@ ATTACKS.batRush = {
   lunge: ATTACKS.macheteRush.lunge,      // the same run: one performance, two weapons
   run: ATTACKS.macheteRush.run,
   plants: [1, 9],                        // measured like the machete rush's: 257 at 1-2, 223 at 9
+  // Heard as the bat's own swing — the kick whoosh its misses make — once as it
+  // goes out, and no slide (request 530; see rushKick.whoosh).
+  whoosh: true,
   strikes: [{
     group: 'br',
     // ink 100-124 px ahead of his feet on 4-11 (measured); the box uses the shortest
@@ -14665,7 +14664,6 @@ function startAttack(name) {
   // animation branch prefers an attack over a rush, so a sprint left running
   // would silently resume the moment the swing finished.
   endRush();
-  player.lungeSlid = false;           // this move has not glided yet (advanceAttackLunge, request 525)
   // A move whose sound is the kick whoosh (the dash kick, request 529) plays it as it goes out.
   if (ATTACKS[name].whoosh) playWhiff(true, true, player.x + player.facing * 60);
   if (name === 'pickup') {
@@ -19278,22 +19276,11 @@ function advanceAttackLunge(move, step, dt) {
       && (e.x - player.x) * dir > 0 && (e.x - player.x) * dir < L.contact)) return;
   player.x += dir * L.speed * k * dt;
   clampPlayerToArena();
-  /* THE GLIDE UNDER IT (request 514): a bat/machete rush SLIDES its plant once
-   * the run lets go. A stride (the run's held part) is feet stepping, not
-   * gliding, so it is silent here. The dash kick used to slide too; since
-   * request 529 its sound is the kick whoosh instead (`whoosh`, startAttack). */
-  /* ONE SLIDE PER MOVE (request 525). The contact stop above halts the lunge on
-   * the first man, the bed goes unfed and is let go; once that man is blasted
-   * clear the lunge carries on for a few frames, and restarting the slide there
-   * played it twice in one kick. A move that has already slid stays silent; only
-   * the bed it is still feeding carries on. */
-  // (a move that whooshes — the dash kick, request 529 — does not slide at all)
-  const sliding = player.grounded && !player.runOn && step >= hold && !move.whoosh;
-  const ownBed = glide.src && glide.owner === 'lunge';
-  if (sliding && k > 0.05 && (ownBed || !player.lungeSlid)) {
-    setGlide(Math.min(1, 0.35 + 0.75 * k), Math.min(1, L.speed * k / RAM.peak), player.x, 'lunge');
-    player.lungeSlid = true;
-  }
+  /* NO GLIDE UNDER IT (requests 529-530, the player's call). The dash kick, the
+   * bat rush and the machete rush all used to slide (request 514); the slide
+   * belongs to RamRage alone now. Each lunge is heard as its own swing instead:
+   * the kick and the bat as the kick whoosh (`whoosh`, startAttack), the machete
+   * as its blade swoosh (MACHETE_HIT.blade, bindStrikes). */
 }
 
 // Attacks drive their frames straight from the ATTACKS table (curated, so the
