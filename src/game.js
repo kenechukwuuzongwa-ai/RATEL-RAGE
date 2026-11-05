@@ -1894,17 +1894,25 @@ const SARS_THROW_SHEET = { src: 'sprites/sars-throw.png', metaSrc: 'sprites/sars
  * stand-in is gone from every phase of it. 'Struggle' (0-39) is the lift and the
  * hold; 'Throw Pair' (40-52) is the curl, the tucked anticipation and the tumble
  * out of Darki's hands. Union-anchored and anchorFrame-frozen for the reasons
- * SENIORCARRY_SHEET gives; head on the LEFT like the Aye's, hence faces -1. Its
- * size and nudge are REGISTERED onto the senior's carry box (Darki's hands and
- * head are drawn inside the held body), measured by _chromakey/req518/align.js. */
+ * SENIORCARRY_SHEET gives. Its size and nudge are REGISTERED onto the senior's
+ * carry box (Darki's hands and head are drawn inside the held body), measured
+ * by _chromakey/req518/align.js.
+ *
+ * faces: 1, LIKE THE AGBERO'S CARRY (request 528). His head is on the left of the
+ * art exactly as the Agbero's is, so unflipped he is held head to Darki's back
+ * with his legs toward the throw. It shipped as -1, which mirrored him: "SARS"
+ * read backwards on his vest, and the Throw Pair played inside out — the curl
+ * (40-47) swung his legs TOWARD the throw and the tumble (48-52) rolled him
+ * backwards while Darki threw him forwards. Unmirrored, he winds back and rolls
+ * forward into the throw. The nudge was re-measured for the new side. */
 const SARS_CARRY_SHEET = {
   src: 'sprites/sars-carry.png', metaSrc: 'sprites/sars-carry.json',
   cols: 8, rows: 7,            // 53 frames; cells 53-55 are empty and not listed
-  faces: -1,
+  faces: 1,
   drawH: 242,
   anchorFrame: 0,
   workH: 288,
-  nudge: { x: 28, y: 9 },
+  nudge: { x: 32, y: 9 },      // box centre (±8, -235) from Darki's feet = the senior's
 };
 const SARS_REACT_SHEET = { src: 'sprites/sars-react.png', metaSrc: 'sprites/sars-react.json', cols: 9, rows: 9, faces: 1, drawH: 223, bodyFrame: 0, workH: 440 };
 const SARS_KNIFE_SHEET = { src: 'sprites/sars-knife.png', metaSrc: 'sprites/sars-knife.json', cols: 1, rows: 1, faces: -1, drawH: 24, bodyFrame: 0, workH: 109 };
