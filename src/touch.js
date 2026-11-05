@@ -385,7 +385,15 @@
     wrap.id = 'ror-touch';
     wrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:60;'
       + 'display:none;user-select:none;-webkit-user-select:none;'
-      + 'font:700 11px/1 Montserrat,system-ui,sans-serif;color:#eaf0ff;letter-spacing:.06em;';
+      + 'font:700 11px/1 Montserrat,system-ui,sans-serif;color:#eaf0ff;letter-spacing:.06em;'
+      + 'opacity:1;';
+    /* IN-GAME CUTSCENES (request 519): the pad is 100% transparent and takes no
+     * touches for the whole scene, then dissolves back in once control returns.
+     * The class switches every control's pointer events off — opacity alone would
+     * leave invisible buttons live under the player's thumbs. */
+    const cutStyle = document.createElement('style');
+    cutStyle.textContent = '#ror-touch.ror-cut, #ror-touch.ror-cut *{pointer-events:none!important;}';
+    document.head.appendChild(cutStyle);
 
     /* MOVEMENT REGION: the whole left half of the screen. A touch here owns a
      * movement pointer; the stick graphic follows the touch origin. */
@@ -998,6 +1006,7 @@
   window.__rorTouch = {
     openEditor, closeEditor, layoutCode,
     get editing() { return editing; },
+    get cutFade() { return { on: cutOn, opacity: wrap ? Number(getComputedStyle(wrap).opacity) : null, display: wrap?.style.display ?? null, blocked: !!wrap?.classList.contains('ror-cut') }; },
     get layout() { return HUDS; },
   };
 
@@ -1014,7 +1023,7 @@
        * on a screen that is navigated. */
       const over = !!(R && R.missionOver);
       /* Controls live on the fight only: paused, the menu owns the screen. */
-      const show = !!(R && R.worldReady && !R.frontActive && !R.levelEntryActive && !isPaused && !over);
+      const show = !!(R && R.worldReady && !R.frontActive && !isPaused && !over);   // a cutscene keeps it mounted at opacity 0 (syncCutFade)
       wrap.style.display = (show || editing) ? 'block' : 'none';
       /* Gestures ride the interactive menus AND the pause menu (taps and
        * swipes both drive its navigation), never the cinematics. */
@@ -1035,8 +1044,34 @@
       if (gest) gest.style.display = menuShow ? 'block' : 'none';
       if (!menuShow && gp !== null) gp = null;
       if (!show && !editing) { releaseAll(); placeStickAtHome(); }
+      syncCutFade();
     }, 200);
     window.addEventListener('resize', () => { placeAll(); placeStickAtHome(); });
+    /* The cutscene fade is checked every frame (the 200 ms poll above would let a
+     * scene open with the buttons still up for a beat). */
+    const fadeLoop = () => { syncCutFade(); requestAnimationFrame(fadeLoop); };
+    requestAnimationFrame(fadeLoop);
+  }
+  /* 0 at once when a cutscene starts (no fade OUT: the scene owns the frame from
+   * its first beat), then a dissolve back IN over CUT_FADE_IN when it ends. */
+  const CUT_FADE_IN = 0.7;
+  let cutOn = false;
+  function syncCutFade() {
+    if (!wrap) return;
+    const R = window.__ror;
+    const cut = !!(R && R.inCutscene) && !editing;
+    if (cut === cutOn) return;
+    cutOn = cut;
+    if (cut) {
+      wrap.style.transition = 'none';
+      wrap.style.opacity = '0';
+      wrap.classList.add('ror-cut');
+      releaseAll(); placeStickAtHome();        // nothing held across the scene
+    } else {
+      wrap.classList.remove('ror-cut');
+      wrap.style.transition = `opacity ${CUT_FADE_IN}s ease-out`;
+      wrap.style.opacity = '1';
+    }
   }
 
   const wait = setInterval(() => {

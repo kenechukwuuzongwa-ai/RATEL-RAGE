@@ -24936,6 +24936,13 @@ window.__ror = {
    * this to go false first. Exposed because a harness that does not know this
    * spends its whole run pressing P at a screen that is ignoring it. */
   get levelEntryActive() { return !!levelEntry.active; },
+  /* Any in-game cutscene (request 519): the narrated entry, the boss entrance,
+   * the boss's defeat, and Level 02's strong-room scene and ending. The touch
+   * controls are 100% transparent for all of it and dissolve back after. */
+  get inCutscene() {
+    return !!(levelEntry.active || cutscene.active || bossBeaten()
+      || waveState === 'l2scene' || waveState === 'l2ending');
+  },
   /* IS A MENU HOLDING THE FRAME? The touch layer needs this before it forwards
    * a tap as a MOUSE event: during a live fight, mousedown on the canvas is a
    * jab, so a tap that arrived in the gap between the fight resuming and the
