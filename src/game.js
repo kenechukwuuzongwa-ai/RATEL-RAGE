@@ -177,7 +177,7 @@ const CAM_NEAR_GUTTER = WORLD.HEIGHT - PLAYAREA.walkBottom;
 /* Where the camera's top row may live — 110 .. 524 at tune.zoom 1.2. */
 const camYRange = () => {
   const lo = PLAYAREA.ceilingY - CAM_SKY_STRIP;                 // the roofline and its sky
-  const hi = (activeLevel === 2 ? L2_ART_BOTTOM : PLAYAREA.walkBottom + CAM_NEAR_GUTTER) - viewH();   // ...down to the last authored row
+  const hi = (activeLevel === 2 ? L2_ART_BOTTOM + l2BarsWorld() : PLAYAREA.walkBottom + CAM_NEAR_GUTTER) - viewH();   // ...down to the last authored row
   return { lo, hi: Math.max(lo, hi) };
 };
 
@@ -390,8 +390,18 @@ const levelRightEdge = () => (activeLevel === 2 ? L2_WORLD_W : PLAYAREA.maxX + 1
 /* The camera's floor here: the GPB's last row, plus the mirrored floor apron
  * drawn under it (request 487 — drawPlateApron), so Darki's feet at the
  * navigable outline's near edge keep room below them. */
-const L2_APRON_ROWS = 40;                         // art rows (~55 world px)
+// 56, not 40 (request 531): FOOT_ROOM at the floor's near edge (row ~709) needs the
+// camera floor at least ~54 rows past the art's last row (_chromakey/req531/framescan.js)
+const L2_APRON_ROWS = 56;                         // art rows (~77 world px)
 const L2_ART_BOTTOM = l2Y(724 + L2_APRON_ROWS);
+/* …and while the scene's letterbox bars are up the camera may sink by their
+ * depth too (request 531): the extra floor it shows is under the bottom bar, so
+ * the room above the bar matches gameplay's. The apron is DRAWN that much deeper
+ * (never visible in play — the camera floor stops short of it without bars). */
+const L2_APRON_DRAW_ROWS = L2_APRON_ROWS + 70;    // 70 art rows ≈ 97 world px ≥ a full bar at zoom 1.2
+function l2BarsWorld() {
+  return activeLevel === 2 ? CUT.barH * (l2m.letterbox || 0) / (tune.zoom || 1) : 0;
+}
 /* THE MIDDLE PILLARS ARE SOLID AT THEIR FOOT, AND ONLY THERE. Same contract as a
  * parked vehicle (vehicleBlocks / resolveVehicleCollision): a body cannot pass
  * through the foot, but steps BEHIND it a few px past the base row, and the
@@ -19536,7 +19546,7 @@ function updateCamera(dt) {
    * transition reads as one cinematic move, not a cut.
    * JUMP: a fraction of his air height feeds the focus row, so the camera
    * breathes up under him and settles back on landing — subtle, never a chase. */
-  cameraY = clampCamY(damp(cameraY, clampCamY(followCamY()), tune.camVertRate, dt));
+  cameraY = clampCamY(Math.max(damp(cameraY, clampCamY(followCamY()), tune.camVertRate, dt), footFloorY()));
 }
 
 /* WHERE THE FOLLOW CAMERA WANTS TO SIT, as a function rather than as four lines
@@ -19563,8 +19573,60 @@ function followCamY() {
   const blend = depthT * depthT * (3 - 2 * depthT);
   const focusRow = Math.max(band.laneTop, player.y - (player.jumpY || 0) * tune.camJumpFrac);
   const dynamicY = clampCamY(focusRow - viewH() * 0.55);
-  return tune.camTopY + (dynamicY - tune.camTopY) * blend;
+  return withFootRoom(tune.camTopY + (dynamicY - tune.camTopY) * blend);
 }
+
+/* FOOT ROOM (request 531): no body stands on the frame's bottom edge.
+ *
+ * The depth blend above was tuned on Level 01's street, whose back line (the
+ * pedestrian walk) sits high in the world, so its tight shot (camTopY) always had
+ * room under Darki's feet. Level 02's floor runs ~100-150 rows lower: the same
+ * tight shot put a man standing at the back wall — the desk, the racks, the
+ * strong-room corridor — ON the bottom edge, and in places below it
+ * (_chromakey/req531/framescan.js: gaps of 0, -10 and -67 px of 720). Request
+ * 487 fixed one corner (the floor apron); this is the rule that fixes all of them.
+ *
+ * Every camera that frames the floor goes through followCamY — gameplay, the
+ * strong-room scene and the ending — so the rule lives here, once:
+ *   Darki   — the frame never sits so high that his feet come within FOOT_ROOM of
+ *             its bottom.
+ *   enemies — the same room for every man on screen, as far as it can go without
+ *             lifting Darki's head out of the top (DARKI_TALL + HEAD_ROOM). With
+ *             Darki at the very back and a man at the very front the floor is
+ *             deeper than one frame at zoom 1.2 holds; Darki's head wins.
+ * Level 02 only (see withFootRoom).
+ * The camera's floor clamp still applies (clampCamY), which is why the apron
+ * under the plate is deep enough to allow FOOT_ROOM at the floor's near edge. */
+const FOOT_ROOM = 0.16;        // of the view height kept under a body's feet (~115 px of 720)
+const HEAD_ROOM = 0.05;        // of the view height kept over Darki's head when a man's feet pull the frame down
+const DARKI_TALL = 230;        // world px, feet to the top of his head (drawn ~205 standing, more in rage)
+function withFootRoom(y) {
+  // Level 02 only: Level 01's authored framing is left exactly as approved
+  // (req531/scan2.js l1: the rule would have lowered its tight shot 9-24 px).
+  if (activeLevel !== 2) return y;
+  const vh = viewH(), room = vh * FOOT_ROOM;
+  let need = player.y + room - vh;
+  {
+    const l = cameraX - 60, r = cameraX + viewW() + 60;
+    let low = -Infinity;
+    for (const e of enemies) {
+      if (e.benched || e.offstage || e.dead || e.renderHidden || e.execVictim || e.carried) continue;
+      if (e.spawnEntry && e.entryPhase === 'queued') continue;           // still behind the door
+      if (e.x < l || e.x > r) continue;
+      low = Math.max(low, e.y);
+    }
+    if (low > -Infinity) {
+      const cap = player.y - DARKI_TALL - vh * HEAD_ROOM;               // his head stays in shot
+      need = Math.max(need, Math.min(low + room - vh, cap));
+    }
+  }
+  return Math.max(y, need);
+}
+/* The least cameraY that keeps FOOT_ROOM under Darki RIGHT NOW (Level 02). The
+ * framing is eased, and an ease trails: walking down the floor, his feet sank
+ * toward the edge until it caught up (the strong-room exit dipped to ~80 px). The
+ * cameras ease toward their target but never sit above this row. */
+const footFloorY = () => (activeLevel === 2 ? player.y + viewH() * FOOT_ROOM - viewH() : -Infinity);
 
 /* ======================================== LEVEL 02: THE STRONG ROOM (454) ==
  *
@@ -20034,11 +20096,28 @@ function updateL2SceneCamera(dt) {
   const hi = levelRightEdge() - vw;
   want = Math.max(lo, Math.min(hi, want));
   cameraX = Math.max(lo, Math.min(hi, damp(cameraX, want, 2.4, dt)));
-  // …and in that shot the frame sits a bar's height lower, so the bottom letterbox bar
-  // does not cut off his legs or the workstation (the top bar only takes ceiling)
-  // (and at the keyboard: the key pose reads as the whole figure in front of the whole desk, request 485)
-  const lift = l2RoomShot() || atKeys ? CUT.barH * l2m.letterbox / (tune.zoom || 1) : 0;
-  cameraY = clampCamY(damp(cameraY, followCamY() + lift, 3, dt));
+  // …and the frame sits a bar's height lower, so the bottom letterbox bar does not
+  // cut off his legs or the workstation (the top bar only takes ceiling). It was
+  // only the room shot and the keyboard (request 485); every shot of the scene now
+  // (request 531) — the keypad, the doorway and the men coming through had ~20 px
+  // between their feet and the bar.
+  cameraY = l2BarCamY(followCamY(), dt);
+}
+
+/* THE BAR'S SHARE OF THE DROP RIDES THE BAR (request 531). The framing eases
+ * (rate 3) as it always has, but the lift for the letterbox is added on top
+ * undamped, so a bar sliding in takes the frame down with it instead of covering
+ * the feet for the half-second the ease needs to catch up (the keypad walk and
+ * the ending's walk to the desk dipped to ~55 px above the bar). The eased part is
+ * re-seeded from the live camera whenever another camera has moved it. */
+function l2BarCamY(baseWant, dt) {
+  const s = l2m.camVert || (l2m.camVert = { base: 0, out: NaN });
+  const lift = l2BarsWorld();
+  if (!(Math.abs(s.out - cameraY) <= 0.5)) s.base = cameraY - (s.lift ?? lift);
+  s.base = Math.max(damp(s.base, baseWant, 3, dt), footFloorY());
+  s.lift = lift;
+  s.out = clampCamY(s.base + lift);
+  return s.out;
 }
 
 function finishL2Scene() {
@@ -20510,10 +20589,10 @@ function updateL2EndingCamera(dt) {
   else want = player.x - vw * 0.5;
   const hi = levelRightEdge() - vw;
   cameraX = Math.max(lo, Math.min(hi, damp(cameraX, Math.max(lo, Math.min(hi, want)), 2.4, dt)));
-  let wantY = followCamY() + CUT.barH * l2m.letterbox / (tune.zoom || 1);
+  let baseY = followCamY();
   // the threshold row sits low in the frame: keep his feet in shot on the way out
-  if (ph && (ph.startsWith('exit') || ph === 'doorShut')) wantY = Math.max(wantY, player.y - viewH() * 0.88);
-  cameraY = clampCamY(damp(cameraY, wantY, 3, dt));
+  if (ph && (ph.startsWith('exit') || ph === 'doorShut')) baseY = Math.max(baseY, player.y - viewH() * 0.88 - l2BarsWorld());
+  cameraY = l2BarCamY(baseY, dt);   // the bar's lift rides the bar (request 531)
 }
 
 /* Everyone in play who came through the door (queued men behind it excluded). */
@@ -21841,8 +21920,8 @@ function drawLevel2Back() {
   if (l2Art.gpbA) drawWorldPlate(l2Art.gpbA, ox, oy, L2.scale);
   if (l2Art.gpbB) drawWorldPlate(l2Art.gpbB, ox + l2X(L2.gpb.split), oy, L2.scale);
   // the floor carried on below the art, mirrored (request 487)
-  if (l2Art.gpbA) drawPlateApron(l2Art.gpbA, ox, oy, L2.scale, L2_APRON_ROWS);
-  if (l2Art.gpbB) drawPlateApron(l2Art.gpbB, ox + l2X(L2.gpb.split), oy, L2.scale, L2_APRON_ROWS);
+  if (l2Art.gpbA) drawPlateApron(l2Art.gpbA, ox, oy, L2.scale, L2_APRON_DRAW_ROWS);
+  if (l2Art.gpbB) drawPlateApron(l2Art.gpbB, ox + l2X(L2.gpb.split), oy, L2.scale, L2_APRON_DRAW_ROWS);
   /* THE STRONG-ROOM DOOR, between the plate and the room that frames it (the PSD
    * order). Clipped to its doorway so a raised door can never show above the
    * frame's top edge where the room plate stops (art row 0). */
@@ -21859,7 +21938,7 @@ function drawLevel2Back() {
   }
   if (l2Art.room) {
     ctx.drawImage(l2Art.room, rx, oy + l2X(L2.room.top), l2X(L2.room.w), l2X(L2.room.h));
-    drawPlateApron(l2Art.room, rx, oy + l2X(L2.room.top), L2.scale, L2_APRON_ROWS);   // its floor too (request 487)
+    drawPlateApron(l2Art.room, rx, oy + l2X(L2.room.top), L2.scale, L2_APRON_DRAW_ROWS);   // its floor too (request 487)
   }
 }
 /* One weapon rack (request 489): the stand, then the weapons still on it. Drawn in
