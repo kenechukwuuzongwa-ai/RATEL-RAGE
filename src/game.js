@@ -1901,9 +1901,11 @@ const SARS_WALK_SHEET = { src: 'sprites/sars-walk.png', metaSrc: 'sprites/sars-w
 const SARS_ATTACK_SHEET = { src: 'sprites/sars-attack.png', metaSrc: 'sprites/sars-attack.json', cols: 9, rows: 9, faces: 1, drawH: 217, bodyFrame: 0, workH: 440 };
 const SARS_THROW_SHEET = { src: 'sprites/sars-throw.png', metaSrc: 'sprites/sars-throw.json', cols: 9, rows: 8, faces: 1, drawH: 213, bodyFrame: 0, workH: 440 };
 /* HIS OWN CARRY (request 518): ASSETS/NEW SPRITES/Sars-Struggle-Throw — the Agbero
- * stand-in is gone from every phase of it. 'Struggle' (0-39) is the lift and the
- * hold; 'Throw Pair' (40-52) is the curl, the tucked anticipation and the tumble
- * out of Darki's hands. Union-anchored and anchorFrame-frozen for the reasons
+ * stand-in is gone from every phase of it. 'Struggle' (0-39) is the lift, the
+ * hold AND the throw: the sheet's 'Throw Pair' (40-52, a curl and a tumble) was
+ * dropped from sars-carry.json at the player's request (532) — it read as out of
+ * place — so the throw plays on with the struggle loop (no restart: same spec)
+ * into the existing release, flight and landing. Union-anchored and anchorFrame-frozen for the reasons
  * SENIORCARRY_SHEET gives. Its size and nudge are REGISTERED onto the senior's
  * carry box (Darki's hands and head are drawn inside the held body), measured
  * by _chromakey/req518/align.js.
@@ -10573,8 +10575,8 @@ function enemyAnimRaw(enemy) {
      *
      * The LABEL stays the phase name, not the clip name, so the three phases
      * remain distinguishable to the harnesses and to `enemyAnimFull`. */
-    /* A sheet that names the phase itself (the SARS's 'Throw Pair', request 518)
-     * plays it; otherwise the struggle covers the phase, as above. */
+    /* A sheet that names the phase itself plays it; otherwise the struggle covers
+     * the phase, as above (the SARS's too since request 532 dropped his Throw Pair). */
     if (K.struggle?.s)
       return kitAnim(K.struggle, name, name) ?? kitAnim(K.struggle, 'struggle', name) ?? kitAnim(K.carry, name, name);
     return kitAnim(K.carry, name, name);
@@ -27172,6 +27174,10 @@ async function loadWorld() {
       macheteIdleSprite, macheteWalkSprite, macheteComboSprite, macheteRushSprite, macheteTornadoSprite, macheteAirSprite, macheteStrikeSprite, weaponThrowSprite,
       macheteThrowSprite, batJumpSprite, batStrikeSprite,
       olodoStanceSprite, olodoSpecialSprite, olodoHookSprite, olodoFallSprite] = assets;
+    // No curl/tumble on the SARS's throw (request 532): sars-carry.json no longer
+    // lists it, and this keeps a phone's day-cached copy of the old manifest from
+    // bringing it back — his throw plays on with the struggle loop.
+    if (sarsCarrySprite?.anims) delete sarsCarrySprite.anims.throwPair;
     // Both knockdown sheets split at the moment he lands, because the SIM splits
     // there: 'hit' is physics (he is in the air until jumpY says otherwise) and
     // 'down'/'ko' are timers. Every one plays once and holds its last frame, so a
