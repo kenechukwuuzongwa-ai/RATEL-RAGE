@@ -15388,7 +15388,11 @@ function stepEnemyBounce(e, dt) {
   const hop = bounceHop(e.bounceT, table);
   if (hop !== e.bounceHop) {
     const w = 0.55 * e.bounceScale * (hop < 0 ? 0.4 : 1 / (hop + 1));
-    playThud(e.x, 0.75 * w);
+    /* NO THUD PER BOUNCE (request 520). Each hop used to replay the fall thud's
+     * slam, so one rush-knocked body was three or four rapid slams and a crowd
+     * of them stacked into a rattle that read as gunfire. He lands with the one
+     * ordinary fall sound (played where he first hits the deck); the bounce keeps
+     * its floor shake only. */
     groundSlam(e.x, e.y, w);
     e.bounceHop = hop;
   }
