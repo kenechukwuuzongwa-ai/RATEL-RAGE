@@ -6075,6 +6075,10 @@ const GLIDE = {
   tau: 0.03,                                // s: how fast it follows the speed
   release: 0.05,                            // s: the fade when the feet stop
   starve: 0.08,                             // s of game time unfed before the bed stops
+  // s: a rush attack's slide let go mid-sound (the kick halted on a body) fades
+  // out over this rather than being cut at full level, which cracked like a shot
+  // (request 525). Same take, same level; only the tail is longer.
+  lungeRelease: 0.22,
 };
 const glide = { src: null, g: null, sp: null, level: 0, plays: 0, owner: null, fedAt: 0, owners: {} };
 /* The bed, on any context (the game's, or an offline one for a preview). */
@@ -6116,7 +6120,7 @@ function setGlide(level, s, x, owner = 'ram') {
     if (glide.sp) glide.sp.pan.setTargetAtTime(Math.max(-1, Math.min(1, ((x - cameraX) / VIEW_W) * 2 - 1)), t, 0.05);
   } catch { stopGlide(); }
 }
-function stopGlide() {
+function stopGlide(release = GLIDE.release) {
   glide.level = 0;
   glide.owner = null;
   if (!glide.src) return;
@@ -6125,8 +6129,8 @@ function stopGlide() {
   try {
     const t = audioCtx.currentTime;
     g.gain.cancelScheduledValues(t);
-    g.gain.setTargetAtTime(0.0001, t, GLIDE.release / 3);   // a short release, never a click
-    src.stop(t + GLIDE.release * 3);
+    g.gain.setTargetAtTime(0.0001, t, release / 3);   // a release, never a click
+    src.stop(t + release * 3);
   } catch {}
 }
 /* A SHORT GLIDE, fire-and-forget: a cut of the same slide take, `dur` seconds
@@ -6493,7 +6497,8 @@ function advanceFx(dt) {
   rushFxUpdate(dt);
   ramDustUpdate(dt);                      // RamRage's dust settles on its own clock (request 510)
   // no way out of a glide leaves it sounding: a ram that ended, or a bed nobody fed (request 514)
-  if (glide.src && ((glide.owner === 'ram' && rushState !== RUSH_STATE.RAM) || mobClock - glide.fedAt > GLIDE.starve)) stopGlide();
+  if (glide.src && ((glide.owner === 'ram' && rushState !== RUSH_STATE.RAM) || mobClock - glide.fedAt > GLIDE.starve))
+    stopGlide(glide.owner === 'lunge' ? GLIDE.lungeRelease : GLIDE.release);
   updateDamageFx(dt);                    // the danger dim and the blood (request 483)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
@@ -14639,6 +14644,7 @@ function startAttack(name) {
   // animation branch prefers an attack over a rush, so a sprint left running
   // would silently resume the moment the swing finished.
   endRush();
+  player.lungeSlid = false;           // this move has not glided yet (advanceAttackLunge, request 525)
   if (name === 'pickup') {
     // NO MARK, NO PICKUP. The pickup is a nineteen-frame commitment â€” he crouches,
     // reaches, closes and hauls â€” and playing all of it at empty air read as
@@ -19253,8 +19259,17 @@ function advanceAttackLunge(move, step, dt) {
    * first step — he slides into it on his standing foot — and a bat/machete
    * rush SLIDES its plant once the run lets go. A stride (the run's held part)
    * is feet stepping, not gliding, so it is silent here. */
+  /* ONE SLIDE PER MOVE (request 525). The contact stop above halts the lunge on
+   * the first man, the bed goes unfed and is let go; once that man is blasted
+   * clear the lunge carries on for a few frames, and restarting the slide there
+   * played it twice in one kick. A move that has already slid stays silent; only
+   * the bed it is still feeding carries on. */
   const sliding = player.grounded && !player.runOn && step >= hold;
-  if (sliding && k > 0.05) setGlide(Math.min(1, 0.35 + 0.75 * k), Math.min(1, L.speed * k / RAM.peak), player.x, 'lunge');
+  const ownBed = glide.src && glide.owner === 'lunge';
+  if (sliding && k > 0.05 && (ownBed || !player.lungeSlid)) {
+    setGlide(Math.min(1, 0.35 + 0.75 * k), Math.min(1, L.speed * k / RAM.peak), player.x, 'lunge');
+    player.lungeSlid = true;
+  }
 }
 
 // Attacks drive their frames straight from the ATTACKS table (curated, so the
