@@ -21,6 +21,7 @@
  *   4. index.html    gets window.RR_WEB = { production, build, lowres, webp } inline,
  *                    which hides the authoring tools (game.js DEV_TOOLS).
  *   5. _headers      cache + safety headers (Cloudflare Pages / Netlify syntax).
+ *   6. media-sw.js   the media cache worker (deploy/media-sw.js) + its registration.
  *
  * The source tree is never modified. Nothing here needs a server to build. */
 const fs = require('fs');
@@ -143,6 +144,14 @@ let html = fs.readFileSync(idx, 'utf8');
 const flag = `<script>window.RR_WEB = ${JSON.stringify({ production: true, build: `web-${build}`, lowres, webp })};</script>`;
 if (!html.includes('<meta charset="UTF-8" />')) { console.error('index.html: charset meta not found'); process.exit(1); }
 html = html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n  ${flag}`);
+/* Media cache (deploy/media-sw.js, request 537): Chrome never HTTP-caches audio
+ * or video, so without it every reload and return visit downloads the sounds,
+ * music and menu video again. Web build only. `--no-media-cache` leaves it out. */
+const MEDIA_CACHE = !args.includes('--no-media-cache');
+if (MEDIA_CACHE) {
+  fs.copyFileSync(path.join(__dirname, 'media-sw.js'), path.join(OUT, 'media-sw.js'));
+  html = html.replace(flag, `${flag}\n  <script>if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('./media-sw.js').catch(function () {});</script>`);
+}
 /* Cloudflare Web Analytics (visits/page views for ratel-rage.pages.dev). Web build
  * only: the APK and local runs never load it. `--no-beacon` leaves it out. It is
  * fire-and-forget; the game does not wait on it. */
@@ -206,6 +215,8 @@ fs.writeFileSync(path.join(OUT, '_headers'), [
   '/supabase-config.js',
   '  Cache-Control: no-cache',
   '/ads-config.js',
+  '  Cache-Control: no-cache',
+  '/media-sw.js',
   '  Cache-Control: no-cache',
   '/src/*',
   '  Cache-Control: public, max-age=300',

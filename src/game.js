@@ -5800,7 +5800,10 @@ const CUES = {
   darkiDeath:  { src: 'sounds/darki-death.mp3',      onset: 0.065,            gain: 5.60 },
   // 5.68 s of continuous struggling — a BED, not a stinger, so it is started
   // through playCueSustained and stopped when the hold ends.
-  struggle:    { src: 'sounds/enemy-struggle.wav',   onset: 0.010,            gain: 0.65 },
+  // MP3 since request 537 (1.10 MB wav -> 0.13 MB, LAME V0): Chrome's decode is the
+  // same 272746 samples at lag 0 with the same RMS, so onset, gain and the loop
+  // seam are unchanged (_chromakey/req537/decodecmp.js).
+  struggle:    { src: 'sounds/enemy-struggle.mp3',   onset: 0.010,            gain: 0.65 },
 
   /* ------------------------------------------- THE MACHETE (request 298) ---
    * Four supplied clips (ASSETS/SOUNDCUES, copied under short names, bytes
