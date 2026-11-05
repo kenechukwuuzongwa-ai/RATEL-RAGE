@@ -5864,8 +5864,15 @@ const CUES = {
    * _chromakey/req513/sfx). The slide is a body scraping over gritty concrete —
    * its scrape starts 0.28 s in and runs ~1.5 s, played as the glide's bed (see
    * setGlide). (The push-off hit that rode the shove read as a gunshot and was
-   * removed in request 517.) */
-  ramSlide:     { src: 'sounds/ramrage-slide.mp3',      onset: 0.28, gain: 2.4 },
+   * removed in request 517.)
+   *
+   * REQUEST 527: the take ITSELF holds a spike at 0.320 s — its loudest sample
+   * (0.63), gone in 4 ms, with smaller ones at 0.332 and 0.380. Started at 0.28
+   * it landed 40 ms in, with the bed's gain already ~1.6x, and played at full
+   * scale: the gunshot heard on every dash kick and RamRage (traced in the
+   * player's own recording, _chromakey/req527). The bed now starts at 0.39, on the
+   * smooth scrape after the last spike. Same take, same gain. */
+  ramSlide:     { src: 'sounds/ramrage-slide.mp3',      onset: 0.39, gain: 2.4 },
 };
 // Cut a sharpen scrape / chop swoosh short (he was interrupted). Safe on null
 // and on a source that has already finished.
