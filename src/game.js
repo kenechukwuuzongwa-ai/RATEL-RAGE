@@ -11924,6 +11924,10 @@ ATTACKS.rushKick = {
   fps: ATTACKS.highKick.fps,
   lock: true,                            // committed â€” no cancelling out of a dash
   lunge: { speed: 700, until: 9, contact: 84 },   // decays to nothing as the foot lands; stops on a body
+  /* ITS SOUND IS HIS KICK WHOOSH, NOT THE SLIDE (request 529): the player's call.
+   * The whoosh a missed kick makes plays once as the kick goes out (startAttack),
+   * the lunge plays no glide, and a miss does not whoosh a second time. */
+  whoosh: true,
   /* Request 335: the kick out of a rush is the heaviest single blow he has
    * unarmed, and the man it lands on becomes a PROJECTILE — `missile` arms the
    * thrown-body collision (updateThrownBody) at full power, so he flattens the
@@ -12508,7 +12512,8 @@ function openAttackWindow(win) {
   const group = win ? win.group : null;
   if (player.openWindow && player.openWindow.group === group) return;
   closeAttackWindow();
-  player.openWindow = group ? { group, kick: win.swing === 'kick', blade: !!win.blade } : null;
+  player.openWindow = group ? { group, kick: win.swing === 'kick', blade: !!win.blade,
+    whooshed: !!ATTACKS[player.attack]?.whoosh } : null;
 }
 
 // Close the open window and, if the ledger has no hit for it, whiff. Reads
@@ -12518,8 +12523,9 @@ function closeAttackWindow() {
   player.openWindow = null;
   if (!w || !player.attackHits) return;
   for (const key of player.attackHits) if (key.endsWith('@' + w.group)) return;   // it landed
-  // A missed blade already swooshed — that IS its miss, as on Aye's chop.
-  if (w.blade) { sfxWhiffs++; return; }
+  // A missed blade already swooshed — that IS its miss, as on Aye's chop. So did
+  // a move that whooshed as it went out (the dash kick, request 529).
+  if (w.blade || w.whooshed) { sfxWhiffs++; return; }
   playWhiff(w.kick, true, player.x + player.facing * 60);
 }
 
@@ -14660,6 +14666,8 @@ function startAttack(name) {
   // would silently resume the moment the swing finished.
   endRush();
   player.lungeSlid = false;           // this move has not glided yet (advanceAttackLunge, request 525)
+  // A move whose sound is the kick whoosh (the dash kick, request 529) plays it as it goes out.
+  if (ATTACKS[name].whoosh) playWhiff(true, true, player.x + player.facing * 60);
   if (name === 'pickup') {
     // NO MARK, NO PICKUP. The pickup is a nineteen-frame commitment â€” he crouches,
     // reaches, closes and hauls â€” and playing all of it at empty air read as
@@ -19270,16 +19278,17 @@ function advanceAttackLunge(move, step, dt) {
       && (e.x - player.x) * dir > 0 && (e.x - player.x) * dir < L.contact)) return;
   player.x += dir * L.speed * k * dt;
   clampPlayerToArena();
-  /* THE GLIDE UNDER IT (request 514): the dash kick's lunge decays from its
-   * first step — he slides into it on his standing foot — and a bat/machete
-   * rush SLIDES its plant once the run lets go. A stride (the run's held part)
-   * is feet stepping, not gliding, so it is silent here. */
+  /* THE GLIDE UNDER IT (request 514): a bat/machete rush SLIDES its plant once
+   * the run lets go. A stride (the run's held part) is feet stepping, not
+   * gliding, so it is silent here. The dash kick used to slide too; since
+   * request 529 its sound is the kick whoosh instead (`whoosh`, startAttack). */
   /* ONE SLIDE PER MOVE (request 525). The contact stop above halts the lunge on
    * the first man, the bed goes unfed and is let go; once that man is blasted
    * clear the lunge carries on for a few frames, and restarting the slide there
    * played it twice in one kick. A move that has already slid stays silent; only
    * the bed it is still feeding carries on. */
-  const sliding = player.grounded && !player.runOn && step >= hold;
+  // (a move that whooshes — the dash kick, request 529 — does not slide at all)
+  const sliding = player.grounded && !player.runOn && step >= hold && !move.whoosh;
   const ownBed = glide.src && glide.owner === 'lunge';
   if (sliding && k > 0.05 && (ownBed || !player.lungeSlid)) {
     setGlide(Math.min(1, 0.35 + 0.75 * k), Math.min(1, L.speed * k / RAM.peak), player.x, 'lunge');
