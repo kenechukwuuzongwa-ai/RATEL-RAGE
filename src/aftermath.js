@@ -1604,7 +1604,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     selReveal(select);
     return true;
   }
-  const selStep = (d) => { if (selMove(select + d)) { getUi()?.navScroll(); return true; } return false; };
+  const selStep = (d) => { if (selMove(select + d)) { getUi()?.navSlide(); return true; } return false; };   // a card strip slides (request 540)
 
   /* POINTER INPUT FOR THIS SCREEN. game.js's mouse path accepts on mousedown
    * and touch.js's gesture layer turns a swipe into arrow keys or Enter — both
@@ -1686,7 +1686,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       }
       const ui = getUi();
       const hc = ui ? ui.hitTest(ui.pointerPos(e)) : null;
-      if (hc && hc.id === 'close') { ui.pressPulse('close'); press('back'); return; }   // the ✕: back to the network
+      if (hc && hc.id === 'close') { ui.pressPulse('close'); ui.navClose?.(); press('back'); return; }   // the ✕: back to the network
       // a tap ON a card launches that card (request 538); a tap on empty space still
       // launches the highlighted one (request 513)
       const h = selHit(e);
@@ -2400,8 +2400,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         }
         /* Left/right walk the strip in order (as do up/down, above); every move
          * keeps the highlighted card in the two-card window. */
-        if (action === 'left') { if (selMove(select - 1)) ui?.navScroll(); return true; }
-        if (action === 'right') { if (selMove(select + 1)) ui?.navScroll(); return true; }
+        if (action === 'left') { if (selMove(select - 1)) ui?.navSlide(); return true; }
+        if (action === 'right') { if (selMove(select + 1)) ui?.navSlide(); return true; }
         if (action === 'accept') {
           if (chosen) return true;               // one commit per sequence
           const card = selectCards()[select];

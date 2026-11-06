@@ -490,8 +490,9 @@
   function buildUi() {
     var css = document.createElement('style');
     css.textContent = [
-      '.rr-acct-chip{position:fixed;z-index:65;display:none;align-items:center;gap:.5em;padding:.45em .9em;border-radius:999px;',
-      'border:1px solid rgba(255,138,52,.55);background:rgba(8,11,18,.78);color:#fff;font:700 12px/1.2 Montserrat,"Segoe UI",sans-serif;',
+      /* request 540: smaller and dimmer, and it lives in the bottom-LEFT corner (place()) */
+      '.rr-acct-chip{position:fixed;z-index:65;display:none;align-items:center;gap:.45em;padding:.32em .75em;border-radius:999px;',
+      'border:1px solid rgba(255,138,52,.32);background:rgba(8,11,18,.62);color:rgba(255,255,255,.58);font:700 10px/1.2 Montserrat,"Segoe UI",sans-serif;',
       'letter-spacing:.08em;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);touch-action:manipulation}',
       '.rr-acct-chip .dot{width:.6em;height:.6em;border-radius:50%;background:#7a8396}',
       '.rr-acct-chip.ok .dot{background:#5fd38a}.rr-acct-chip.warn .dot{background:#ffb347}',
@@ -790,12 +791,14 @@
     if (!vis && open) closePanel();
     chip.style.display = vis ? 'inline-flex' : 'none';
     if (!vis) { hideToast(); return; }
-    var c = document.getElementById('game'), r = c ? c.getBoundingClientRect() : { top: 0, right: innerWidth };
-    // the main menu has Darki's player card in that corner (to ~15% of the height),
-    // so there the chip sits just under it; the other menu screens leave it free
-    var under = window.__rorMenu && window.__rorMenu.phase === 'menu' ? 0.165 : 0.025;
-    var top = Math.max(8, r.top + r.height * under), right = Math.max(8, innerWidth - r.right + r.width * 0.018);
-    chip.style.top = top + 'px'; chip.style.right = right + 'px';
+    var c = document.getElementById('game'), r = c ? c.getBoundingClientRect() : { top: 0, left: 0, height: innerHeight, width: innerWidth };
+    /* THE BOTTOM-LEFT CORNER (request 540), on the same row as Darki's player plate in the
+     * bottom-right (the plate's centre is at 693 of the 720-row frame). It used to sit in the
+     * top right, where it covered the close button on Options and Extras. */
+    var ch = chip.offsetHeight || 22;
+    var top = Math.round(r.top + r.height * (693 / 720) - ch / 2);
+    var left = Math.max(8, Math.round(r.left + r.width * 0.02));
+    chip.style.top = top + 'px'; chip.style.left = left + 'px'; chip.style.right = 'auto';
     if (S.autoOpen) { S.autoOpen = false; openPanel(); return; }
     if (S.status === 'guest' && jget(ls, NUDGE) && !toastShown && !open) {
       toastShown = true;
@@ -806,7 +809,7 @@
         if (t === 'open') openPanel('home');
         if (t === 'x') { hideToast(); jset(ls, NUDGE + '.off', 1); jdel(ls, NUDGE); render(); }
       };
-      toast.style.top = (top + 40) + 'px'; toast.style.right = right + 'px';
+      toast.style.top = Math.max(8, top - 112) + 'px'; toast.style.left = left + 'px'; toast.style.right = 'auto';   // above the chip
       toast.style.display = 'block';
       setTimeout(hideToast, 9000);
     }

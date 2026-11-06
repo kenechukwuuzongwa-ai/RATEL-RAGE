@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v103';
-import { createAftermath } from './aftermath.js?v=ratelrage-ui538-v1';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v104';
+import { createAftermath } from './aftermath.js?v=ratelrage-ui540-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -3805,6 +3805,7 @@ function pauseHitIndex(e) {
   const ui = frontEnd?.ui;
   if (!ui) return -1;
   const hit = ui.hitTest(ui.pointerPos(e));
+  if (hit && hit.id === 'close') return -2;          // the ✕ (request 540): resume
   return hit && typeof hit.index === 'number' && String(hit.id).startsWith('pause:') ? hit.index : -1;
 }
 
@@ -3876,6 +3877,7 @@ canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
       const i = pauseHitIndex(e);
       pausePointerDown = i;
+      if (i === -2) frontEnd?.ui.pressPulse('close');
       if (i >= 0) { pauseChoice = i; frontEnd?.ui.pressPulse(`pause:${i}`); }
     }
     return;
@@ -3915,6 +3917,11 @@ canvas.addEventListener('mouseup', (e) => {
     // Commit only if the release lands on the item the press started on.
     if (e.button === 0 && pausePointerDown >= 0 && pauseHitIndex(e) === pausePointerDown) {
       pauseLatch.accept = 1;
+    }
+    // the ✕ resumes the fight outright (request 540) — never on the game-over panel, which has no way back
+    if (e.button === 0 && pausePointerDown === -2 && pauseHitIndex(e) === -2 && !gameOver.active) {
+      frontEnd?.ui.navClose?.();
+      togglePause();
     }
     pausePointerDown = -1;
     return;
@@ -12413,7 +12420,7 @@ function hitEnemy(e, win, src = player) {
   }
   if (win.launch || ko) {
     launchEnemy(e, { x: win.kb.x, y: win.kb.y || -420 }, dir, 0, true,
-      { fit: src === player, rush: rushHit, missile: win.missile });
+      { fit: src === player, rush: rushHit, missile: win.missile, immediate: !!win.airRelaunch });
     e.dead = ko;
   } else {
     e.state = 'stagger';                          // brief flinch, stays grounded
@@ -13432,7 +13439,9 @@ function updateThrownBody(e, dt) {
   const imp = CARRY.impact;
   for (const o of enemies) {
     if (o === e || o.benched || o.hp <= 0 || o.carried || o.grabbed) continue;
-    if (!isEnemyHittable(o)) continue;               // already down / mid-flight
+    // already down, or mid-flight — unless he is in the air at about this body's height (request 540)
+    const airMate = o.state === 'hit' && !o.dead && !o.thrownByCarry && Math.abs((o.jumpY || 0) - (e.jumpY || 0)) <= 110;
+    if (!isEnemyHittable(o) && !airMate) continue;
     if (e.throwHits.has(o)) continue;                // one body, one victim, once
     if (Math.abs(o.x - e.x) > imp.radius) continue;
     if (Math.abs(o.y - e.y) > CARRY.lane) continue;
@@ -13486,7 +13495,7 @@ function updateThrownBody(e, dt) {
       if (o.hp <= 0) { o.hp = 0; launchEnemy(o, iKb, dir, 0); o.dying = true; o.dead = true; }
       else staggerEnemy(o, dir, iKb.x, q >= CARRY.impact.seniorHeavy);
     } else {
-      launchEnemy(o, iKb, dir, dmg, true, { fit: true, rush: !!e.rushKnock });
+      launchEnemy(o, iKb, dir, dmg, true, { fit: true, rush: !!e.rushKnock, immediate: airMate });   // met in the air: no hover (request 540)
     }
     /* …AND HE REMEMBERS IT. Being hit with one of his own men is the moment the
      * player should feel they have provoked him rather than merely damaged him.
@@ -13776,11 +13785,20 @@ function ramPathClear(fromX, toX, y) {
 
 // The mark: the nearest live body ahead, on (near enough) his row, with an open
 // line to it. Same hittable predicate as the rush, so a man on the floor never is.
+/* RAMRAGE INTO A MAN IN THE AIR (request 540). A body already flying — knocked up by a
+ * thrown machete, a kick, another body — is a fair mark for a well-timed ram while he is
+ * still airborne and within shoulder-to-head reach. He is driven up and on again (no
+ * hover: the re-launch starts moving at once), always as a projectile, so he can be
+ * bounced into the next man for another run. A corpse is not a mark. */
+const RAM_AIR = { maxHeight: 190, lift: 1.25, power: 0.75 };
+const isRamAirTarget = (e) => e.state === 'hit' && !e.dead && !e.execVictim && !e.offstage
+  && !e.grabbed && !e.carried && e.hp > 0 && -(e.jumpY || 0) > 2 && -(e.jumpY || 0) <= RAM_AIR.maxHeight;
+const ramCanHit = (e) => isEnemyHittable(e) || isRamAirTarget(e);
 function ramTarget(dir) {
   let best = null, bestD = Infinity;
   for (const e of enemies) {
     if (e.benched || e.offstage || e.hp <= 0 || e.grabbed || e.carried) continue;
-    if (!isEnemyHittable(e)) continue;
+    if (!ramCanHit(e)) continue;                       // standing, or still in the air (request 540)
     const forward = (e.x - player.x) * dir;
     if (forward < -20 || forward > RUSH.maxRange) continue;
     if (Math.abs(e.y - player.y) > RAM.laneTol) continue;
@@ -13919,7 +13937,7 @@ function updateRamRage(dt) {
   const s = Math.min(1, v / R.peak);
   if (s > 0.12) {
     for (const e of enemies) {
-      if (player.ramHits.has(e) || !isEnemyHittable(e) || e.benched || e.offstage || e.hp <= 0) continue;
+      if (player.ramHits.has(e) || !ramCanHit(e) || e.benched || e.offstage || e.hp <= 0) continue;
       const ahead = (e.x - player.x) * dir;
       if (ahead < -24 || ahead > R.contact) continue;
       if (Math.abs(e.y - player.y) > R.hitLane) continue;
@@ -13963,14 +13981,18 @@ function updateRamRage(dt) {
  * secondary hits. He keeps `impactKeep` of his speed through each man. */
 function ramImpact(e, dir, s) {
   const R = RAM, force = player.rageActive ? R.rageForce : 1;
+  const air = isRamAirTarget(e);
   const win = {
     damage: R.damage * (0.55 + 0.45 * s),
-    kb: { x: R.kb.x * (0.55 + 0.45 * s) * force, y: R.kb.y * (0.7 + 0.3 * s) },
+    kb: { x: R.kb.x * (0.55 + 0.45 * s) * force, y: R.kb.y * (0.7 + 0.3 * s) * (air ? RAM_AIR.lift : 1) },
     launch: true, big: true,
     hitstop: 0.05 + 0.07 * s, shake: Math.round(8 + 12 * s),
     rage: 14, dir,
-    missile: s >= R.missileAt ? { power: Math.min(1, s * force), pierce: player.rageActive ? 2 : 1 } : undefined,
+    missile: s >= R.missileAt || air
+      ? { power: Math.min(1, Math.max(air ? RAM_AIR.power : 0, s * force)), pierce: player.rageActive ? 2 : 1 } : undefined,
+    airRelaunch: air,
   };
+  if (air) player.ramAirHits = (player.ramAirHits || 0) + 1;
   hitEnemy(e, win);   // its impact is Darki's own punch-hit (playHit), as asked in request 516
   // the low end: the deck answering a man driven into it, scaled by the blow
   groundSlam(e.x, e.y, 0.5 + 0.8 * s);
@@ -14405,7 +14427,7 @@ function updateRushCharge(dt) {
   // Bailing out: hit, blocked, or the mark left. Blocking ends it rather than
   // being refused, so the guard is always available and the player is never
   // stuck watching a charge he has changed his mind about.
-  if (!t || t.benched || t.hp <= 0 || !isEnemyHittable(t)
+  if (!t || t.benched || t.hp <= 0 || (!isEnemyHittable(t) && t.state !== 'hit')
     || player.react || player.state !== 'normal' || input.blockHeld) { endRush(); return; }
   player.rushT += dt;
   if (player.rushT > RUSH.maxTime) { endRush(); return; }
@@ -15898,11 +15920,18 @@ const clampLane = (y, x) => {
  * line and never cross. Enemy depth clamps go through this; every path that
  * moves the player keeps plain clampLane. */
 const RESIDENTS_LANE_TOP = 470;
+/* THE BOSS ROOM'S FLOOR (request 540). MC_Olodo's arena locks the camera (BOSS_CAM_Y),
+ * so the near half of the street band — down to row 1061 for Darki, 1096 for a body —
+ * lay BELOW the frame: a fighter could walk out of shot. While the arena owns the
+ * frame, every body's feet stop BOSS_FOOT_ROOM world px above its bottom edge. The
+ * street outside the arena follows Darki down (followCamY) and is untouched. */
+const BOSS_FOOT_ROOM = 50;
+const bossFloorY = () => (activeLevel === 1 && inBossStage() ? BOSS_CAM_Y() + viewH() - BOSS_FOOT_ROOM : Infinity);
 const clampLaneBody = (y, x) => {
   const b = laneBandAt(x);
   /* Level 02 has no residents' lane: above its band is the back wall. */
   const top = Math.max(b.laneTop, playerTopAt(x));
-  return Math.max(top, Math.min(b.laneBottom, y));
+  return Math.max(top, Math.min(b.laneBottom, bossFloorY(), y));
 };
 /* DARKI'S BOUNDARY. His feet stop at 645 — the ROAD side of the kerb.
  *
@@ -15933,7 +15962,7 @@ const playerTopAt = (x) => {
 };
 const clampPlayerLane = (y, x) => {
   const b = laneBandAt(x);
-  return Math.max(playerTopAt(x), Math.min(b.laneBottom, y));
+  return Math.max(playerTopAt(x), Math.min(b.laneBottom, bossFloorY(), y));
 };
 const isGrounded = (e) => e.state === 'walk' || e.state === 'guard';
 
@@ -21158,6 +21187,7 @@ function update(dt) {
         if (depth.hitY === -1) player.depthV = Math.max(player.depthV, 0); // ran back past the red guide
         else player.depthV = Math.min(player.depthV, 0);                   // …and past the near stop line
       }
+      if (player.y > bossFloorY()) { player.y = bossFloorY(); player.depthV = Math.min(player.depthV, 0); }   // the boss room's floor (request 540)
     }
   }
 
@@ -22475,7 +22505,7 @@ function adDeckMove(d) {
   if (n < 2) return;
   adDeck.i = (adDeck.i + d + n) % n;
   adDeck.slide = d * 40;
-  frontEnd?.ui.navForward();
+  frontEnd?.ui.navSlide?.();                 // the posts slide (request 540)
   adDeckSyncVideo();
 }
 function adDeckFocus(on) {
@@ -24150,6 +24180,7 @@ function drawPauseOverlay() {
   /* The right side was the FIGHT STATUS card; it is gone (request 454 — the run
    * statistics behind it are untouched) and the space is the posts carousel's. */
   drawAdDeck(ui, 528, 196, 694, 372);
+  if (!gameOver.active) ui.drawCloseButton?.(1, VIEW_W - 52, 50);   // the ✕ resumes (request 540)
 
   ctx.restore();
   ctx.restore();
@@ -25334,6 +25365,7 @@ window.__ror = {
   },
   get cameraX() { return cameraX; },
   get cameraY() { return cameraY; },
+  get bossFloorY() { return bossFloorY(); },                     // request 540
   /* Device pixels per world pixel, so a harness measuring a SCREENSHOT can get
    * back to world space: screen = (world - camera) * this. Without it a test
    * that compares two shots taken at different camera heights is comparing the

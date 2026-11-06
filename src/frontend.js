@@ -923,13 +923,28 @@ const BRIEF_CARDS = {
  * Skipping the lead-in makes the click land ON the selection change, and the
  * gains bring both to the same peak so backward navigation is not a shout. */
 const CUES = {
-  forward: { src: '../frontend/audio/forwardSoundmain.mp3', at: 0.085, len: 0.56, gain: 2.85 },
+  /* REQUEST 540 — THE UI SOUND SET. Enter keeps only our own sound: the Back take, by
+   * request. Everything else is an ORIGINAL cue in frontend/audio/ui/, each designed to
+   * the measured profile of the PUBG Mobile UI category it stands for (length, attack,
+   * pitch, brightness; _chromakey/req540/analyze.js + uisfx-render.js). No audio from
+   * the reference is used — a licensed take can replace any file with no code change.
+   * Gains put every cue at or under the old ceiling (the forward click peaked 0.553). */
+  forward: { src: '../frontend/audio/Fowardselection sound.mp3', at: 0.068, len: 0.34, gain: 0.68 },
   back: { src: '../frontend/audio/Fowardselection sound.mp3', at: 0.068, len: 0.34, gain: 0.68 },
   /* Request 538: moving the highlight no longer sounds like ENTER. It is the
    * back cue's own take (the one the player likes) played higher, shorter and
    * lighter — a tick from the same family, so scroll / enter / back are three
    * different sounds. `rate` is applied by navScroll. */
-  scroll: { src: '../frontend/audio/Fowardselection sound.mp3', at: 0.068, len: 0.20, gain: 0.46, rate: 1.42 },
+  scroll: { src: '../frontend/audio/ui/ui-scroll.mp3', at: 0, len: 0.20, gain: 0.41 },      // "menu check"
+  close: { src: '../frontend/audio/ui/ui-close.mp3', at: 0, len: 0.12, gain: 0.40 },        // "event screen X"
+  start: { src: '../frontend/audio/ui/ui-start.mp3', at: 0, len: 2.70, gain: 0.62 },        // "match start"
+  cancel: { src: '../frontend/audio/ui/ui-cancel.mp3', at: 0, len: 0.80, gain: 0.53 },      // "match cancel"
+  slide: { src: '../frontend/audio/ui/ui-slide.mp3', at: 0, len: 1.00, gain: 0.47 },        // "screen slide"
+  settings: { src: '../frontend/audio/ui/ui-settings.mp3', at: 0, len: 0.70, gain: 0.53 },  // "settings menu click"
+  toggle: { src: '../frontend/audio/ui/ui-toggle.mp3', at: 0, len: 0.30, gain: 0.47 },      // "menu clicks"
+  tick: { src: '../frontend/audio/ui/ui-tick.mp3', at: 0, len: 0.12, gain: 0.38 },          // "menu clicks", the count-up
+  results: { src: '../frontend/audio/ui/ui-results.mp3', at: 0, len: 1.90, gain: 0.59 },    // "match end results"
+  collect: { src: '../frontend/audio/ui/ui-collect.mp3', at: 0, len: 1.90, gain: 0.59 },    // "collect all", the rank stamp
 
   /* ---- the evidence board's tracing cues -------------------------------
    * A line being DRAWN across the board is not a click, so it does not get
@@ -964,7 +979,7 @@ const CUES = {
    * puts it level with the loudest sound the front end makes rather than above
    * it: a masthead sting that jumps out of the mix is the one a player reaches
    * for the volume during. */
-  titleEntrance: { src: '../frontend/audio/title-entrance.mp3', at: 0.085, len: 0.36, gain: 1.80 },
+  titleEntrance: { src: '../frontend/audio/ui/ui-ready.mp3', at: 0, len: 1.90, gain: 0.62 },   // "match ready" (request 540)
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -1379,6 +1394,16 @@ export function createFrontEnd({
    * the control by matching this against their index. */
   let selection = 0;
   let optionPage = null;
+  /* CONTROLS has two pages under it (request 540): the field manual, and the touch
+   * layout editor — the one the pause menu opens — so the layout can be set before a
+   * fight. null = the two-item list. */
+  let controlsPage = null;
+  const touchEditor = () => (typeof window !== 'undefined' && window.__rorTouch && typeof window.__rorTouch.openEditor === 'function' ? window.__rorTouch : null);
+  const editingControls = () => !!(typeof window !== 'undefined' && window.__rorTouch?.editing);
+  const CONTROL_ITEMS = () => [
+    { label: 'HOW TO PLAY', icon: 'pad' },
+    { label: 'CUSTOMIZE CONTROLS', icon: 'gear', disabled: !touchEditor(), note: 'TOUCH SCREENS' },
+  ];
   /* THE SLIDER ADJUSTER (request 451). On a phone the four directions are all
    * taken — swipe right enters, swipe left goes back, up/down moves the cursor —
    * so a slider could only ever be tapped UP (confirm stepped it +5%) and never
@@ -1947,6 +1972,11 @@ export function createFrontEnd({
     const level = clamp(settings.master * settings.sfx, 0, 1);
     if (level <= 0) return false;
     const t = ac.currentTime + 0.005, p = clamp(opt.p ?? 0, 0, 1);
+    /* request 540: the pause and the score cues are the new UI set when it has loaded
+     * (pause -> "settings click", tick -> count-up click, tally -> "match end results",
+     * stamp -> "collect all"); the synths below stay as the fallback. */
+    const FILE = { pause: 'settings', tick: 'tick', tally: 'results', stamp: 'collect' }[kind];
+    if (FILE && sfx.buffers[FILE]) { playCue(FILE, kind === 'tick' ? { rate: 1 + 0.25 * p } : {}); return true; }
     switch (kind) {
       case 'tick': tone(t, { f: 900 + 900 * p, dur: 0.035, type: 'square', peak: 0.07, attack: 0.002 }, level); break;
       case 'tally':
@@ -2192,8 +2222,13 @@ export function createFrontEnd({
   /* Moving the highlight (request 538): its own light tick, never ENTER's sound. */
   const navScroll = () => {
     if (cueSwallowed()) return;
-    cueCount.scroll++; cueCount.order.push('S'); playCue('scroll', { rate: CUES.scroll.rate });
+    cueCount.scroll++; cueCount.order.push('S'); playCue('scroll');
   };
+  /* request 540: the ✕, a mission start, a card strip moving — each its own cue. navClose
+   * also swallows the back cue the action that follows would play, so a ✕ is one sound. */
+  const navClose = () => { cueCount.close = (cueCount.close || 0) + 1; cueCount.order.push('X'); playCue('close'); suppressNavCue = true; };
+  const navStart = () => { if (cueSwallowed()) return; cueCount.start = (cueCount.start || 0) + 1; cueCount.order.push('G'); playCue('start'); };
+  const navSlide = () => { cueCount.slide = (cueCount.slide || 0) + 1; cueCount.order.push('L'); playCue('slide'); };
 
   const introMusicLevel = () => clamp(settings.master * settings.music * L2_INTRO_MUSIC.gain, 0, 1);
   function ensureIntroMusic() {
@@ -2562,6 +2597,7 @@ export function createFrontEnd({
     rejectT = 0;
     inputLock = 0.12;
     selection = opts.selection ?? defaultSelection(next);
+    if (next === 'controls') controlsPage = null;     // always arrive on the two-item list (request 540)
     /* The studio clip belongs to ONE screen. Leaving stops it however the exit
      * happened — timed out, skipped, or forced by a harness — because a 6 s
      * card still decoding (and possibly still audible) behind the title is the
@@ -2690,6 +2726,7 @@ export function createFrontEnd({
    * refusals are checked BEFORE the gate so a press that was never going to do
    * anything does not light up a ring promising that it did. */
   function back() {
+    if (editingControls() && phase === 'controls') return;   // the layout editor owns the screen (its DONE/CANCEL)
     if (pressRunning) { backNow(); return; }
     if (pendingGameplay) return;                 // the handover cannot be cancelled
     if (phase === 'title' || phase === 'splash') return;
@@ -2714,6 +2751,7 @@ export function createFrontEnd({
     if (phase === 'levelTitle') { navBack(); go('briefing'); return; }
     if (optionPage && adjustRow >= 0) { selection = adjustRow; adjustRow = -1; adjHold = null; navBack(); return; }
     if (optionPage) { optionPage = null; adjustRow = -1; selection = 0; navBack(); return; }
+    if (phase === 'controls' && controlsPage) { selection = controlsPage === 'howto' ? 0 : 1; controlsPage = null; phaseT = 0; navBack(); return; }
     navBack();
     if (phase === 'menu') { showMessage('QUIT IS CONTROLLED BY THE GAME HOST'); return; }
     if (phase === 'difficulty') toMenu();
@@ -2738,6 +2776,7 @@ export function createFrontEnd({
       return ['VIDEO', 'AUDIO', 'CONTROLS', 'GAMEPLAY', 'ACCESSIBILITY', 'LANGUAGE', 'RESET SETTINGS']
         .map((label) => ({ label }));
     }
+    if (phase === 'controls' && !controlsPage) return CONTROL_ITEMS();
     return [];
   }
 
@@ -2757,6 +2796,7 @@ export function createFrontEnd({
    * something was dismissed. The back cue is now reserved for actually
    * LEAVING a screen (see back()), so it means exactly one thing. */
   function move(delta) {
+    if (editingControls() && phase === 'controls') return;
     if (optionPage && adjustRow >= 0) { selection = adjustRow; adjustOption(-delta); return; }   // up = louder
     const n = listLength();
     if (!n) return;
@@ -2788,11 +2828,14 @@ export function createFrontEnd({
   function reject(text) {
     rejectT = 0.42;
     showMessage(text);
-    /* Deliberately no navigation cue — a refusal must not sound like a move. */
+    /* No navigation cue — a refusal must not sound like a move. It has its own:
+     * the "match cancel" cue (request 540). */
+    playCue('cancel');
   }
 
   function confirm() {
     unlockAudio();
+    if (editingControls() && phase === 'controls') return;
     if (pressRunning) { confirmNow(); return; }
     /* Committed to the fight and only waiting on the art — nothing to confirm,
      * and the frozen phase underneath must not advance behind the hold card. */
@@ -2804,6 +2847,7 @@ export function createFrontEnd({
      * commit. */
     if (phase === 'options' && optionPage) { confirmNow(); return; }
     if (phase === 'menu' && MAIN_ITEMS[selection]?.disabled) { confirmNow(); return; }
+    if (phase === 'controls' && !controlsPage && CONTROL_ITEMS()[selection]?.disabled) { confirmNow(); return; }
     /* The title before it has asked. `processHeldInput` already stops the
      * keyboard and the pad, but a MOUSE OR A TAP arrives here directly from
      * `onPointerUp` and would otherwise walk straight past that gate. Checked
@@ -2814,13 +2858,26 @@ export function createFrontEnd({
     /* GO BACK is reached through confirm(), so the cue has to be picked from
      * what the press will DO, not from which button produced it. */
     const leaving = phase === 'levelTitle' && selection === BRIEF_BACK;
-    runGated(confirmNow, leaving ? navBack : navForward);
+    // START MISSION is the "match start" moment (request 540)
+    const starting = phase === 'levelTitle' && !leaving;
+    runGated(confirmNow, leaving ? navBack : starting ? navStart : navForward);
   }
 
   function confirmNow() {
     /* The studio card stays skippable — skipping it only arrives at the title
      * sooner, where the load gate below still holds. */
     if (phase === 'splash') { navForward(); go('title'); return; }
+    if (phase === 'controls') {
+      if (controlsPage || editingControls()) return;
+      const it = CONTROL_ITEMS()[selection];
+      if (!it) return;
+      if (it.disabled) { reject(it.note || 'UNAVAILABLE'); return; }
+      pressPulse(`ctl:${selection}`);
+      navForward();
+      if (selection === 0) { controlsPage = 'howto'; phaseT = 0; return; }
+      touchEditor().openEditor();          // DONE / CANCEL close it; the list is still here underneath
+      return;
+    }
     /* THE TITLE SFX FIRES ON THE PRESS, NOT ON THE SCREEN. It used to play from
      * go('title'), which put it on the arrival — and on most hosts that arrival
      * is still before any user gesture, so the context was suspended and the cue
@@ -2968,8 +3025,9 @@ export function createFrontEnd({
     pressPulse(`opt:${selection}`);
     if (row.type === 'toggle') {
       settings[row.key] = !settings[row.key];
-      /* Same rule as move(): flipping a setting leftwards is not going back. */
-      navForward();
+      /* Same rule as move(): flipping a setting leftwards is not going back. Its cue is
+       * the toggle click (request 540). */
+      playCue('toggle');
     } else if (row.type === 'slider') {
       const min = row.min ?? 0, max = row.max ?? 1, step = row.step ?? 0.05;
       const before = settings[row.key];
@@ -2978,7 +3036,7 @@ export function createFrontEnd({
        * so the feedback here is the bar itself. */
     } else if (row.action) {
       row.action(dir);
-      navForward();
+      playCue('toggle');
     }
     saveSettings();
   }
@@ -3224,7 +3282,7 @@ export function createFrontEnd({
     if (closeArmed) {
       closeArmed = false;
       const h = active() ? hitTest(pointerPos(e)) : null;
-      if (h && h.id === 'close' && !(inputLock > 0 || pressGate.action)) back();
+      if (h && h.id === 'close' && !(inputLock > 0 || pressGate.action) && !(phase === 'title' || phase === 'splash')) { navClose(); back(); }
       return;
     }
     if (!active() || pointerDownIndex < 0) return;
@@ -4427,13 +4485,13 @@ export function createFrontEnd({
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     setFont(700, 13, 2.2);
-    ctx.fillStyle = C.paper;
+    ctx.fillStyle = 'rgba(232,226,214,0.62)';          // dimmed (request 540)
     ctx.fillText('DARKI', tx, y + 19);
     setFont(600, 9.5, 1.6);
     ctx.fillStyle = C.muted;
     ctx.fillText('LEVEL 1', tx + 64, y + 18.5);
     ctx.textAlign = 'right';
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = 'rgba(233,182,84,0.62)';
     ctx.fillText('0 / 1000 XP', right, y + 18.5);
 
     const bx = tx, bw = right - tx;
@@ -4554,7 +4612,8 @@ export function createFrontEnd({
         focused: i === selection,
         index: i,
         shake: i === selection ? rejectT : 0,
-        lean: i > 0 ? getFx(`${idPrefix}:${i - 1}`).focus * 0.45 : 0,   // the row above leans on this one
+        // both neighbours lean (request 540: the row above moves out as far as the row below)
+        lean: Math.max(i > 0 ? getFx(`${idPrefix}:${i - 1}`).focus : 0, i < items.length - 1 ? getFx(`${idPrefix}:${i + 1}`).focus : 0) * 0.45,
       });
     }
   }
@@ -5278,6 +5337,7 @@ export function createFrontEnd({
       label: hero.label, icon: hero.icon,
       focused: selection === 0, hero: true, index: 0,
       shake: selection === 0 ? rejectT : 0,
+      lean: getFx('menu:1').focus * 0.45,                             // the row under it is its neighbour (request 540)
     });
 
     for (let i = 1; i < MAIN_ITEMS.length; i++) {
@@ -5292,7 +5352,7 @@ export function createFrontEnd({
         focused: selection === i,
         index: i,
         shake: selection === i ? rejectT : 0,
-        lean: getFx(`menu:${i - 1}`).focus * 0.45,                  // request 538: the row above leans on this one
+        lean: Math.max(getFx(`menu:${i - 1}`).focus, i < MAIN_ITEMS.length - 1 ? getFx(`menu:${i + 1}`).focus : 0) * 0.45,   // both neighbours (538/540)
       });
     }
 
@@ -5483,7 +5543,23 @@ export function createFrontEnd({
     details.forEach((line, i) => ctx.fillText(line, x + 96, y + 65 + i * 20));
   }
 
+  /* The CONTROLS list (request 540), and the quiet screen under the layout editor. */
+  function drawControlsMenu() {
+    const editing = editingControls();
+    stage({ darken: editing ? 0.62 : 0.48 });
+    beginScreen();
+    screenHead('FIELD MANUAL', editing ? 'CUSTOMIZE CONTROLS' : 'CONTROLS',
+      editing ? 'Drag a button to move it, then tap DONE.' : 'Learn the moves, or set up your own touch layout.');
+    if (!editing) buttonList(CONTROL_ITEMS(), 58, 180, 420, 54, 10, 'ctl');
+    endScreen();
+    drawControlBar([]);
+    messagePlate();
+    drawGrain();
+    transitionVeil();
+  }
+
   function drawControls() {
+    if (!controlsPage) { drawControlsMenu(); return; }
     controlsGuideFrame = [];
     stage({ darken: 0.48 });
     beginScreen();
@@ -5906,6 +5982,20 @@ export function createFrontEnd({
     chain: { x: 878, y: 392, w: 356, h: 232 },
     stampY: 556, stampH: 62,
   };
+  /* REFIT TO THE SCREEN (request 540). The four right-hand cards were laid out for a
+   * 1280-wide canvas, so on a wider phone they hugged the left and left the right side
+   * empty. Their column (x 506 .. 1234 at 1280) is stretched each frame to end the same
+   * 46 px from the REAL right edge; heights and the left column are unchanged, so a
+   * 1280 frame is exactly the old layout. */
+  const BRIEF_BASE = JSON.parse(JSON.stringify(BRIEF));
+  function fitBrief() {
+    const x0 = 506, x1 = 1234, k = Math.max(1, (W - 46 - x0) / (x1 - x0));
+    for (const key of ['portrait', 'profile', 'objective', 'chain']) {
+      const b = BRIEF_BASE[key];
+      BRIEF[key].x = Math.round(x0 + (b.x - x0) * k);
+      BRIEF[key].w = Math.round(b.w * k);
+    }
+  }
 
   /* Where each wrapped block finished on the last drawn frame. The copy lives in
    * DOSSIER and is wrapped at draw time, so a longer sentence grows a column
@@ -6324,6 +6414,7 @@ export function createFrontEnd({
   }
 
   function drawLevelTitle() {
+    fitBrief();
     stage({ darken: 0.66 });
     beginScreen(14);
     const l = BRIEF.left;
@@ -7217,7 +7308,11 @@ export function createFrontEnd({
     else if (phase === 'levelTitle') drawLevelTitle();
     else if (phase === 'extras') drawExtras();
     else if (phase === 'credits') drawCredits();
-    if (CLOSE_PHASES.has(phase)) drawCloseButton(easeOut(phaseT / 0.26));
+    if (CLOSE_PHASES.has(phase)) {
+      // the mission briefing is a panel at the top LEFT: its ✕ is on that panel's own corner (request 540)
+      if (phase === 'briefing') drawCloseButton(easeOut(phaseT / 0.26), 40 + 700 - 36, 40 + 36);
+      else if (!(phase === 'controls' && editingControls())) drawCloseButton(easeOut(phaseT / 0.26));
+    }
   }
 
   function openMainMenu() {
@@ -7330,7 +7425,8 @@ export function createFrontEnd({
     /* `title` is the splash entrance sfx. It rides here because the ONE thing a
      * screenshot can never show about it is that it did not fire on arrival —
      * it belongs to the X press off the title now, and nothing else. */
-    get cues() { return { forward: cueCount.forward, back: cueCount.back, scroll: cueCount.scroll, title: cueCount.title, order: cueCount.order.join('') }; },
+    get controlsPage() { return controlsPage; },                 // request 540
+    get cues() { return { forward: cueCount.forward, back: cueCount.back, scroll: cueCount.scroll, close: cueCount.close || 0, start: cueCount.start || 0, slide: cueCount.slide || 0, title: cueCount.title, order: cueCount.order.join('') }; },
     resetCues() { cueCount.forward = 0; cueCount.back = 0; cueCount.scroll = 0; cueCount.title = 0; cueCount.order.length = 0; hapticsFired = 0; hapticsPad = 0; hapticsWanted = 0; },
     /* ---- placing Darki on the menu, live ------------------------------------
      * THE TOOL: press F9 on the menu. Drag him with the mouse, wheel to scale,
@@ -7676,7 +7772,7 @@ export function createFrontEnd({
      * draw on the same canvas with the same fonts, and two wrap routines drift. */
     wrapLines,
     drawControlBar, drawGrain, drawVignette, captureBackdrop,
-    pressPulse, navForward, navBack, navScroll, hitTest, pointerPos, isTouchUI, drawCloseButton,
+    pressPulse, navForward, navBack, navScroll, navClose, navStart, navSlide, hitTest, pointerPos, isTouchUI, drawCloseButton,
     uiSfx,                                  // request 453: the synthesised cues above
     get uiSfxCount() { return { ...uiSfxCount }; },
     /* The menu's context has to be kept alive WHILE THE FIGHT RUNS too: its own
