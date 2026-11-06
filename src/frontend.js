@@ -6659,7 +6659,7 @@ export function createFrontEnd({
      * centred on W rather than pinned to 460-820 (which only matched a 1280-wide
      * canvas — a phone's is wider, and the rule sat off to the left), and the
      * block is lowered so it is centred between the top and the lower strip. */
-    const dy = 40, cx = W / 2;
+    const dy = 56, cx = W / 2;               // (+16: the block is one line shorter — request 544)
     drawLogoBox(cx - 180, 222 + dy, 360);
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
@@ -6667,14 +6667,12 @@ export function createFrontEnd({
     setDisplay(700, 40, 2.4);
     ctx.fillStyle = C.paper;
     fillCentred('KENCRAFTS STUDIO', cx, 322 + dy);
-    setFont(500, 12.5, 0.4);
-    ctx.fillStyle = C.muted;
-    fillCentred('Only confirmed production credits are shown.', cx, 362 + dy);
+    // request 544: the 'only confirmed credits' note is gone, and the studio is in Abuja
     ctx.fillStyle = 'rgba(233,182,84,0.24)';
-    ctx.fillRect(Math.round(cx - 180), 392 + dy, 360, 1);
+    ctx.fillRect(Math.round(cx - 180), 360 + dy, 360, 1);
     setFont(700, 11, 4);
     ctx.fillStyle = C.gold;
-    fillCentred('LAGOS, NIGERIA', cx, 424 + dy);
+    fillCentred('ABUJA, NIGERIA', cx, 392 + dy);
     endScreen();
     drawControlBar([MENU_HINTS[2]]);
     drawGrain();

@@ -530,16 +530,22 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * way up the screen. The bed's soft attack is what lets the rung and the
      * node it arrives at read as one landing. The evidence board has no such
      * collision: its nodes are 0.60 s clear of the lines they feed. */
+    /* REQUEST 544: THE RUNGS ARE TRACED WITH THE SUMMARY SCORE'S SOUND. Each line
+     * draws to the score's count-up tick — a short run climbing in pitch as the line
+     * travels, the way the tally counts up — and lands on a firmer tick; the last rung
+     * lands on the score's own results chord. An unestablished link counts lower. */
+    const TICKS = 4, last = chain.length - 2;
     for (let i = 0; i < chain.length - 1; i++) {
       const at = CHAIN.lineLag + i * CHAIN.step;
       const known = i === 0 || !!chain[i + 1]?.linked;   // established links sound settled
-      out.push(
-        { id: `cline${i}`, at, cue: 'traceDraw', dur: CHAIN.line,
-          rate: known ? 1 : 0.72, gain: known ? 1 : 0.9 },
-        known
-          ? { id: `clineLand${i}`, at: at + CHAIN.line, cue: 'traceLand' }
-          : { id: `clineLand${i}`, at: at + CHAIN.line, cue: 'traceUnknown', gain: 0.7 },
-      );
+      const base = known ? 1 : 0.8;
+      for (let k = 0; k < TICKS; k++) {
+        out.push({ id: `cline${i}_${k}`, at: at + (k / TICKS) * CHAIN.line, cue: 'tick',
+          rate: base * (1 + 0.25 * (k / TICKS)), gain: known ? 0.9 : 0.75 });
+      }
+      out.push(i === last
+        ? { id: `clineLand${i}`, at: at + CHAIN.line, cue: 'results', gain: known ? 0.9 : 0.7 }
+        : { id: `clineLand${i}`, at: at + CHAIN.line, cue: 'tick', rate: base * 1.3, gain: 1.0 });
     }
     return out;
   };
@@ -1956,9 +1962,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ui.setFont(700, 11, 2.6);
       ctx.fillStyle = on ? C.orange : C.dim;
       ctx.fillText(cardAction(card), box.x + 34, box.y + ch - 34);
-      if (on) {
-        ui.icon('cross', box.x + box.w - 46, box.y + ch - 39, 20, C.orange, 0.95);
-      }
+      // (the press glyph that sat beside the action line is gone — request 544: a card is tapped, not labelled)
       ctx.restore();
 
       /* A real hitbox, so the mouse can pick a card exactly like every other

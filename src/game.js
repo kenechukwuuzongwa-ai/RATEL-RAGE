@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v108';
-import { createAftermath } from './aftermath.js?v=ratelrage-ui541-v1';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v109';
+import { createAftermath } from './aftermath.js?v=ratelrage-ui544-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -15480,6 +15480,31 @@ function bounceHop(t, table) {
 const SOLID_HIT = { restitution: 0.66, lift: 640, liftMin: 220, minSpeed: 90, fastSpeed: 900, damage: 10, slideKeep: 0.55, cooldown: 0.12, depthBack: 46, depthFront: 16 };
 const solidStruck = (v, x, y) => y > v.y - Math.max(solidBackGap(v), SOLID_HIT.depthBack) && y < v.y + SOLID_HIT.depthFront
   && x > v.x - 22 && x < v.x + v.w + 22;
+/* THE REBOUND ITSELF, shared by every solid a body can meet (request 542/543): the body is
+ * stopped at the face, sent back with SOLID_HIT.restitution of its speed (a skid keeps
+ * slideKeep), popped up on an arc for a hard hit, and the impact is heard and felt. */
+function bodyRebound(e, vx, stopX, faceX, sliding) {
+  e.x = stopX;
+  const speed = Math.abs(vx);
+  const kk = Math.min(1, speed / SOLID_HIT.fastSpeed);
+  if (sliding) e.slideVx = -vx * SOLID_HIT.slideKeep;
+  else {
+    e.vx = -vx * SOLID_HIT.restitution;
+    // the rebound is a projectile: popped up off the face, more for a harder hit
+    if (speed >= SOLID_HIT.minSpeed) e.vy = Math.min(e.vy || 0, -(SOLID_HIT.liftMin + (SOLID_HIT.lift - SOLID_HIT.liftMin) * kk));
+    e.fallHold = 0;
+  }
+  if (e.thrownByCarry) e.throwPower = (e.throwPower ?? 1) * 0.5;   // a spent missile after the wall
+  e.solidCool = SOLID_HIT.cooldown;
+  e.solidHits = (e.solidHits || 0) + 1;
+  if (speed >= SOLID_HIT.minSpeed) {
+    const hy = e.y - 110 + (e.jumpY || 0) * 0.6;
+    triggerHitFx(faceX, hy, 0.02 + 0.05 * kk, Math.round(4 + 10 * kk), kk > 0.6);
+    playThud(e.x, 0.55 + 0.45 * kk);
+    if (!e.dead && e.hp > 1) { e.hp = Math.max(1, e.hp - SOLID_HIT.damage * kk); e.hpFlash = 0.25; }
+  }
+  return true;
+}
 function bodyMeetsSolids(e, x0, sliding = false) {
   if (e.solidCool > 0) return false;
   const vx = sliding ? (e.slideVx || 0) : (e.vx || 0);
@@ -15490,30 +15515,19 @@ function bodyMeetsSolids(e, x0, sliding = false) {
     // only a body that ARRIVED this frame: one already inside the strip is left alone
     if (x0 > left && x0 < right) continue;
     const fromLeft = x0 <= left;
-    e.x = fromLeft ? left - 1 : right + 1;
-    const speed = Math.abs(vx);
-    const kk = Math.min(1, speed / SOLID_HIT.fastSpeed);
-    if (sliding) e.slideVx = -vx * SOLID_HIT.slideKeep;
-    else {
-      e.vx = -vx * SOLID_HIT.restitution;
-      // the rebound is a projectile: popped up off the face, more for a harder hit
-      if (speed >= SOLID_HIT.minSpeed) e.vy = Math.min(e.vy || 0, -(SOLID_HIT.liftMin + (SOLID_HIT.lift - SOLID_HIT.liftMin) * kk));
-      e.fallHold = 0;
-    }
-    if (e.thrownByCarry) e.throwPower = (e.throwPower ?? 1) * 0.5;   // a spent missile after the wall
-    e.solidCool = SOLID_HIT.cooldown;
-    e.solidHits = (e.solidHits || 0) + 1;
-    if (speed >= SOLID_HIT.minSpeed) {
-      const k = Math.min(1, speed / SOLID_HIT.fastSpeed);
-      const faceX = fromLeft ? left + 8 : right - 8;
-      const hy = e.y - 110 + (e.jumpY || 0) * 0.6;
-      triggerHitFx(faceX, hy, 0.02 + 0.05 * k, Math.round(4 + 10 * k), k > 0.6);
-      playThud(e.x, 0.55 + 0.45 * k);
-      if (!e.dead && e.hp > 1) { e.hp = Math.max(1, e.hp - SOLID_HIT.damage * k); e.hpFlash = 0.25; }
-    }
-    return true;
+    return bodyRebound(e, vx, fromLeft ? left - 1 : right + 1, fromLeft ? left + 8 : right - 8, sliding);
   }
-  return false;
+  return bodyMeetsDoor(e, x0, vx, sliding);
+}
+/* THE STRONG ROOM DOOR (request 544). The door is set in the room's LEFT wall — the
+ * wall the defense clamps every body to (arenaBounds: roomLeft). A body flung or rammed
+ * left into it used to stop dead there; while the door is SHUT it now rebounds exactly as
+ * it would off a pillar. (Open, it is a doorway, and the old stop stands.) */
+function bodyMeetsDoor(e, x0, vx, sliding) {
+  if (activeLevel !== 2 || waveState !== 'l2defense' || !l2DoorIsShut() || vx >= 0) return false;
+  const wall = arenaBounds().left;
+  if (e.x > wall || x0 <= wall) return false;
+  return bodyRebound(e, vx, wall + 1, wall + 4, sliding);
 }
 function stepEnemyBounce(e, dt) {
   e.bounceT += dt;
@@ -19808,7 +19822,7 @@ const l2m = {
   phase: null, t: 0, path: 0, inside: false,
   letterbox: 0, barFrom: 0, barTo: 0, barU: 1,
   vo: null, voLive: false, voDone: false, voAt: null, voT: 0, voDur: 0, voHeld: false, voOffset: 0,
-  screen: 0, powered: false, progress: 0,
+  screen: 1, powered: true, progress: 0,   // the police server is already ON when Darki first walks in (request 544)
   compHp: L2_DEFENSE.computerHp, compShown: L2_DEFENSE.computerHp, compFlash: 0,
   waveNo: 0, waveT: 0, queue: [], releaseT: 0, wonT: 0,
   /* request 489: the copy (its bar on from 0.5 s after the typing take), the door
@@ -19825,7 +19839,7 @@ function resetL2Mission() {
   l2StopHandSfx();
   Object.assign(l2m, {
     phase: null, t: 0, path: 0, inside: false, vo: null, voLive: false, voDone: false, voAt: null,
-    voT: 0, voDur: 0, voHeld: false, voOffset: 0, screen: 0, powered: false, progress: 0,
+    voT: 0, voDur: 0, voHeld: false, voOffset: 0, screen: 1, powered: true, progress: 0,
     compHp: L2_DEFENSE.computerHp, compShown: L2_DEFENSE.computerHp, compFlash: 0,
     waveNo: 0, waveT: 0, queue: [], releaseT: 0, wonT: 0,
     copyOn: false, copyDone: false, locked: false, barAlpha: 0, status: 'copying',
@@ -25506,6 +25520,7 @@ window.__ror = {
   get cameraY() { return cameraY; },
   get audioLevels() { return { music: musicSetting, sfx: sfxGain ? +sfxGain.gain.value.toFixed(3) : null, voice: voiceGain ? +voiceGain.gain.value.toFixed(3) : null, autoplayAds: autoplayAdsOn }; },   // request 543
   get bossFloorY() { return bossFloorY(); },                     // request 540
+  get roomDoorWall() { return activeLevel === 2 ? { x: L2M_STAGE.roomLeft, shut: l2DoorIsShut(), state: waveState } : null; },   // request 544 tests
   deckGo(i) { adDeck.i = Math.max(0, Math.min(adDeck.cards.length - 1, i)); adDeckSyncVideo(); return adDeck.i; },   // request 543 tests
   set autoplayAds(v) { autoplayAdsOn = !!v; adDeckSyncVideo(); },
   /* Device pixels per world pixel, so a harness measuring a SCREENSHOT can get
