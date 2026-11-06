@@ -15458,13 +15458,57 @@ function bounceHop(t, table) {
 
 // A body on the deck: the hop over it, the rush skid under it, and a lighter
 // thud each time a rush bounce brings him back down onto the road.
+/* BODIES MEET THE SCENERY (request 542). A man in flight — thrown, kicked, rammed —
+ * or skidding along the deck after a rush used to pass straight through the parked
+ * vehicles of Level 01 and the precinct's middle pillars (resolveVehicleCollision
+ * deliberately skips bodies in the air or on the ground). Now, if this frame's move
+ * carried him into a solid's footprint (the same strip vehicleBlocks uses for walking),
+ * he is stopped at the face he struck and rebounds: his horizontal speed reverses with
+ * SOLID_HIT.restitution of it kept, his fall carries on under gravity (so he slides
+ * down a pillar rather than hanging on it), and the impact lands with a thud, sparks
+ * and a shake scaled by how fast he arrived. A body flying high enough still clears a
+ * keke or the danfo (vehicleClearedBy); nothing clears the bus, a pillar or the desk.
+ * The blow is never lethal on its own — the knock that sent him decides that. */
+const SOLID_HIT = { restitution: 0.42, minSpeed: 90, fastSpeed: 900, damage: 10, slideKeep: 0.35, cooldown: 0.12 };
+function bodyMeetsSolids(e, x0, sliding = false) {
+  if (e.solidCool > 0) return false;
+  const vx = sliding ? (e.slideVx || 0) : (e.vx || 0);
+  if (Math.abs(vx) < 1) return false;
+  for (const v of solidBodies()) {
+    if (!vehicleBlocks(v, e.x, e.y, 0) || vehicleClearedBy(e, v)) continue;
+    const left = v.x - 22, right = v.x + v.w + 22;
+    // only a body that ARRIVED this frame: one already inside the strip is left alone
+    if (x0 > left && x0 < right) continue;
+    const fromLeft = x0 <= left;
+    e.x = fromLeft ? left - 1 : right + 1;
+    const speed = Math.abs(vx);
+    if (sliding) e.slideVx = -vx * SOLID_HIT.slideKeep;
+    else e.vx = -vx * SOLID_HIT.restitution;
+    if (e.thrownByCarry) e.throwPower = (e.throwPower ?? 1) * 0.5;   // a spent missile after the wall
+    e.solidCool = SOLID_HIT.cooldown;
+    e.solidHits = (e.solidHits || 0) + 1;
+    if (speed >= SOLID_HIT.minSpeed) {
+      const k = Math.min(1, speed / SOLID_HIT.fastSpeed);
+      const faceX = fromLeft ? left + 8 : right - 8;
+      const hy = e.y - 110 + (e.jumpY || 0) * 0.6;
+      triggerHitFx(faceX, hy, 0.02 + 0.05 * k, Math.round(4 + 10 * k), k > 0.6);
+      playThud(e.x, 0.55 + 0.45 * k);
+      if (!e.dead && e.hp > 1) { e.hp = Math.max(1, e.hp - SOLID_HIT.damage * k); e.hpFlash = 0.25; }
+    }
+    return true;
+  }
+  return false;
+}
 function stepEnemyBounce(e, dt) {
   e.bounceT += dt;
   const table = bounceTable(e);
   e.jumpY = -bounceLift(e.bounceT, e.bounceScale, table);
+  if (e.solidCool > 0) e.solidCool -= dt;
   if (!e.rushKnock) return;
   if (e.slideVx) {
+    const sx0 = e.x;
     e.x += e.slideVx * dt;
+    bodyMeetsSolids(e, sx0, true);                 // a skid stops at a vehicle or pillar (request 542)
     e.slideVx *= Math.exp(-RUSH_KNOCK.slideDecay * dt);
     if (Math.abs(e.slideVx) < 6) e.slideVx = 0;
   }
@@ -21420,6 +21464,8 @@ function update(dt) {
       // group going over as one body, and it is why he drifts at a fraction of
       // his knockback here instead of standing still: a man being hit is already
       // moving, just not falling.
+      const hx0 = enemy.x;
+      if (enemy.solidCool > 0) enemy.solidCool -= dt;
       if (enemy.fallHold > 0) {
         enemy.fallHold -= dt;
         enemy.x += enemy.vx * 0.3 * dt;
@@ -21428,6 +21474,7 @@ function update(dt) {
         enemy.jumpY += enemy.vy * dt;
         enemy.vy += 2200 * dt;
       }
+      bodyMeetsSolids(enemy, hx0);                   // a flying body bounces off vehicles and pillars (request 542)
       if (enemy.jumpY >= 0) {
         // He is on the deck. The state flips HERE, on the first contact, so the
         // crash frames and the thud are the same instant â€” the bounce that
