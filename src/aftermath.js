@@ -1604,7 +1604,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     selReveal(select);
     return true;
   }
-  const selStep = (d) => { if (selMove(select + d)) { if (d > 0) getUi()?.navForward(); else getUi()?.navBack(); return true; } return false; };
+  const selStep = (d) => { if (selMove(select + d)) { getUi()?.navScroll(); return true; } return false; };
 
   /* POINTER INPUT FOR THIS SCREEN. game.js's mouse path accepts on mousedown
    * and touch.js's gesture layer turns a swipe into arrow keys or Enter — both
@@ -1649,9 +1649,13 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
           selDrag.moved = true;
           selDrag.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
         }
-        if (selDrag.moved && selDrag.axis === 'y') {
-          // one step per SEL.stepPx of travel, live: the highlight and the strip follow the finger
-          const want = Math.trunc((selDrag.y0 - e.clientY) / SEL.stepPx);
+        if (selDrag.moved) {
+          // one step per SEL.stepPx of travel, live: the highlight and the strip follow the finger.
+          // Up = next on the vertical axis; on the horizontal one (request 538) the cards follow
+          // the finger like any carousel: dragging LEFT brings the next card in.
+          const want = selDrag.axis === 'y'
+            ? Math.trunc((selDrag.y0 - e.clientY) / SEL.stepPx)
+            : Math.trunc((selDrag.x0 - e.clientX) / SEL.stepPx);
           while (selDrag.steps < want && selStep(1)) selDrag.steps++;
           while (selDrag.steps > want && selStep(-1)) selDrag.steps--;
           if (selDrag.steps !== want) selDrag.steps = want;     // pinned at an end
@@ -1662,7 +1666,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       swallow(e);
       if (e.pointerType !== 'mouse' || selDrag) return;
       const h = selHit(e);
-      if (h && h.index !== select) { select = h.index; getUi()?.navForward(); }
+      if (h && h.index !== select) { select = h.index; getUi()?.navScroll(); }
     }, true);
     window.addEventListener('pointerup', (e) => {
       if (!selDrag || e.pointerId !== selDrag.id) return;
@@ -1672,16 +1676,21 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       swallow(e);
       if (d.moved) {
         const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
-        if (d.axis === 'x' && e.pointerType !== 'mouse' && dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.2) press('back');
-        if (d.axis === 'y' && d.steps === 0) {
-          const ty = d.y0 - e.clientY;
-          if (Math.abs(ty) >= SEL.swipe) selStep(ty > 0 ? 1 : -1);
+        // a quick flick that did not travel a whole step still moves one card, on either axis.
+        // (A left swipe used to mean BACK; the ✕ is the way out now — request 538.)
+        if (d.steps === 0) {
+          const t = d.axis === 'y' ? d.y0 - e.clientY : d.x0 - e.clientX;
+          if (Math.abs(t) >= SEL.swipe && Math.abs(t) >= Math.abs(d.axis === 'y' ? dx : dy)) selStep(t > 0 ? 1 : -1);
         }
         return;                                  // a swipe never launches
       }
-      // a mouse click lands on the card it is over (hover already highlighted it);
-      // a tap anywhere launches the highlighted mission (request 513)
-      if (e.pointerType === 'mouse') { const h = selHit(e); if (h) select = h.index; }
+      const ui = getUi();
+      const hc = ui ? ui.hitTest(ui.pointerPos(e)) : null;
+      if (hc && hc.id === 'close') { ui.pressPulse('close'); press('back'); return; }   // the ✕: back to the network
+      // a tap ON a card launches that card (request 538); a tap on empty space still
+      // launches the highlighted one (request 513)
+      const h = selHit(e);
+      if (h) select = h.index;
       press('accept');
     }, true);
     window.addEventListener('pointercancel', (e) => {
@@ -1990,6 +1999,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.textAlign = 'center';
     ui.setFont(700, 12, 3.4);
     ctx.fillStyle = ui.C.gold;
+    // a phone has no X button: there the same prompt says TAP (request 538)
+    if (ui.isTouchUI?.()) text = text.replace(/^PRESS X TO /, 'TAP TO ');
     ctx.fillText(text, W / 2, 672);
     ctx.textAlign = 'left';
     ctx.restore();
@@ -2389,8 +2400,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         }
         /* Left/right walk the strip in order (as do up/down, above); every move
          * keeps the highlighted card in the two-card window. */
-        if (action === 'left') { if (selMove(select - 1)) ui?.navForward(); return true; }
-        if (action === 'right') { if (selMove(select + 1)) ui?.navForward(); return true; }
+        if (action === 'left') { if (selMove(select - 1)) ui?.navScroll(); return true; }
+        if (action === 'right') { if (selMove(select + 1)) ui?.navScroll(); return true; }
         if (action === 'accept') {
           if (chosen) return true;               // one commit per sequence
           const card = selectCards()[select];
@@ -2439,6 +2450,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     }
     else if (state === 'LEVEL_SELECT') {
       prompt(ui, `PRESS X TO ${cardAction(selectCards()[select])}`);
+      ui.drawCloseButton?.(1, W - 52, 50);        // back to the network (request 538)
     } else prompt(ui, 'PRESS X TO SKIP', 0.5);
 
     /* The bar always names what the button will DO on THIS screen. A stale

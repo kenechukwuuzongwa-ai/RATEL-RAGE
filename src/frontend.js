@@ -925,6 +925,11 @@ const BRIEF_CARDS = {
 const CUES = {
   forward: { src: '../frontend/audio/forwardSoundmain.mp3', at: 0.085, len: 0.56, gain: 2.85 },
   back: { src: '../frontend/audio/Fowardselection sound.mp3', at: 0.068, len: 0.34, gain: 0.68 },
+  /* Request 538: moving the highlight no longer sounds like ENTER. It is the
+   * back cue's own take (the one the player likes) played higher, shorter and
+   * lighter — a tick from the same family, so scroll / enter / back are three
+   * different sounds. `rate` is applied by navScroll. */
+  scroll: { src: '../frontend/audio/Fowardselection sound.mp3', at: 0.068, len: 0.20, gain: 0.46, rate: 1.42 },
 
   /* ---- the evidence board's tracing cues -------------------------------
    * A line being DRAWN across the board is not a click, so it does not get
@@ -2166,7 +2171,7 @@ export function createFrontEnd({
 
   /* The ONLY place navigation audio is produced. Every caller has already
    * committed to a real state change, so one input can never make two sounds. */
-  const cueCount = { forward: 0, back: 0, title: 0, order: [] };
+  const cueCount = { forward: 0, back: 0, scroll: 0, title: 0, order: [] };
   /* A gated press already sounded at the moment the button went down; the
    * deferred action asking for the same cue a beat later must not double it.
    * Consumed once, so an action that legitimately makes a SECOND cue still
@@ -2183,6 +2188,11 @@ export function createFrontEnd({
   const navBack = () => {
     if (cueSwallowed()) return;
     cueCount.back++; cueCount.order.push('B'); playCue('back');
+  };
+  /* Moving the highlight (request 538): its own light tick, never ENTER's sound. */
+  const navScroll = () => {
+    if (cueSwallowed()) return;
+    cueCount.scroll++; cueCount.order.push('S'); playCue('scroll', { rate: CUES.scroll.rate });
   };
 
   const introMusicLevel = () => clamp(settings.master * settings.music * L2_INTRO_MUSIC.gain, 0, 1);
@@ -2753,7 +2763,7 @@ export function createFrontEnd({
     const next = (selection + delta + n) % n;
     if (next === selection) return;      // no state change => no sound
     selection = next;
-    navForward();
+    navScroll();
   }
 
   function showMessage(text) { message = text; messageT = 2.2; }
@@ -3156,12 +3166,13 @@ export function createFrontEnd({
     lastPointer = p;
     const hit = hitTest(p);
     if (adjustRow >= 0) return;                    // the adjuster owns the cursor until it is closed
-    if (!hit || hit.index === selection) return;   // hovering in place makes no sound
+    if (!hit || hit.index == null || hit.index === selection) return;   // in place / the ✕: no sound
     selection = hit.index;
-    navForward();                                  // hovering is moving, not going back
+    navScroll();                                   // hovering is moving: the scroll tick (request 538)
   }
 
   let pointerDownIndex = -1;
+  let closeArmed = false;              // the ✕ was pressed; releasing on it closes (request 538)
 
   function onPointerDown(e) {
     if (!active()) return;
@@ -3193,6 +3204,7 @@ export function createFrontEnd({
     if (inputLock > 0 || pressGate.action) return;
     const hit = hitTest(pointerPos(e));
     if (!hit) return;
+    if (hit.id === 'close') { pressPulse('close'); closeArmed = true; pointerDownIndex = -1; return; }
     if (String(hit.id).startsWith('optadj:') && adjustRow >= 0) {   // ▼/▲: one step now, more while held
       const dir = hit.id === 'optadj:up' ? 1 : -1;
       selection = adjustRow;
@@ -3209,6 +3221,12 @@ export function createFrontEnd({
   function onPointerUp(e) {
     adjHold = null;
     if (darkiTool.on) { darkiToolPointerUp(); return; }
+    if (closeArmed) {
+      closeArmed = false;
+      const h = active() ? hitTest(pointerPos(e)) : null;
+      if (h && h.id === 'close' && !(inputLock > 0 || pressGate.action)) back();
+      return;
+    }
     if (!active() || pointerDownIndex < 0) return;
     const hit = hitTest(pointerPos(e));
     const wasOn = hit && hit.index === pointerDownIndex;
@@ -3224,7 +3242,7 @@ export function createFrontEnd({
   canvas.addEventListener('pointermove', onPointerMove, true);
   canvas.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('pointerup', onPointerUp, true);
-  canvas.addEventListener('pointerleave', () => { pointerDownIndex = -1; adjHold = null; });
+  canvas.addEventListener('pointerleave', () => { pointerDownIndex = -1; closeArmed = false; adjHold = null; });
   window.addEventListener('pointercancel', () => { adjHold = null; }, true);
   /* Not passive: the wheel is the scale control while the tool is open, and the
    * page must not scroll under it. Nothing is consumed when it is closed. */
@@ -3704,23 +3722,29 @@ export function createFrontEnd({
     const disabled = !!o.disabled;
     const hero = !!o.hero;
 
-    /* Breathing on the resting focus glow — alive, but calm. */
+    /* Breathing on the resting focus sheen — alive, but calm. */
     const breathe = hero || o.focused ? 0.86 + Math.sin(clock * 2.1) * 0.14 : 1;
     const shake = o.shake ? Math.sin(clock * 62) * o.shake * 3 : 0;
+    /* THE LIVE ROW STEPS OUT (request 538): it grows ~5% from its own left edge
+     * and slides right, and the row just under it (`o.lean`, its neighbour's
+     * eased focus x0.45, handed in by the list) follows with a smaller share of
+     * the same move, so the highlight has weight instead of an outline. Press
+     * still compresses it 1.5%. */
+    const lean = clamp(o.lean ?? 0, 0, 1);
+    const sc = (1 + 0.05 * f + 0.022 * lean) * (1 - 0.015 * p);
 
     ctx.save();
-    /* Press compresses about the button's own centre: 98.5% at full press. */
-    const sc = 1 - 0.015 * p;
-    ctx.translate(x + w / 2 + f * 3 + shake, y + h / 2);
+    ctx.translate(x + f * 10 + lean * 4 + shake, y + h / 2);
     ctx.scale(sc, sc);
-    ctx.translate(-(x + w / 2), -(y + h / 2));
+    ctx.translate(-x, -(y + h / 2));
 
     const r = 7;
 
     if (f > 0.01 && !disabled) {
       ctx.save();
-      ctx.shadowColor = `rgba(255,122,31,${(0.34 * f + 0.16 * p) * breathe})`;
-      ctx.shadowBlur = 22 * f + 8 * p;
+      ctx.shadowColor = `rgba(0,0,0,${0.42 * f})`;
+      ctx.shadowBlur = 18 * f;
+      ctx.shadowOffsetY = 4 * f;
       roundRectPath(ctx, x, y, w, h, r);
       ctx.fillStyle = 'rgba(0,0,0,0.01)';
       ctx.fill();
@@ -3733,15 +3757,29 @@ export function createFrontEnd({
     const base = disabled ? 'rgba(8,11,17,0.42)' : 'rgba(13,18,27,0.62)';
     ctx.fillStyle = base;
     ctx.fillRect(x, y, w, h);
-    if (f > 0.01 && !disabled) {
-      const g = ctx.createLinearGradient(x, y, x + w, y);
-      g.addColorStop(0, `rgba(255,122,31,${(0.20 + 0.10 * p) * f})`);
-      g.addColorStop(0.55, `rgba(255,138,52,${0.075 * f})`);
-      g.addColorStop(1, `rgba(255,160,77,${0.028 * f})`);
+    if (!disabled && (f > 0.01 || lean > 0.01)) {
+      /* A faint SHEEN over the whole face rather than an orange frame: a broad
+       * diagonal wash (bright at the leading corner, never quite gone at the
+       * far one), plus a slow glint band crossing it. */
+      const s = f + 0.25 * lean;
+      const g = ctx.createLinearGradient(x, y, x + w, y + h);
+      g.addColorStop(0, `rgba(255,255,255,${(0.17 + 0.06 * p) * s})`);
+      g.addColorStop(0.45, `rgba(255,248,236,${0.075 * s})`);
+      g.addColorStop(1, `rgba(255,248,236,${0.02 * s})`);
       ctx.fillStyle = g;
       ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = `rgba(255,255,255,${0.05 * f + 0.05 * p})`;
+      ctx.fillStyle = `rgba(255,255,255,${0.04 * s + 0.05 * p})`;
       ctx.fillRect(x, y, w, h * 0.5);
+      if (f > 0.01) {
+        const u = ((clock * 0.38) % 1.7) - 0.35;          // glint position across the row
+        const gx = x + u * w, bw = w * 0.42;
+        const gl = ctx.createLinearGradient(gx - bw / 2, y, gx + bw / 2, y + h);
+        gl.addColorStop(0, 'rgba(255,255,255,0)');
+        gl.addColorStop(0.5, `rgba(255,255,255,${0.10 * f * breathe})`);
+        gl.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gl;
+        ctx.fillRect(x, y, w, h);
+      }
     }
     if (grainPattern && !disabled) {
       ctx.globalAlpha = 0.22 + 0.20 * f;
@@ -3751,23 +3789,15 @@ export function createFrontEnd({
     }
     ctx.restore();
 
-    /* Border brightens with focus; a solid orange bar marks the live item so
-     * selection never depends on colour alone. */
+    /* A hairline that only lightens with focus — no coloured selector frame.
+     * Selection never depends on colour alone: the row's size, offset and
+     * sheen carry it. */
     roundRectPath(ctx, x, y, w, h, r);
     ctx.strokeStyle = disabled
       ? 'rgba(120,140,170,0.10)'
-      : `rgba(${lerp(150, 255, f)},${lerp(176, 138, f)},${lerp(214, 52, f)},${lerp(0.14, 0.85, f) * breathe})`;
-    ctx.lineWidth = 1 + 0.35 * f;
+      : `rgba(${lerp(150, 255, f)},${lerp(176, 250, f)},${lerp(214, 240, f)},${lerp(0.14, 0.30, f)})`;
+    ctx.lineWidth = 1;
     ctx.stroke();
-
-    if (f > 0.01 && !disabled) {
-      ctx.save();
-      roundRectPath(ctx, x, y, w, h, r);
-      ctx.clip();
-      ctx.fillStyle = `rgba(255,122,31,${0.95 * f})`;
-      ctx.fillRect(x, y, 3 * f, h);
-      ctx.restore();
-    }
 
     const tint = disabled
       ? C.dim
@@ -3805,7 +3835,7 @@ export function createFrontEnd({
     if (!disabled && f > 0.02) {
       ctx.save();
       ctx.globalAlpha = f;
-      ctx.strokeStyle = C.orangeSoft;
+      ctx.strokeStyle = C.cream;
       ctx.lineWidth = 1.9;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -4361,14 +4391,21 @@ export function createFrontEnd({
     ctx.restore();
   }
 
+  /* THE PLAYER PLATE (request 538). It used to hang in the top right over the
+   * street — in the way of the art the menu is FOR, and on a wide phone it
+   * floated mid-screen rather than in any corner. It now sits in the bottom
+   * right corner, ON the lower strip the button legend vacated: always in the
+   * same place, clear of the menu column, the logo and Darki, and anchored to
+   * the real canvas edge so it is a corner on every aspect. */
   function drawProfileCard() {
-    const { x, y, w, h } = L.profile;
-    glass(x, y, w, h, 9);
+    const w = 292, h = 44;
+    const x = W - w - 26, y = L.barY + 7;
+    glass(x, y, w, h, 8);
 
-    const av = 62;
-    const ax = x + 12, ay = y + (h - av) / 2;
+    const av = 34;
+    const ax = x + 6, ay = y + (h - av) / 2;
     ctx.save();
-    roundRectPath(ctx, ax, ay, av, av, 6);
+    roundRectPath(ctx, ax, ay, av, av, 5);
     ctx.clip();
     const bg = ctx.createLinearGradient(0, ay, 0, ay + av);
     bg.addColorStop(0, 'rgba(46,58,82,0.95)');
@@ -4381,28 +4418,26 @@ export function createFrontEnd({
       ctx.drawImage(avatarCanvas, ax - av * 0.06, ay - av * 0.02, av * 1.12, av * 1.12);
     }
     ctx.restore();
-    roundRectPath(ctx, ax, ay, av, av, 6);
+    roundRectPath(ctx, ax, ay, av, av, 5);
     ctx.strokeStyle = 'rgba(233,182,84,0.34)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    const tx = ax + av + 14;
+    const tx = ax + av + 12, right = x + w - 12;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    setFont(700, 17, 2.6);
+    setFont(700, 13, 2.2);
     ctx.fillStyle = C.paper;
-    ctx.fillText('DARKI', tx, y + 30);
-
-    setFont(600, 10.5, 1.8);
+    ctx.fillText('DARKI', tx, y + 19);
+    setFont(600, 9.5, 1.6);
     ctx.fillStyle = C.muted;
-    ctx.fillText('LEVEL 1', tx, y + 50);
-
+    ctx.fillText('LEVEL 1', tx + 64, y + 18.5);
     ctx.textAlign = 'right';
     ctx.fillStyle = C.gold;
-    ctx.fillText('0 / 1000 XP', x + w - 14, y + 50);
+    ctx.fillText('0 / 1000 XP', right, y + 18.5);
 
-    const bx = tx, bw = x + w - 14 - tx;
-    const by = y + 60;
+    const bx = tx, bw = right - tx;
+    const by = y + 27;
     roundRectPath(ctx, bx, by, bw, 5, 2.5);
     ctx.fillStyle = 'rgba(255,255,255,0.08)';
     ctx.fill();
@@ -4413,12 +4448,19 @@ export function createFrontEnd({
     roundRectPath(ctx, bx, by, Math.max(4, bw * 0.012), 5, 2.5);
     ctx.fillStyle = C.gold;
     ctx.fill();
+    ctx.textAlign = 'left';
   }
 
   /* `startX` exists for the case file, which puts REAL buttons in the bar's
    * own strip — its hints have to begin clear of them or the legend prints
    * straight through GO BACK. */
-  function drawControlBar(hints, startX = 54) {
+  /* REQUEST 538: THE BAR CARRIES NO LEGEND. Its button annotations (NAVIGATE /
+   * SELECT / BACK, CONFIRM, BROWSE…) were labels on nothing — not one of them
+   * could be pressed — so every screen, the pause menu and the case-file read
+   * included, now gets the strip alone. Leaving a screen is the ✕ in its top
+   * right corner (drawCloseButton). `hints`/`startX` are still accepted so no
+   * caller had to change. */
+  function drawControlBar(hints, startX = 54) {   // eslint-disable-line no-unused-vars
     /* A dark strip, not a panel — it must not compete with the menu. */
     const g = ctx.createLinearGradient(0, L.barY, 0, H);
     g.addColorStop(0, 'rgba(3,5,9,0)');
@@ -4428,23 +4470,44 @@ export function createFrontEnd({
     ctx.fillRect(0, L.barY, W, H - L.barY);
     ctx.fillStyle = 'rgba(150,176,214,0.10)';
     ctx.fillRect(0, L.barY + 4, W, 1);
-
-    let x = startX;
-    ctx.textBaseline = 'middle';
-    for (const hint of hints) {
-      icon(hint.icon, x, L.hintY, 19, hint.color || C.text, 0.66, 1.5);
-      /* Screens that confirm without drawing a button (the character pick, the
-       * briefing, the intro) still show the Cross here, so this is the control
-       * the press belongs to and the press beat bursts from it. */
-      if (hint.icon === 'cross') acceptGlyph = { x: x - 13, y: L.hintY - 13, w: 26, h: 26 };
-      ctx.textAlign = 'left';
-      setFont(700, 10.5, 2.4);
-      ctx.fillStyle = C.muted;
-      ctx.fillText(hint.label, x + 15, L.hintY + 0.5);
-      x += 15 + ctx.measureText(hint.label).width + 34;
-    }
-    ctx.textBaseline = 'alphabetic';
   }
+
+  /* THE CLOSE BUTTON (request 538): the way out of every window that used to
+   * need back navigation — top right corner, a real hit target (id 'close'),
+   * and it runs the same back() a key or pad press does. `x`/`y` default to
+   * the front end's corner; aftermath.js passes its own canvas width. */
+  const CLOSE = { r: 21, inset: 52, y: 50, hit: 30 };
+  function drawCloseButton(alpha = 1, cx = W - CLOSE.inset, cy = CLOSE.y) {
+    if (alpha <= 0.01) return;
+    const s = getFx('close');
+    const sc = 1 - 0.08 * s.press;
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(sc, sc);
+    ctx.beginPath();
+    ctx.arc(0, 0, CLOSE.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(10,14,22,0.66)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(232,238,248,0.34)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    const k = 7;
+    ctx.strokeStyle = C.paper;
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-k, -k); ctx.lineTo(k, k);
+    ctx.moveTo(k, -k); ctx.lineTo(-k, k);
+    ctx.stroke();
+    ctx.restore();
+    hitboxes.push({ x: cx - CLOSE.hit, y: cy - CLOSE.hit, w: CLOSE.hit * 2, h: CLOSE.hit * 2, id: 'close' });
+  }
+  /* Every window whose way out was back navigation. The main menu has none
+   * (QUIT is a row), the title has none, and the case file (levelTitle) keeps
+   * its own GO BACK button. */
+  const CLOSE_PHASES = new Set(['difficulty', 'character', 'characters', 'shop', 'controls', 'options',
+    'levelSelect', 'briefing', 'extras', 'credits']);
 
   const MENU_HINTS = [
     { icon: 'dpad', label: 'NAVIGATE' },
@@ -4491,6 +4554,7 @@ export function createFrontEnd({
         focused: i === selection,
         index: i,
         shake: i === selection ? rejectT : 0,
+        lean: i > 0 ? getFx(`${idPrefix}:${i - 1}`).focus * 0.45 : 0,   // the row above leans on this one
       });
     }
   }
@@ -5228,6 +5292,7 @@ export function createFrontEnd({
         focused: selection === i,
         index: i,
         shake: selection === i ? rejectT : 0,
+        lean: getFx(`menu:${i - 1}`).focus * 0.45,                  // request 538: the row above leans on this one
       });
     }
 
@@ -5240,8 +5305,8 @@ export function createFrontEnd({
      * the only one carrying live state. */
     ctx.save();
     ctx.globalAlpha = k;
-    drawProfileCard();
     drawControlBar(MENU_HINTS);
+    drawProfileCard();
     ctx.restore();
 
     drawGestureGuide();
@@ -6421,22 +6486,28 @@ export function createFrontEnd({
   function drawCredits() {
     stage({ darken: 0.56 });
     beginScreen(0);
-    drawLogoBox(W / 2 - 180, 222, 360);
-    ctx.textAlign = 'center';
+    /* REQUEST 538, ALIGNMENT. Every line is centred on the REAL canvas width
+     * and through fillCentred (tracked text carries its spacing after the last
+     * letter too, so a plain centred fillText sits track/2 left), the rule is
+     * centred on W rather than pinned to 460-820 (which only matched a 1280-wide
+     * canvas — a phone's is wider, and the rule sat off to the left), and the
+     * block is lowered so it is centred between the top and the lower strip. */
+    const dy = 40, cx = W / 2;
+    drawLogoBox(cx - 180, 222 + dy, 360);
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    ctx.fillText('A GAME BY', W / 2, 268);
+    fillCentred('A GAME BY', cx, 268 + dy);
     setDisplay(700, 40, 2.4);
     ctx.fillStyle = C.paper;
-    ctx.fillText('KENCRAFTS STUDIO', W / 2, 322);
+    fillCentred('KENCRAFTS STUDIO', cx, 322 + dy);
     setFont(500, 12.5, 0.4);
     ctx.fillStyle = C.muted;
-    ctx.fillText('Only confirmed production credits are shown.', W / 2, 362);
+    fillCentred('Only confirmed production credits are shown.', cx, 362 + dy);
     ctx.fillStyle = 'rgba(233,182,84,0.24)';
-    ctx.fillRect(460, 392, 360, 1);
+    ctx.fillRect(Math.round(cx - 180), 392 + dy, 360, 1);
     setFont(700, 11, 4);
     ctx.fillStyle = C.gold;
-    ctx.fillText('LAGOS, NIGERIA', W / 2, 424);
+    fillCentred('LAGOS, NIGERIA', cx, 424 + dy);
     endScreen();
     drawControlBar([MENU_HINTS[2]]);
     drawGrain();
@@ -7146,6 +7217,7 @@ export function createFrontEnd({
     else if (phase === 'levelTitle') drawLevelTitle();
     else if (phase === 'extras') drawExtras();
     else if (phase === 'credits') drawCredits();
+    if (CLOSE_PHASES.has(phase)) drawCloseButton(easeOut(phaseT / 0.26));
   }
 
   function openMainMenu() {
@@ -7258,8 +7330,8 @@ export function createFrontEnd({
     /* `title` is the splash entrance sfx. It rides here because the ONE thing a
      * screenshot can never show about it is that it did not fire on arrival —
      * it belongs to the X press off the title now, and nothing else. */
-    get cues() { return { forward: cueCount.forward, back: cueCount.back, title: cueCount.title, order: cueCount.order.join('') }; },
-    resetCues() { cueCount.forward = 0; cueCount.back = 0; cueCount.title = 0; cueCount.order.length = 0; hapticsFired = 0; hapticsPad = 0; hapticsWanted = 0; },
+    get cues() { return { forward: cueCount.forward, back: cueCount.back, scroll: cueCount.scroll, title: cueCount.title, order: cueCount.order.join('') }; },
+    resetCues() { cueCount.forward = 0; cueCount.back = 0; cueCount.scroll = 0; cueCount.title = 0; cueCount.order.length = 0; hapticsFired = 0; hapticsPad = 0; hapticsWanted = 0; },
     /* ---- placing Darki on the menu, live ------------------------------------
      * THE TOOL: press F9 on the menu. Drag him with the mouse, wheel to scale,
      * arrows to nudge a pixel at a time (shift = 10), F flips, R resets, C
@@ -7604,7 +7676,7 @@ export function createFrontEnd({
      * draw on the same canvas with the same fonts, and two wrap routines drift. */
     wrapLines,
     drawControlBar, drawGrain, drawVignette, captureBackdrop,
-    pressPulse, navForward, navBack, hitTest, pointerPos,
+    pressPulse, navForward, navBack, navScroll, hitTest, pointerPos, isTouchUI, drawCloseButton,
     uiSfx,                                  // request 453: the synthesised cues above
     get uiSfxCount() { return { ...uiSfxCount }; },
     /* The menu's context has to be kept alive WHILE THE FIGHT RUNS too: its own

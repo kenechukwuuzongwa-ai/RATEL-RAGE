@@ -519,6 +519,10 @@
    * did — the gesture layer only claims MOVEMENT, never clicks. */
   let gest = null, gp = null, gStart = { x: 0, y: 0 }, gT = 0, gStep = 0, gConsumed = false;
   let gHold = false;   // request 451: this finger is holding an options ▼/▲ (press now, release on lift)
+  let gDeck = false;   // request 539: this finger is on the posts carousel — its drag is the carousel's
+  const deckPointer = (type, e, buttons) => document.getElementById('game')?.dispatchEvent(new PointerEvent(type, {
+    clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true, view: window,
+    pointerId: 991, pointerType: 'touch', isPrimary: true, buttons, button: 0 }));
 
   const tapKey = (code) => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
@@ -568,6 +572,8 @@
       gStart = { x: e.clientX, y: e.clientY };
       gT = performance.now(); gStep = 0; gConsumed = false;
       try { gest.setPointerCapture(e.pointerId); } catch {}
+      gDeck = !!window.__ror?.deckDragAt?.(e.clientX, e.clientY);
+      if (gDeck) { deckPointer('pointerdown', e, 1); return; }
       gHold = !!window.__ror?.menuHoldAt?.(e.clientX, e.clientY);
       if (gHold) {
         const canvas = document.getElementById('game');
@@ -577,11 +583,16 @@
       }
     });
     gest.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== gp || gConsumed || gHold) return;   // a held arrow is not a swipe
+      if (e.pointerId !== gp) return;
+      if (gDeck) { deckPointer('pointermove', e, 1); return; }   // the carousel follows the finger
+      if (gConsumed || gHold) return;                          // a held arrow is not a swipe
       const dx = e.clientX - gStart.x, dy = e.clientY - gStart.y;
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        /* right = enter, left = back — EXCEPT on a screen with slideable cards
+         * (request 539): there a sideways swipe is never BACK. */
+        if (dx < 0 && window.__ror?.noSwipeBack) return;
         gConsumed = true;
-        tapKey(dx > 0 ? 'Enter' : 'Escape');       // right = enter, left = back
+        tapKey(dx > 0 ? 'Enter' : 'Escape');
         return;
       }
       if (e.clientX > window.innerWidth * 0.5) {   // vertical scroll, right half
@@ -595,6 +606,7 @@
     });
     const gOff = (e) => {
       if (e.pointerId !== gp) return;
+      if (gDeck) { gDeck = false; gp = null; deckPointer('pointerup', e, 0); return; }   // a swipe or a tap, the carousel decides
       if (gHold) {                                   // let go of the arrow: the repeat stops
         gHold = false; gp = null;
         window.dispatchEvent(new PointerEvent('pointerup', { clientX: e.clientX, clientY: e.clientY, bubbles: true,
@@ -631,6 +643,7 @@
       if (e.pointerId !== gp) return;
       gp = null;
       if (gHold) { gHold = false; window.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 991 })); }
+      if (gDeck) { gDeck = false; document.getElementById('game')?.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 991 })); }
     });
     document.body.appendChild(gest);
   }
@@ -1052,26 +1065,41 @@
     const fadeLoop = () => { syncCutFade(); requestAnimationFrame(fadeLoop); };
     requestAnimationFrame(fadeLoop);
   }
-  /* 0 at once when a cutscene starts (no fade OUT: the scene owns the frame from
-   * its first beat), then a dissolve back IN over CUT_FADE_IN when it ends. */
+  /* THE CUTSCENE FADE (request 519, reworked 538). Going out, the controls no
+   * longer vanish on the scene's first frame: they dissolve WITH the letterbox
+   * bars (__ror.cutBars, 0..1 as the bars close), and never slower than a 0.7 s
+   * smooth ease — the bars' own duration — so a scene without bars still fades
+   * rather than cuts. They are untouchable (.ror-cut) from the first frame
+   * either way. Coming back is unchanged: a dissolve IN over CUT_FADE_IN once
+   * the scene has ended. Checked every frame (fadeLoop). */
   const CUT_FADE_IN = 0.7;
-  let cutOn = false;
+  const CUT_FADE_OUT = 0.7;
+  let cutOn = false, cutT0 = 0, cutOp = 1;
+  const smooth01 = (t) => { const k = Math.min(1, Math.max(0, t)); return k * k * (3 - 2 * k); };
   function syncCutFade() {
     if (!wrap) return;
     const R = window.__ror;
     const cut = !!(R && R.inCutscene) && !editing;
-    if (cut === cutOn) return;
-    cutOn = cut;
-    if (cut) {
-      wrap.style.transition = 'none';
-      wrap.style.opacity = '0';
-      wrap.classList.add('ror-cut');
-      releaseAll(); placeStickAtHome();        // nothing held across the scene
-    } else {
-      wrap.classList.remove('ror-cut');
-      wrap.style.transition = `opacity ${CUT_FADE_IN}s ease-out`;
-      wrap.style.opacity = '1';
+    if (cut !== cutOn) {
+      cutOn = cut;
+      if (cut) {
+        cutT0 = performance.now();
+        wrap.style.transition = 'none';
+        wrap.classList.add('ror-cut');
+        releaseAll(); placeStickAtHome();        // nothing held across the scene
+      } else {
+        wrap.classList.remove('ror-cut');
+        wrap.style.transition = `opacity ${CUT_FADE_IN}s ease-out`;
+        wrap.style.opacity = '1';
+        cutOp = 1;
+        return;
+      }
     }
+    if (!cut) return;
+    const timer = 1 - smooth01((performance.now() - cutT0) / 1000 / CUT_FADE_OUT);
+    const bars = Math.min(1, Math.max(0, Number(R.cutBars) || 0));
+    const op = Math.min(cutOp, timer, 1 - bars);   // only ever falls while the scene runs
+    if (Math.abs(op - cutOp) > 0.001 || wrap.style.opacity === '') { cutOp = op; wrap.style.opacity = op.toFixed(3); }
   }
 
   const wait = setInterval(() => {

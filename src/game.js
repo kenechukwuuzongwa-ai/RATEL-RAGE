@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v86';
-import { createAftermath } from './aftermath.js?v=ratelrage-strip-v1';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v103';
+import { createAftermath } from './aftermath.js?v=ratelrage-ui538-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -3588,7 +3588,7 @@ function movePauseChoice(delta) {
   const next = (pauseChoice + delta + n) % n;
   if (next === pauseChoice) return;          // no state change => no sound
   pauseChoice = next;
-  frontEnd?.ui.navForward();
+  frontEnd?.ui.navScroll();                  // moving is the scroll tick (request 538)
 }
 
 function activatePauseChoice() {
@@ -6335,12 +6335,27 @@ let chosenDifficulty = 'NORMAL';
  * Its "classic arcade rules" note is currently writing a cheque for a feature
  * that does not exist; flagged for the user rather than invented here.
  */
+/* REQUEST 538 — EASY, RE-BALANCED FOR LAUNCH. The EASY row had not moved since
+ * it was written, but the street under it had: the Agbero's rest went 2.0/2.2 ->
+ * 1.15/1.35, group pressure lets a pair (and then three of a mob) swing at once
+ * on EVERY tier, hpMul went 5 -> 7 and his lunge 4 -> 6. Three dials could not
+ * pull that back, so EASY gets three more, and NORMAL/HARD/ARCADE stay neutral on
+ * them (null / 1), so the shipped fight on those tiers is untouched:
+ *   attackers — the most men allowed to swing at Darki at once (null = the
+ *               street's own group-pressure rules). EASY: one at a time.
+ *   regen     — multiplies the out-of-fight recovery rate (REGEN.perSec).
+ *   heal      — multiplies what a medpack restores (MEDPACK.heal).
+ *   bossHp    — MC_Olodo's health, on top of enemyHp (EASY 0.7: the street was
+ *               clearable on EASY, the boss was where the run died).
+ *   bossDmg   — his blows, on top of dmgTaken.
+ * Numbers chosen on _chromakey/req538/diffsim.js (a scripted average player run
+ * through all of Level 1), not by feel. */
 const DIFFICULTY = {
   // learn: how fast the street reads a repeated technique (STREET_SMARTS, request 403)
-  EASY:   { dmgTaken: 0.65, enemyHp: 0.75, pressure: 0.85, learn: 0.7 },
-  NORMAL: { dmgTaken: 1.00, enemyHp: 1.00, pressure: 1.00, learn: 1.0 },
-  HARD:   { dmgTaken: 1.40, enemyHp: 1.25, pressure: 1.30, learn: 1.2 },
-  ARCADE: { dmgTaken: 1.75, enemyHp: 1.45, pressure: 1.55, learn: 1.35 },
+  EASY:   { dmgTaken: 0.50, enemyHp: 0.55, pressure: 0.70, learn: 0.7, attackers: 1, regen: 1.6, heal: 1.4, bossHp: 0.70, bossDmg: 0.75 },
+  NORMAL: { dmgTaken: 1.00, enemyHp: 1.00, pressure: 1.00, learn: 1.0, attackers: null, regen: 1, heal: 1, bossHp: 1, bossDmg: 1 },
+  HARD:   { dmgTaken: 1.40, enemyHp: 1.25, pressure: 1.30, learn: 1.2, attackers: null, regen: 1, heal: 1, bossHp: 1, bossDmg: 1 },
+  ARCADE: { dmgTaken: 1.75, enemyHp: 1.45, pressure: 1.55, learn: 1.35, attackers: null, regen: 1, heal: 1, bossHp: 1, bossDmg: 1 },
 };
 /* Falls back to NORMAL rather than to nothing, so an unknown label out of the
  * front end plays the intended game instead of a division by undefined. */
@@ -6378,7 +6393,9 @@ function logRest(kind, rest) {
  * on a sliver instead of being healed or executed by a menu. */
 function rescaleLiveEnemies() {
   for (const e of enemies) {
-    const base = e.boss ? BOSS.maxHp : e.kind === 'senior' ? SENIOR.maxHp : ENEMY.maxHp;
+    // request 538: the boss carries the tier's bossHp, and a SARS officer his own base (he used
+    // to be rescaled from the Agbero's)
+    const base = e.boss ? BOSS.maxHp * (diffDial().bossHp ?? 1) : e.kind === 'senior' ? SENIOR.maxHp : e.kind === 'sars' ? SARS.maxHp : ENEMY.maxHp;
     const next = scaledHp(base);
     if (next === e.maxHp) continue;
     const frac = e.maxHp > 0 ? e.hp / e.maxHp : 1;
@@ -15654,7 +15671,7 @@ function updateRun(dt) {
     && Math.abs(e.x - player.x) < REGEN.nearX && Math.abs(e.y - player.y) < REGEN.nearY);
   run.calmT = near ? 0 : run.calmT + dt;
   run.regen = player.state === 'normal' && player.hp > 0 && player.hp < player.maxHp && run.calmT >= REGEN.calm;
-  if (run.regen) player.hp = Math.min(player.maxHp, player.hp + player.maxHp * REGEN.perSec * dt);
+  if (run.regen) player.hp = Math.min(player.maxHp, player.hp + player.maxHp * REGEN.perSec * (diffDial().regen ?? 1) * dt);
   updateMedpacks(dt);
 }
 
@@ -15675,7 +15692,7 @@ function updateMedpacks(dt) {
     if (m.t > MEDPACK.life) { medpacks.splice(i, 1); continue; }
     if (player.state !== 'normal' || player.hp >= player.maxHp || player.jumpY < -40) continue;
     if (Math.abs(player.x - m.x) > MEDPACK.reachX || Math.abs(player.y - m.y) > MEDPACK.reachY) continue;
-    player.hp = Math.min(player.maxHp, player.hp + player.maxHp * MEDPACK.heal);
+    player.hp = Math.min(player.maxHp, player.hp + player.maxHp * MEDPACK.heal * (diffDial().heal ?? 1));
     medpacks.splice(i, 1);
     playCue('grabSuccess', m.x);
     triggerHitFx(m.x, m.y - MEDPACK.lift - 20, 0, 0, false);
@@ -16418,7 +16435,14 @@ function darkiSurrounded() {
 }
 
 /* The cap right now. One attacker normally; two while he is boxed in. */
+/* The difficulty's ceiling on simultaneous attackers (request 538) sits over
+ * every rule below: EASY lets one man swing at a time however big the mob. */
 function liveTokenCap() {
+  const cap = diffDial().attackers;
+  const n = liveTokenCapRaw();
+  return cap ? Math.min(n, cap) : n;
+}
+function liveTokenCapRaw() {
   const nearby = enemies.filter((e) => streetActive(e)
     && Math.abs(e.x - player.x) <= ENEMY.pressureX).length;
   let base = darkiSurrounded() ? ENEMY.surroundTokens : ENEMY.maxTokens;
@@ -17542,7 +17566,7 @@ function makeBoss() {
      * halving it again is the point of an easy row — the tier scales what the
      * user tuned, it does not overrule it. `bossEnraged` reads hp/maxHp, so his
      * second gear still trips at the same fraction of whatever he spawns with. */
-    hp: scaledHp(BOSS.maxHp), maxHp: scaledHp(BOSS.maxHp), hpShown: scaledHp(BOSS.maxHp),
+    hp: scaledHp(BOSS.maxHp * (diffDial().bossHp ?? 1)), maxHp: scaledHp(BOSS.maxHp * (diffDial().bossHp ?? 1)), hpShown: scaledHp(BOSS.maxHp * (diffDial().bossHp ?? 1)),
     hpFlash: 0,
     state: 'walk', mode: 'idle', anim: 'stance', frame: 0, animTime: 0,
     facing: -1, direction: -1, speed: BOSS.speed,
@@ -17709,7 +17733,7 @@ function bossStrike(b, kind) {
   // Only the CROSS and the single hook wash the screen. His straight reads as
   // the set-up, and the super's laps are a flurry â€” flashing on each one would
   // strobe the fight and turn the wash back into background hum.
-  damagePlayer(blow.damage, b, blow.heavy);
+  damagePlayer(blow.damage * (diffDial().bossDmg ?? 1), b, blow.heavy);
 }
 
 // Step whichever move he committed to. Hit steps are tested as CROSSED, not
@@ -24008,7 +24032,7 @@ function drawOutro() {
   ctx.textAlign = 'center';
   ui.setFont(700, 12, 3.4);
   ctx.fillStyle = C.gold;
-  ctx.fillText('PRESS X TO ANALYZE EVIDENCE', VIEW_W / 2, 612);
+  ctx.fillText(isTouchUI() ? 'TAP TO ANALYZE EVIDENCE' : 'PRESS X TO ANALYZE EVIDENCE', VIEW_W / 2, 612);   // request 538
   ctx.restore();
   ctx.textAlign = 'left';
   ui.drawControlBar([{ icon: 'cross', label: 'ANALYZE EVIDENCE' }]);
@@ -24188,29 +24212,37 @@ function drawAdDeck(ui, px, py, pw, ph) {
   const C = ui.C, n = cards.length, card = cards[adDeck.i];
   const focus = adDeck.focus;
   ui.glass(px, py, pw, ph, 10, focus ? { border: 'rgba(255,190,80,0.85)' } : {});
-  const ix = px + 28, iw = pw - 56;
+  /* THE MEDIA FILLS THE PANEL (request 539): the strip used to be a fixed 214 px
+   * band with dead space around it. It now takes every pixel of the panel except
+   * the exact rows its words need — the POSTS / count line on top, and the
+   * title (+ description) under it. */
+  const ix = px + 18, iw = pw - 36;
+  const hasDesc = !!card.desc;
+  const ty = py + ph - (hasDesc ? 40 : 20);          // title baseline
   ctx.save();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ui.setFont(700, 11, 4);
   ctx.fillStyle = C.gold;
-  ctx.fillText('POSTS', ix, py + 34);
+  ctx.fillText('POSTS', ix, py + 26);
+  if (!focus) {
+    ui.setFont(600, 10, 1.4);
+    ctx.fillStyle = C.muted;
+    ctx.fillText('·  VISIT POSTS TO BROWSE', ix + 74, py + 26);
+  }
+  ui.setFont(700, 11, 4);
   ctx.textAlign = 'right';
   ctx.fillStyle = C.muted;
-  ctx.fillText(`${adDeck.i + 1} / ${n}`, ix + iw, py + 34);
+  ctx.fillText(`${adDeck.i + 1} / ${n}`, ix + iw, py + 26);
 
-  // the strip: every card at its own proportions, one height, capped in width
-  const sx = ix, sy = py + 50, sw = iw, sh = DECK_CARD_H;
-  const maxW = sw * 0.84;
+  // the strip: one post per page, each FILLING the whole media area (cropped to
+  // cover it, centred) — no letterbox, no peek band (request 539)
+  const sx = ix, sy = py + 38, sw = iw, sh = Math.max(DECK_CARD_H, ty - 34 - sy);
   const lay = [];
   let run = 0;
   for (const c of cards) {
-    const m = deckMedia(c);
-    const a = m ? m.w / m.h : 16 / 9;
-    let w = sh * a, h = sh;
-    if (w > maxW) { w = maxW; h = w / a; }
-    lay.push({ x: run, w, h, m });
-    run += w + DECK_GAP;
+    lay.push({ x: run, w: sw, h: sh, m: deckMedia(c) });
+    run += sw + DECK_GAP;
   }
   const total = run - DECK_GAP;
   // the active card at the strip's left edge; the last ones end flush with its right
@@ -24230,8 +24262,12 @@ function drawAdDeck(ui, px, py, pw, ph) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     const M = L.m;
-    if (M.face) ctx.drawImage(M.src, M.face.x, M.face.y, M.face.w, M.face.h, X, Y, L.w, L.h);
-    else ctx.drawImage(M.src, X, Y, L.w, L.h);
+    // cover: crop the source (or its face) to the page's aspect, centred
+    const F = M.face || { x: 0, y: 0, w: M.w, h: M.h };
+    const want = L.w / L.h;
+    let cw = F.w, ch = F.h;
+    if (cw / ch > want) cw = ch * want; else ch = cw / want;
+    ctx.drawImage(M.src, F.x + (F.w - cw) / 2, F.y + (F.h - ch) / 2, cw, ch, X, Y, L.w, L.h);
     if (k !== adDeck.i) { ctx.fillStyle = 'rgba(4,6,10,0.38)'; ctx.fillRect(X, Y, L.w, L.h); }
     ctx.restore();
     deckRoundRect(X + 0.5, Y + 0.5, L.w - 1, L.h - 1, DECK_R);
@@ -24275,7 +24311,6 @@ function drawAdDeck(ui, px, py, pw, ph) {
   }
 
   // the active post's words, and its link
-  const ty = sy + sh + 36;
   ctx.textAlign = 'left';
   ui.setDisplay(700, 22, 1);
   ctx.fillStyle = C.paper;
@@ -24301,12 +24336,6 @@ function drawAdDeck(ui, px, py, pw, ph) {
     ctx.fillStyle = C.paper;
     ctx.fillText('OPEN LINK', lx + 40, gy + 4);
     adDeck.hits.push({ id: 'deck:link', x: lx, y: ly, w: lw, h: lh });
-  }
-  if (!focus) {
-    ui.setFont(600, 11, 1.5);
-    ctx.textAlign = 'left';
-    ctx.fillStyle = C.muted;
-    ctx.fillText('VISIT POSTS TO BROWSE', ix, py + ph - 18);
   }
   ctx.restore();
 }
@@ -25057,6 +25086,16 @@ window.__ror = {
     return !!(levelEntry.active || cutscene.active || bossBeaten()
       || waveState === 'l2scene' || waveState === 'l2ending');
   },
+  /* How far the running cutscene's letterbox bars have closed, 0..1 (request
+   * 538): the touch controls fade out WITH the bars instead of vanishing on
+   * the scene's first frame. 0 for a scene that draws no bars. */
+  get cutBars() {
+    const lb = (s) => Math.min(1, Math.max(0, Number(s?.letterbox) || 0));
+    if (levelEntry.active) return lb(levelEntry);
+    if (cutscene.active) return lb(cutscene);
+    if (waveState === 'l2scene' || waveState === 'l2ending') return lb(l2m);
+    return 0;
+  },
   /* IS A MENU HOLDING THE FRAME? The touch layer needs this before it forwards
    * a tap as a MOUSE event: during a live fight, mousedown on the canvas is a
    * jab, so a tap that arrived in the gap between the fight resuming and the
@@ -25112,6 +25151,16 @@ window.__ror = {
     catch { return false; }
   },
   get optionAdjustRow() { return window.__rorMenu?.adjustRow ?? -1; },
+  /* SLIDEABLE CARDS OWN THE SIDEWAYS SWIPE (request 539). On a screen that has a
+   * card strip — the pause menu's posts carousel — a left swipe must never mean
+   * BACK, and a drag that starts ON the strip is the strip's, not the menu's.
+   * (The select-operation strip is answered in aftermath.js, which takes its
+   * pointer events before the touch layer sees them.) */
+  get noSwipeBack() { return !!(paused && !gameOver.active && adDeck.cards.length); },
+  deckDragAt(clientX, clientY) {
+    if (!paused || gameOver.active || !adDeck.cards.length) return false;
+    try { return !!adDeckHitAt({ clientX, clientY }); } catch { return false; }
+  },
   menuHitAt(clientX, clientY) {
     const ui = frontEnd?.ui;
     if (!ui) return false;
@@ -26090,14 +26139,15 @@ window.__ror = {
    * retune moves the expectation instead of failing the test. */
   get restBands() {
     return { ginger: { min: ENEMY.cooldownMin, vary: ENEMY.cooldownVar },
+      shaved: { min: ENEMY.cooldownMin, vary: ENEMY.cooldownVar },      // the shaved Agbero rests on the ginger's band
       senior: { min: SENIOR.cooldownMin, vary: SENIOR.cooldownVar },
       olodo: { min: BOSS.cooldownMin, vary: BOSS.cooldownVar,
         superRest: BOSS.superRest, enrageMul: BOSS.enrageCooldownMul } };
   },
   /* What a body would spawn with at the CURRENT tier, without spawning one. */
   scaledHpOf(kind) {
-    const base = kind === 'olodo' ? BOSS.maxHp : kind === 'senior' ? SENIOR.maxHp : ENEMY.maxHp;
-    return { base, scaled: scaledHp(base) };
+    const base = kind === 'olodo' ? BOSS.maxHp : kind === 'senior' ? SENIOR.maxHp : kind === 'sars' ? SARS.maxHp : ENEMY.maxHp;
+    return { base, scaled: scaledHp(kind === 'olodo' ? base * (diffDial().bossHp ?? 1) : base) };
   },
   /* ---- Senior Agbero, for _chromakey/senioragberoverify.js ---- */
   get seniorTune() { return { cfg: { ...SENIOR }, decide: { ...SENIOR_DECIDE }, queue: { ...SENIOR_QUEUE },
