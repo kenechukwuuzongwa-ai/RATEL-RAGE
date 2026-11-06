@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v105';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v108';
 import { createAftermath } from './aftermath.js?v=ratelrage-ui541-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -6436,6 +6436,7 @@ function applyGameplaySettings(difficulty, settings) {
   // request 483: the two options the game never read
   screenShakeOn = settings.screenShake !== false;
   damageFxOn = settings.damageIndicators !== false;
+  autoplayAdsOn = settings.autoplayAds !== false;          // request 543
   if (!damageFxOn) bloodPatches.length = 0;
   if (sfxGain) sfxGain.gain.value = 0.9 * Math.max(0, Math.min(1, master * (settings.sfx ?? 1)));
   if (voiceGain) voiceGain.gain.value = Math.max(0, Math.min(1, master * (settings.voice ?? 1)));
@@ -10884,6 +10885,8 @@ const ATTACKS = {
     frames: FR(0, 27),
     fps: 30,
     cancelStart: 20,                     // back in his guard: may swing again
+    // request 543: holding toward his facing he walks INTO the swing instead of planting on the spot
+    walkCarry: 230,
     windows: Object.fromEntries([6, 7, 8].map((st) => [st, {
       // bat tip measured 230-290 px ahead of his feet on 6-10; the box uses the shortest
       group: 'bat', swing: 'kick', cue: WEAPONS.bat.hitCue, box: { x: 16, w: 214, top: -200, h: 185 },
@@ -15473,7 +15476,8 @@ function bounceHop(t, table) {
  * an 18 px band at the wheel row (so people can walk behind a car); a thrown man is never
  * lined up that finely, and a van or a pillar has real depth. depthBack/depthFront are
  * the ground footprint a body strikes, behind and in front of the wheel row. */
-const SOLID_HIT = { restitution: 0.42, minSpeed: 90, fastSpeed: 900, damage: 10, slideKeep: 0.35, cooldown: 0.12, depthBack: 46, depthFront: 16 };
+// request 543: a livelier rebound — more of the speed kept, and a lift that sends him back on an arc
+const SOLID_HIT = { restitution: 0.66, lift: 640, liftMin: 220, minSpeed: 90, fastSpeed: 900, damage: 10, slideKeep: 0.55, cooldown: 0.12, depthBack: 46, depthFront: 16 };
 const solidStruck = (v, x, y) => y > v.y - Math.max(solidBackGap(v), SOLID_HIT.depthBack) && y < v.y + SOLID_HIT.depthFront
   && x > v.x - 22 && x < v.x + v.w + 22;
 function bodyMeetsSolids(e, x0, sliding = false) {
@@ -15488,8 +15492,14 @@ function bodyMeetsSolids(e, x0, sliding = false) {
     const fromLeft = x0 <= left;
     e.x = fromLeft ? left - 1 : right + 1;
     const speed = Math.abs(vx);
+    const kk = Math.min(1, speed / SOLID_HIT.fastSpeed);
     if (sliding) e.slideVx = -vx * SOLID_HIT.slideKeep;
-    else e.vx = -vx * SOLID_HIT.restitution;
+    else {
+      e.vx = -vx * SOLID_HIT.restitution;
+      // the rebound is a projectile: popped up off the face, more for a harder hit
+      if (speed >= SOLID_HIT.minSpeed) e.vy = Math.min(e.vy || 0, -(SOLID_HIT.liftMin + (SOLID_HIT.lift - SOLID_HIT.liftMin) * kk));
+      e.fallHold = 0;
+    }
     if (e.thrownByCarry) e.throwPower = (e.throwPower ?? 1) * 0.5;   // a spent missile after the wall
     e.solidCool = SOLID_HIT.cooldown;
     e.solidHits = (e.solidHits || 0) + 1;
@@ -19458,6 +19468,16 @@ function advanceAttack(dt) {
   // A move that runs plants its own boots — crossed sheet frames, so once each.
   if (move.plants && player.grounded)
     for (let s = prevStep + 1; s <= step; s++) if (move.plants.includes(move.frames[s])) playDarkiPlant(true);
+  /* THE CARRY (request 543): a move with `carry` keeps him travelling while the player
+   * holds toward his facing — the swing goes where he is going. It stops at a body in
+   * front of him (the lunge's contact rule), so he does not swing through a man. */
+  if (move.walkCarry && step < (move.cancelStart ?? Infinity)) {
+    const dir = player.facing >= 0 ? 1 : -1;
+    const fwd = dir > 0 ? input.right && !input.left : input.left && !input.right;
+    const blocked = enemies.some((e) => !e.benched && e.hp > 0 && isEnemyHittable(e) && Math.abs(e.y - player.y) < GRAB.lane
+      && (e.x - player.x) * dir > 0 && (e.x - player.x) * dir < 70);
+    if (fwd && !blocked) { player.x += dir * move.walkCarry * dt; clampPlayerToArena(); }
+  }
   if (move.lunge) advanceAttackLunge(move, step, dt);  // â€¦before the hit scan
   /* THE SPEED TRAIL, armed (request 328): laid while the run is moving — after
    * the lunge has moved him, so each echo is where he really was — and retired
@@ -22448,6 +22468,9 @@ function updateAds(dt) {
  * (the boards with a printed QR) is a placeholder, so it is never a card. The
  * order is fixed (boards left to right, each rotation in the server's order);
  * the deck only OPENS on the first post whose board is in view, if one is. */
+/* request 543: with this on (the default) the active video post plays, muted, the
+ * moment the pause opens; only VISIT POSTS lets the player touch the posts. */
+let autoplayAdsOn = true;
 const adDeck = { cards: [], i: 0, focus: false, muted: true, videos: new Map(), hits: [], drag: null, slide: 0, scroll: null };
 const AD_LINK = (u) => (typeof u === 'string' && /^https?:\/\/[^\s<>"']+$/i.test(u) ? u : null);
 const AD_VIDEO = (live) => {
@@ -22533,6 +22556,7 @@ function adDeckOpen() {
   const inView = adDeckInView();
   const at = adDeck.cards.findIndex((c) => inView.has(c.slot));
   adDeck.i = Math.max(0, at); adDeck.focus = false; adDeck.drag = null; adDeck.slide = 0; adDeck.scroll = null;
+  adDeckSyncVideo();                                       // autoplay on the pause (request 543)
 }
 /* Leaving the pause: every video stopped and its resources let go. */
 function adDeckClose() {
@@ -22557,8 +22581,9 @@ function adDeckVideo(card) {
 /* Exactly one video may run: the active card's, while the carousel has focus. */
 function adDeckSyncVideo() {
   const active = adDeck.cards[adDeck.i];
-  for (const [url, v] of adDeck.videos) if (!(adDeck.focus && active?.video === url) && !v.paused) { try { v.pause(); } catch {} }
-  if (adDeck.focus && active?.video) {
+  const live = adDeck.focus || (autoplayAdsOn && paused && !gameOver.active);   // request 543
+  for (const [url, v] of adDeck.videos) if (!(live && active?.video === url) && !v.paused) { try { v.pause(); } catch {} }
+  if (live && active?.video) {
     const v = adDeckVideo(active);
     v.muted = adDeck.muted;
     if (v.paused) v.play?.().catch(() => {});
@@ -24390,7 +24415,7 @@ function drawAdDeck(ui, px, py, pw, ph) {
   adDeck.hits.push({ id: 'deck:card', idx: adDeck.i, x: sx, y: sy, w: sw, h: sh });
 
   // a video's sound, on the frame's corner
-  if (card.video) {
+  if (card.video && focus) {
     const vx = sx + sw - 26, vy = sy + 26;
     ctx.fillStyle = 'rgba(6,9,16,0.78)';
     ctx.beginPath(); ctx.arc(vx, vy, 15, 0, Math.PI * 2); ctx.fill();
@@ -24466,21 +24491,11 @@ function drawAdDeck(ui, px, py, pw, ph) {
 /* ← BACK on the lower-left bar while the post view is open (the ✕ is gone then).
  * Drawn after the bar itself, so the strip never paints over it. */
 function drawDeckBack(ui) {
-  const C = ui.C;
   if (adDeck.focus && adDeck.cards.length && !gameOver.active) {
-    const bx = 46, bw = 132, bh = 38, by = 664 + 9;
-    ctx.save();
-    ctx.fillStyle = 'rgba(10,14,22,0.78)';
-    deckRoundRect(bx, by, bw, bh, 8); ctx.fill();
-    ctx.strokeStyle = 'rgba(232,238,248,0.34)'; ctx.lineWidth = 1.2;
-    deckRoundRect(bx + 0.5, by + 0.5, bw - 1, bh - 1, 8); ctx.stroke();
-    ctx.strokeStyle = C.paper; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    const ay = by + bh / 2;
-    ctx.beginPath(); ctx.moveTo(bx + 32, ay); ctx.lineTo(bx + 18, ay); ctx.moveTo(bx + 24, ay - 6); ctx.lineTo(bx + 18, ay); ctx.lineTo(bx + 24, ay + 6); ctx.stroke();
-    ui.setFont(800, 13, 2.2);
-    ctx.fillStyle = C.paper; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText('BACK', bx + 44, ay + 1);
-    ctx.restore();
+    // the case file's own GO BACK — same button, same glimmer (request 543)
+    const bx = 46, by = 668, bw = 188, bh = 40;
+    if (ui.drawGoBack) ui.drawGoBack(bx, by, bw, bh);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     adDeck.hits.push({ id: 'deck:back', x: bx, y: by, w: bw, h: bh });
   }
 }
@@ -24510,6 +24525,7 @@ if (typeof canvas !== 'undefined') {
     const d = adDeck.drag;
     if (!d || d.pid !== e.pointerId) return;
     const pt = frontEnd?.ui?.pointerPos(e);
+    if (pt && Math.hypot(pt.x - d.x0, pt.y - d.y0) > 12) d.moved = true;   // a swipe is never a tap (request 543)
     // the posts slide only in the post view (request 541), and on either axis: up/left = next
     if (!pt || d.id !== 'deck:card' || adDeck.cards.length < 2 || !adDeck.focus) return;
     const dx = pt.x - d.x0, dy = pt.y - d.y0;
@@ -24527,10 +24543,11 @@ if (typeof canvas !== 'undefined') {
       adDeckMove(mv < 0 ? 1 : -1, 1 - Math.min(1, Math.abs(mv) / Math.max(1, adDeck.span || 400)));
       return;
     }
-    if (d.axis) return;                                       // a short drag is neither a swipe nor a tap
+    if (d.axis || d.moved) return;                            // a short drag is neither a swipe nor a tap
     const h = adDeckHitAt(e);
     if (!h || h.id !== d.id) return;                         // released somewhere else: no press
-    if (!adDeck.focus) adDeckFocus(true);
+    // the posts are only touchable in the post view (request 543): a tap on the still deck opens it
+    if (!adDeck.focus) { adDeckFocus(true); return; }
     // a tap on a card only browses — to that card; it never leaves the game (request 473)
     if (h.id === 'deck:card') { if (h.idx != null && h.idx !== adDeck.i) adDeckMove(h.idx - adDeck.i); }
     else if (h.id === 'deck:prev') adDeckMove(-1);
@@ -25309,7 +25326,9 @@ window.__ror = {
    * pointer events before the touch layer sees them.) */
   get noSwipeBack() { return !!(paused && !gameOver.active && adDeck.cards.length); },
   deckDragAt(clientX, clientY) {
-    if (!paused || gameOver.active || !adDeck.cards.length || !adDeck.focus) return false;   // a still deck takes taps (request 541)
+    // the deck always owns its own touches (request 543): a still deck neither slides nor opens
+    // anything (deckUp turns any tap into VISIT POSTS) — and a tap on it is never read as ENTER
+    if (!paused || gameOver.active || !adDeck.cards.length) return false;
     try { return !!adDeckHitAt({ clientX, clientY }); } catch { return false; }
   },
   menuHitAt(clientX, clientY) {
@@ -25485,7 +25504,10 @@ window.__ror = {
   },
   get cameraX() { return cameraX; },
   get cameraY() { return cameraY; },
+  get audioLevels() { return { music: musicSetting, sfx: sfxGain ? +sfxGain.gain.value.toFixed(3) : null, voice: voiceGain ? +voiceGain.gain.value.toFixed(3) : null, autoplayAds: autoplayAdsOn }; },   // request 543
   get bossFloorY() { return bossFloorY(); },                     // request 540
+  deckGo(i) { adDeck.i = Math.max(0, Math.min(adDeck.cards.length - 1, i)); adDeckSyncVideo(); return adDeck.i; },   // request 543 tests
+  set autoplayAds(v) { autoplayAdsOn = !!v; adDeckSyncVideo(); },
   /* Device pixels per world pixel, so a harness measuring a SCREENSHOT can get
    * back to world space: screen = (world - camera) * this. Without it a test
    * that compares two shots taken at different camera heights is comparing the
@@ -27699,6 +27721,8 @@ function fontState() {
         clearPauseInput();
         pauseT = 0;
       },
+      // an audio slider moving in OPTIONS reaches the game at once (request 543)
+      onSettingsLive: ({ settings }) => applyGameplaySettings(null, settings),
       onMainMenu: () => {
         paused = false;
         resetMusicPlaylist();

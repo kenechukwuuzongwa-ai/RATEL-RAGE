@@ -317,6 +317,7 @@ const SETTINGS_DEFAULTS = {
   subtitles: true, subtitleSize: 1, highContrast: false, screenShake: true,
   crt: false, tutorialHints: true, vibration: true, damageIndicators: true,
   comboAssist: true,
+  autoplayAds: true,          // request 543: a video post plays (muted) as soon as the pause opens
 };
 
 /* THE LEVEL 1 INTRO NARRATION, word for word (request 337 — the old table was a
@@ -937,7 +938,7 @@ const CUES = {
    * different sounds. `rate` is applied by navScroll. */
   scroll: { src: '../frontend/audio/ui/ui-scroll.mp3', at: 0, len: 0.20, gain: 0.41 },      // "menu check"
   close: { src: '../frontend/audio/ui/ui-close.mp3', at: 0, len: 0.12, gain: 0.40 },        // "event screen X"
-  start: { src: '../frontend/audio/ui/ui-start.mp3', at: 0, len: 2.70, gain: 0.62 },        // "match start"
+  start: { src: '../frontend/audio/ui/ui-start.mp3', at: 0, len: 2.80, gain: 0.62 },        // "match start", textured (request 543)
   cancel: { src: '../frontend/audio/ui/ui-cancel.mp3', at: 0, len: 0.80, gain: 0.53 },      // "match cancel"
   slide: { src: '../frontend/audio/ui/ui-slide.mp3', at: 0, len: 1.00, gain: 0.47 },        // "screen slide"
   settings: { src: '../frontend/audio/ui/ui-settings.mp3', at: 0, len: 0.70, gain: 0.53 },  // "settings menu click"
@@ -1350,6 +1351,9 @@ export function createFrontEnd({
    * frozen and still paused, so this must not restart music or clear inputs —
    * it only hands the canvas back and re-applies whatever settings changed. */
   onPauseReturn,
+  /* Request 543: called on every audio change while it is being made, so the game's
+   * music and effects follow the slider in real time. */
+  onSettingsLive,
   /* The level's art loads behind these screens, so the front end no longer
    * assumes it is ready. It walks every screen freely and consults the gate
    * only at the one place it matters: the handover into gameplay. Defaults keep
@@ -1989,6 +1993,7 @@ export function createFrontEnd({
         tone(t, { f: 120, f2: 55, dur: 0.24, peak: 0.42 }, level);
         if (opt.rank === 'S') tone(t + 0.06, { f: 2093, f2: 2637, dur: 0.32, type: 'triangle', peak: 0.09 }, level);
         break;
+      case 'enter':                     // request 543: ENTER is the pause sound
       case 'pause':
         tone(t, { f: 660, f2: 440, dur: 0.1, type: 'triangle', peak: 0.24 }, level);
         tone(t + 0.07, { f: 330, dur: 0.12, type: 'triangle', peak: 0.16 }, level);
@@ -2214,7 +2219,8 @@ export function createFrontEnd({
   };
   const navForward = () => {
     if (cueSwallowed()) return;
-    cueCount.forward++; cueCount.order.push('F'); playCue('forward');
+    // request 543: every ENTER is the pause menu's sound (the 'enter' synth below)
+    cueCount.forward++; cueCount.order.push('F'); uiSfx('enter');
   };
   const navBack = () => {
     if (cueSwallowed()) return;
@@ -2361,6 +2367,21 @@ export function createFrontEnd({
     } else ambience.pause();
   }
 
+  let previewAt = 0;
+  function previewAudio(key) {
+    applyAudioSettings();
+    onSettingsLive?.({ settings: { ...settings } });
+    const now = performance.now();
+    if (now - previewAt < 85) return;
+    previewAt = now;
+    const ac = sfx.ac;
+    if (!ac || !['master', 'music', 'sfx', 'voice', 'ambience'].includes(key)) return;
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    const chan = key === 'master' ? settings.sfx : settings[key];
+    const level = clamp(settings.master * chan, 0, 1);
+    if (level <= 0) return;
+    tone(ac.currentTime + 0.005, { f: 520 + 760 * clamp(settings[key], 0, 1), dur: 0.06, peak: 0.22, attack: 0.003 }, level);
+  }
   const saveSettings = () => {
     try { localStorage.setItem('ratelrage.settings', JSON.stringify(settings)); } catch {}
     applyAudioSettings();
@@ -2868,7 +2889,7 @@ export function createFrontEnd({
     /* The studio card stays skippable — skipping it only arrives at the title
      * sooner, where the load gate below still holds. */
     if (phase === 'splash') { navForward(); go('disclaimer'); return; }
-    if (phase === 'disclaimer') { if (phaseT < DISCLAIMER.minRead) return; go('title'); return; }
+    if (phase === 'disclaimer') { if (phaseT < DISCLAIMER.minRead) return; navForward(); go('title'); return; }
     if (phase === 'controls') {
       if (controlsPage || editingControls()) return;
       const it = CONTROL_ITEMS()[selection];
@@ -2894,8 +2915,7 @@ export function createFrontEnd({
        * be possible is entering the menu on a load that has not finished. */
       if (!titleReady()) return;
       cueCount.title++;
-      playCue('titleEntrance');
-      navForward();
+      navForward();                     // the tap-to-enter is ENTER's sound too (request 543)
       go('menu');
       return;
     }
@@ -3000,6 +3020,7 @@ export function createFrontEnd({
       { label: 'VIBRATION', key: 'vibration', type: 'toggle' },
       { label: 'DAMAGE INDICATORS', key: 'damageIndicators', type: 'toggle' },
       { label: 'COMBO ASSIST', key: 'comboAssist', type: 'toggle' },
+      { label: 'AUTOPLAY VIDEO ADS', key: 'autoplayAds', type: 'toggle' },
     ];
     if (page === 'ACCESSIBILITY') return [
       { label: 'SUBTITLES', key: 'subtitles', type: 'toggle' },
@@ -3034,8 +3055,11 @@ export function createFrontEnd({
       const min = row.min ?? 0, max = row.max ?? 1, step = row.step ?? 0.05;
       const before = settings[row.key];
       settings[row.key] = clamp(before + step * dir, min, max);
-      /* Sliders move continuously while held — a cue per step would machine-gun,
-       * so the feedback here is the bar itself. */
+      /* REAL-TIME FEEDBACK (request 543): the change is applied at once — the menu's
+       * own ambience and voice, AND the game's music/effects (onSettingsLive) — and a
+       * short tick is played at the channel's NEW level, paced so a held slider ticks
+       * rather than machine-guns. */
+      if (settings[row.key] !== before) previewAudio(row.key);
     } else if (row.action) {
       row.action(dir);
       playCue('toggle');
@@ -3881,7 +3905,7 @@ export function createFrontEnd({
       ctx.textAlign = 'right';
       setFont(600, 14, 0.6);
       ctx.fillStyle = f > 0.4 ? C.gold : C.muted;
-      ctx.fillText(o.value, x + w - 20, y + h / 2 + 0.5);
+      ctx.fillText(o.value, x + w - 20 - (disabled ? 0 : 22 * f), y + h / 2 + 0.5);   // clear of the chevron (request 543)
     }
 
     if (disabled && o.note) {
@@ -7367,8 +7391,8 @@ export function createFrontEnd({
     else if (phase === 'credits') drawCredits();
     if (CLOSE_PHASES.has(phase)) {
       // the mission briefing is a panel at the top LEFT: its ✕ is on that panel's own corner (request 540)
-      if (phase === 'briefing') drawCloseButton(easeOut(phaseT / 0.26), 40 + 700 - 36, 40 + 36);
-      else if (!(phase === 'controls' && editingControls())) drawCloseButton(easeOut(phaseT / 0.26));
+      // every window's ✕ sits in the screen's top-right corner — the briefing's too (request 543)
+      if (!(phase === 'controls' && editingControls())) drawCloseButton(easeOut(phaseT / 0.26));
     }
   }
 
@@ -7830,6 +7854,11 @@ export function createFrontEnd({
     wrapLines,
     drawControlBar, drawGrain, drawVignette, captureBackdrop,
     pressPulse, navForward, navBack, navScroll, navClose, navStart, navSlide, hitTest, pointerPos, isTouchUI, drawCloseButton,
+    /* The case file's GO BACK, look and glimmer, for the post view's way out (request 543). */
+    drawGoBack(x, y, w = 188, h = 40, focused = false) {
+      button({ id: 'goback:' + x, x, y, w, h, label: 'GO BACK', icon: 'circleBtn', focused });
+      glimmer(x, y, w, h, 7, BRIEF_GLIMMER[0]);
+    },
     uiSfx,                                  // request 453: the synthesised cues above
     get uiSfxCount() { return { ...uiSfxCount }; },
     /* The menu's context has to be kept alive WHILE THE FIGHT RUNS too: its own
