@@ -13798,7 +13798,14 @@ function ramPathClear(fromX, toX, y) {
 const RAM_AIR = { maxHeight: 190, lift: 1.25, power: 0.75 };
 const isRamAirTarget = (e) => e.state === 'hit' && !e.dead && !e.execVictim && !e.offstage
   && !e.grabbed && !e.carried && e.hp > 0 && -(e.jumpY || 0) > 2 && -(e.jumpY || 0) <= RAM_AIR.maxHeight;
-const ramCanHit = (e) => isEnemyHittable(e) || isRamAirTarget(e);
+/* …AND A MAN ON THE DECK (request 545): down, or in the middle of getting up — a charge
+ * does not sail over a body in its path. He is scooped off the floor: driven low and far
+ * (a flatter arc than a standing man), at once, as a projectile that can bowl the next
+ * man over. A corpse is not a mark. */
+const RAM_GROUND = { lift: 0.55, power: 0.7 };
+const isRamGroundTarget = (e) => e.state === 'down' && !e.dead && !e.dying && e.hp > 0 && !e.execVictim
+  && !e.offstage && !e.grabbed && !e.carried;
+const ramCanHit = (e) => isEnemyHittable(e) || isRamAirTarget(e) || isRamGroundTarget(e);
 function ramTarget(dir) {
   let best = null, bestD = Infinity;
   for (const e of enemies) {
@@ -13986,17 +13993,18 @@ function updateRamRage(dt) {
  * secondary hits. He keeps `impactKeep` of his speed through each man. */
 function ramImpact(e, dir, s) {
   const R = RAM, force = player.rageActive ? R.rageForce : 1;
-  const air = isRamAirTarget(e);
+  const air = isRamAirTarget(e), ground = isRamGroundTarget(e);
   const win = {
     damage: R.damage * (0.55 + 0.45 * s),
-    kb: { x: R.kb.x * (0.55 + 0.45 * s) * force, y: R.kb.y * (0.7 + 0.3 * s) * (air ? RAM_AIR.lift : 1) },
+    kb: { x: R.kb.x * (0.55 + 0.45 * s) * force, y: R.kb.y * (0.7 + 0.3 * s) * (air ? RAM_AIR.lift : ground ? RAM_GROUND.lift : 1) },
     launch: true, big: true,
     hitstop: 0.05 + 0.07 * s, shake: Math.round(8 + 12 * s),
     rage: 14, dir,
-    missile: s >= R.missileAt || air
-      ? { power: Math.min(1, Math.max(air ? RAM_AIR.power : 0, s * force)), pierce: player.rageActive ? 2 : 1 } : undefined,
-    airRelaunch: air,
+    missile: s >= R.missileAt || air || ground
+      ? { power: Math.min(1, Math.max(air ? RAM_AIR.power : ground ? RAM_GROUND.power : 0, s * force)), pierce: player.rageActive ? 2 : 1 } : undefined,
+    airRelaunch: air || ground,                 // no hover: a scooped body moves at once
   };
+  if (ground) { player.ramGroundHits = (player.ramGroundHits || 0) + 1; ramDustScoop(e.x, e.y, dir, s); }
   if (air) player.ramAirHits = (player.ramAirHits || 0) + 1;
   hitEnemy(e, win);   // its impact is Darki's own punch-hit (playHit), as asked in request 516
   // the low end: the deck answering a man driven into it, scaled by the blow
@@ -14299,9 +14307,13 @@ function drawRushFx() {
  * and capped (never allocates), short-lived, and it outlives the charge only as
  * long as dust takes to settle. Drawn in two passes so dust behind his feet is
  * under him and dust toward the camera is over his feet — never over his body. */
+/* REQUEST 545 — MORE RESOLUTION AND ENERGY. Every burst lays ~2.2x the particles
+ * (density), each finer (size) and thrown harder (energy); the pool grows to match. The
+ * puffs draw a soft halo for volume, and fast grit streaks along its flight. */
 const RAM_DUST = {
-  cap: 90, scuffCap: 6,
-  perPx: 1 / 15,          // glide puffs per px travelled at full speed
+  cap: 260, scuffCap: 6,
+  density: 2.2, energy: 1.35, size: 0.75,
+  perPx: 1 / 15 * 2.2,    // glide puffs per px travelled at full speed (x density)
   // cloud grey on both floors (request 512): neutral on the street, a touch cooler in the facility
   street: { puff: [192, 192, 194], grit: [132, 132, 134], scuff: 'rgba(30,30,32,', a: 0.62 },
   wet:    { puff: [186, 190, 196], grit: [124, 128, 134], scuff: 'rgba(8,12,18,', a: 0.55 },
@@ -14315,18 +14327,30 @@ const ramDustTone = () => (activeLevel === 2 ? RAM_DUST.wet : RAM_DUST.street);
 // kind 0 = puff (billows, drags, rises), 1 = grit (thrown, falls, settles)
 function ramDustEmit(kind, x, y, vx, vy, vz, r, life) {
   const d = claim(ramDust.p);
+  const E = RAM_DUST.energy * (0.85 + 0.3 * fxRng());
   d.live = true; d.kind = kind; d.age = 0; d.life = life;
   d.x = x; d.y = y; d.z = kind ? -2 : -(2 + fxRng() * 6);
-  d.vx = vx; d.vy = vy; d.vz = vz; d.r = r; d.grow = kind ? 0 : 22 + fxRng() * 30;
+  d.vx = vx * E; d.vy = vy * E; d.vz = vz * E;
+  d.r = kind ? r : r * RAM_DUST.size; d.grow = kind ? 0 : (22 + fxRng() * 30) * RAM_DUST.size;
   ramDust.spawned++;
+}
+const ramDustN = (n) => Math.round(n * RAM_DUST.density);
+// a body scooped off the deck (request 545): a low spray of grit and a skirt of dust along the blow
+function ramDustScoop(x, y, dir, s) {
+  for (let i = 0; i < ramDustN(8 + 8 * s); i++)
+    ramDustEmit(1, x + (fxRng() - 0.5) * 40, y, dir * (160 + fxRng() * 280) * (0.5 + s), (fxRng() - 0.5) * 90,
+      -(60 + fxRng() * 140), 1.2 + fxRng() * 1.6, 0.5 + fxRng() * 0.3);
+  for (let i = 0; i < ramDustN(6 + 6 * s); i++)
+    ramDustEmit(0, x + (fxRng() - 0.5) * 60, y + (fxRng() - 0.5) * 8, dir * (90 + fxRng() * 160) * (0.5 + s), (fxRng() - 0.5) * 50,
+      -(15 + fxRng() * 40), 8 + fxRng() * 8, 0.45 + fxRng() * 0.4);
 }
 // the back foot shoving off: `need` 0..1 is how much speed there was to find
 function ramDustLaunch(dir, need) {
-  const n = Math.round(6 + 10 * need);
+  const n = ramDustN(6 + 10 * need);
   for (let i = 0; i < n; i++)
     ramDustEmit(0, player.x - dir * (20 + fxRng() * 30), player.y + (fxRng() - 0.5) * 10,
       -dir * (140 + fxRng() * 220) * (0.6 + need), (fxRng() - 0.5) * 70, -(30 + fxRng() * 70), 7 + fxRng() * 8, 0.45 + fxRng() * 0.35);
-  for (let i = 0; i < Math.round(3 + 6 * need); i++)
+  for (let i = 0; i < ramDustN(3 + 6 * need); i++)
     ramDustEmit(1, player.x - dir * (14 + fxRng() * 20), player.y, -dir * (180 + fxRng() * 260), (fxRng() - 0.5) * 90,
       -(120 + fxRng() * 160), 1.4 + fxRng() * 1.6, 0.5 + fxRng() * 0.3);
 }
@@ -14357,20 +14381,20 @@ function ramDustSkid(dir, v, travelled, brake) {
 function ramDustEndSkid() { ramDust.scuff = null; ramDust.acc = 0; }
 // a body met at speed `s`: a ring round his feet, kicked along the blow
 function ramDustImpact(x, y, dir, s) {
-  const n = Math.round(8 + 12 * s);
+  const n = ramDustN(8 + 12 * s);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2, sp = (90 + fxRng() * 140) * (0.5 + s);
     ramDustEmit(0, x + Math.cos(a) * 14, y + Math.sin(a) * 6, Math.cos(a) * sp + dir * 160 * s, Math.sin(a) * sp * 0.35,
       -(20 + fxRng() * 60), 8 + fxRng() * 9, 0.5 + fxRng() * 0.4);
   }
-  for (let i = 0; i < Math.round(4 + 8 * s); i++)
+  for (let i = 0; i < ramDustN(4 + 8 * s); i++)
     ramDustEmit(1, x, y, dir * (120 + fxRng() * 260) * (0.4 + s) + (fxRng() - 0.5) * 120, (fxRng() - 0.5) * 80,
       -(140 + fxRng() * 200) * (0.5 + s), 1.3 + fxRng() * 1.8, 0.55 + fxRng() * 0.3);
 }
 // stopped dead against something solid: it rebounds off the obstruction
 function ramDustWall(dir, s) {
   const x = player.x + dir * 44;
-  for (let i = 0; i < Math.round(8 + 8 * s); i++)
+  for (let i = 0; i < ramDustN(8 + 8 * s); i++)
     ramDustEmit(0, x, player.y + (fxRng() - 0.5) * 10, -dir * (60 + fxRng() * 160), (fxRng() - 0.5) * 90,
       -(40 + fxRng() * 90), 8 + fxRng() * 8, 0.5 + fxRng() * 0.4);
 }
@@ -14410,9 +14434,16 @@ function drawRamDust(front) {
     if (!d.live || (d.y > player.y + 3) !== front) continue;
     const p = d.age / d.life, x = d.x - cameraX;
     if (d.kind) {
-      const c = T.grit;
-      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(0.85 * (1 - p)).toFixed(3)})`;
-      ctx.fillRect(x - d.r / 2, d.y + d.z - d.r / 2, d.r, d.r);
+      const c = T.grit, ga = (0.85 * (1 - p)).toFixed(3);
+      const sp = Math.hypot(d.vx, d.vz);
+      if (sp > 140) {                                   // fast grit streaks along its flight
+        ctx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${ga})`;
+        ctx.lineWidth = d.r * 0.8; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x, d.y + d.z); ctx.lineTo(x - d.vx * 0.022, d.y + d.z - d.vz * 0.022); ctx.stroke();
+      } else {
+        ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${ga})`;
+        ctx.fillRect(x - d.r / 2, d.y + d.z - d.r / 2, d.r, d.r);
+      }
       continue;
     }
     const c = T.puff, a = T.a * Math.pow(1 - p, 1.5) * Math.min(1, d.age / 0.05);
@@ -14420,6 +14451,9 @@ function drawRamDust(front) {
     // its contact shade on the deck, then the puff lit from above (the scene's lamps)
     ctx.fillStyle = `rgba(0,0,0,${(a * 0.35).toFixed(3)})`;
     ctx.beginPath(); ctx.ellipse(x, d.y + 1, d.r * 1.1, d.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    // a soft halo first, for volume (request 545)
+    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(a * 0.22).toFixed(3)})`;
+    ctx.beginPath(); ctx.ellipse(x, d.y + d.z, d.r * 1.55, d.r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = `rgba(${c[0] - 30},${c[1] - 30},${c[2] - 30},${a.toFixed(3)})`;
     ctx.beginPath(); ctx.ellipse(x, d.y + d.z, d.r, d.r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(a * 0.8).toFixed(3)})`;
@@ -14432,7 +14466,7 @@ function updateRushCharge(dt) {
   // Bailing out: hit, blocked, or the mark left. Blocking ends it rather than
   // being refused, so the guard is always available and the player is never
   // stuck watching a charge he has changed his mind about.
-  if (!t || t.benched || t.hp <= 0 || (!isEnemyHittable(t) && t.state !== 'hit')
+  if (!t || t.benched || t.hp <= 0 || (!isEnemyHittable(t) && t.state !== 'hit' && !isRamGroundTarget(t))
     || player.react || player.state !== 'normal' || input.blockHeld) { endRush(); return; }
   player.rushT += dt;
   if (player.rushT > RUSH.maxTime) { endRush(); return; }
