@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v104';
-import { createAftermath } from './aftermath.js?v=ratelrage-ui540-v1';
+import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v105';
+import { createAftermath } from './aftermath.js?v=ratelrage-ui541-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -3657,8 +3657,10 @@ function updatePauseInput(dt) {
     if (pauseTakeLatch('mute')) adDeckToggleMute();
     if (pauseTakeLatch('accept')) adDeckMove(1);
     if (pauseTakeLatch('link')) adDeckOpenLink();
-    const up = pauseTakeLatch('up'), down = pauseTakeLatch('down');
-    if (pauseTakeLatch('back') || up || down) adDeckFocus(false);
+    // up/down page the reel (request 541); only BACK leaves the post view
+    if (pauseTakeLatch('up')) adDeckMove(-1);
+    if (pauseTakeLatch('down')) adDeckMove(1);
+    if (pauseTakeLatch('back')) adDeckFocus(false);
     pauseRepeat.dir = pauseHeld('down') ? 1 : pauseHeld('up') ? -1 : 0;
     pauseRepeat.t = frontEnd?.ui.HOLD_DELAY ?? 0.40;
     return;
@@ -22442,6 +22444,15 @@ function adDeckCapture(only = adDeckHere()) {
     if (!booked && !slot.qrRect && img && slot.face)
       found.push({ slot: slot.id, booking: null, title: slot.brand || 'ON THIS STREET', desc: '',
         img: null, video: null, link: AD_LINK(slot.link), face: slot.face, board: img });
+    /* AN EMPTY BOARD IS A POST TOO (request 541): its CLAIM SPACE art, and BOOK THIS SPACE
+     * opens the same booking page its printed QR leads to — the way to book from inside
+     * the game (a phone cannot scan its own screen). Only where there is an ad server to
+     * book through; with none (the editor, the APK) the vacancy stays off the deck. */
+    else if (!booked && slot.qrRect && img && slot.face && ADS.endpoint) {
+      const link = AD_LINK(`${ADS.endpoint}/b/${slot.id}`);
+      if (link) found.push({ slot: slot.id, booking: null, vacant: true, title: 'THIS SPACE IS AVAILABLE',
+        desc: 'Put your brand on this street, in front of every player.', img: null, video: null, link, face: slot.face, board: img });
+    }
   }
   return found;
 }
@@ -22500,11 +22511,12 @@ function adDeckSyncVideo() {
     if (v.paused) v.play?.().catch(() => {});
   }
 }
-function adDeckMove(d) {
+function adDeckMove(d, r0 = 1) {
   const n = adDeck.cards.length;
   if (n < 2) return;
+  const from = adDeck.i;
   adDeck.i = (adDeck.i + d + n) % n;
-  adDeck.slide = d * 40;
+  adDeck.anim = { from, dir: d, t0: performance.now() / 1000, r0: Math.max(0, Math.min(1, r0)) };
   frontEnd?.ui.navSlide?.();                 // the posts slide (request 540)
   adDeckSyncVideo();
 }
@@ -24179,8 +24191,10 @@ function drawPauseOverlay() {
 
   /* The right side was the FIGHT STATUS card; it is gone (request 454 — the run
    * statistics behind it are untouched) and the space is the posts carousel's. */
-  drawAdDeck(ui, 528, 196, 694, 372);
-  if (!gameOver.active) ui.drawCloseButton?.(1, VIEW_W - 52, 50);   // the ✕ resumes (request 540)
+  // the posts fill the pause screen's right side, from under the ✕ to the bar (request 541)
+  drawAdDeck(ui, 528, 84, VIEW_W - 528 - 28, 652 - 84);
+  // the ✕ resumes (request 540) — and steps aside while the post view has its own ← BACK (541)
+  if (!gameOver.active && !adDeck.focus) ui.drawCloseButton?.(1, VIEW_W - 52, 50);
 
   ctx.restore();
   ctx.restore();
@@ -24196,6 +24210,7 @@ function drawPauseOverlay() {
     { icon: 'cross', label: 'SELECT', color: '#8fb4ff' },
     { icon: 'circleBtn', label: 'RESUME', color: '#ff8f8f' },
   ]);
+  drawDeckBack(ui);                                   // the post view's ← BACK, on the bar (request 541)
   /* Above the grain, below nothing: QUIT TO DESKTOP arms on the first press and
    * this is what says so. */
   ui.messagePlate?.();
@@ -24236,17 +24251,37 @@ function deckMedia(card) {
   if (card.face && card.board) return { src: card.board, w: card.face.w, h: card.face.h, face: card.face };
   return null;
 }
+/* THE POST VIEW (request 541). The panel fills the pause screen's whole right side.
+ * Each post is drawn WHOLE (contained, nothing of its artwork cropped) over a blurred,
+ * darkened cover of itself, so the frame is always full. Before VISIT POSTS it is a
+ * still window (the ✕ resumes the fight); VISIT POSTS opens the post view: the ✕ goes,
+ * a ← BACK button takes the lower-left bar, a video post plays, and the posts page
+ * VERTICALLY like a reel (swipe up = next) — horizontal swipes, keys and the ▲/▼ chips
+ * page too. A vacant board is a post here as well: BOOK THIS SPACE (its booking page). */
+const DECK_ANIM = 0.30;
+function drawDeckMedia(M, X, Y, w, h) {
+  const F = M.face || { x: 0, y: 0, w: M.w, h: M.h };
+  // the backdrop: a cover crop, blurred and dimmed, so the whole frame is the post's
+  const want = w / h;
+  let cw = F.w, ch = F.h;
+  if (cw / ch > want) cw = ch * want; else ch = cw / want;
+  ctx.save();
+  ctx.filter = 'blur(14px) brightness(0.45)';
+  ctx.drawImage(M.src, F.x + (F.w - cw) / 2, F.y + (F.h - ch) / 2, cw, ch, X - 20, Y - 20, w + 40, h + 40);
+  ctx.restore();
+  // the post itself, whole
+  const k = Math.min(w / F.w, h / F.h);
+  const dw = F.w * k, dh = F.h * k;
+  ctx.drawImage(M.src, F.x, F.y, F.w, F.h, X + (w - dw) / 2, Y + (h - dh) / 2, dw, dh);
+}
 function drawAdDeck(ui, px, py, pw, ph) {
   adDeck.hits = [];
   const cards = adDeck.cards;
   if (!cards.length) return;
   const C = ui.C, n = cards.length, card = cards[adDeck.i];
   const focus = adDeck.focus;
+  const now = performance.now() / 1000;
   ui.glass(px, py, pw, ph, 10, focus ? { border: 'rgba(255,190,80,0.85)' } : {});
-  /* THE MEDIA FILLS THE PANEL (request 539): the strip used to be a fixed 214 px
-   * band with dead space around it. It now takes every pixel of the panel except
-   * the exact rows its words need — the POSTS / count line on top, and the
-   * title (+ description) under it. */
   const ix = px + 18, iw = pw - 36;
   const hasDesc = !!card.desc;
   const ty = py + ph - (hasDesc ? 40 : 20);          // title baseline
@@ -24266,53 +24301,44 @@ function drawAdDeck(ui, px, py, pw, ph) {
   ctx.fillStyle = C.muted;
   ctx.fillText(`${adDeck.i + 1} / ${n}`, ix + iw, py + 26);
 
-  // the strip: one post per page, each FILLING the whole media area (cropped to
-  // cover it, centred) — no letterbox, no peek band (request 539)
-  const sx = ix, sy = py + 38, sw = iw, sh = Math.max(DECK_CARD_H, ty - 34 - sy);
-  const lay = [];
-  let run = 0;
-  for (const c of cards) {
-    lay.push({ x: run, w: sw, h: sh, m: deckMedia(c) });
-    run += sw + DECK_GAP;
+  // the media frame
+  const sx = ix, sy = py + 38, sw = iw, sh = Math.max(DECK_CARD_H, ty - 40 - sy);
+  const span = sh + DECK_GAP;
+  adDeck.span = span;
+  let offA = 0, other = -1, offO = 0;
+  const A = adDeck.anim;
+  if (A) {
+    const t = Math.min(1, (now - A.t0) / DECK_ANIM);
+    const rem = A.r0 * Math.pow(1 - t, 3);
+    offA = A.dir * span * rem; other = A.from; offO = offA - A.dir * span;
+    if (t >= 1) adDeck.anim = null;
+  } else if (adDeck.drag && adDeck.drag.axis && focus && n > 1) {
+    const d = adDeck.drag.axis === 'y' ? adDeck.drag.dy : adDeck.drag.dx;
+    offA = Math.max(-span, Math.min(span, d));
+    other = d < 0 ? (adDeck.i + 1) % n : (adDeck.i - 1 + n) % n;
+    offO = d < 0 ? offA + span : offA - span;
   }
-  const total = run - DECK_GAP;
-  // the active card at the strip's left edge; the last ones end flush with its right
-  const target = Math.max(0, Math.min(lay[adDeck.i].x, total - sw));
-  if (adDeck.scroll == null) adDeck.scroll = target;
-  adDeck.scroll += (target - adDeck.scroll) * 0.24;
-  if (Math.abs(target - adDeck.scroll) < 0.5) adDeck.scroll = target;
-  const off = adDeck.drag ? adDeck.drag.dx : 0;
+  const axisX = !A && adDeck.drag?.axis === 'x';
   ctx.save();
-  ctx.beginPath(); ctx.rect(sx, sy - 4, sw, sh + 8); ctx.clip();
-  for (let k = 0; k < n; k++) {
-    const L = lay[k], X = sx + L.x - adDeck.scroll + off, Y = sy + (sh - L.h) / 2;
-    if (X > sx + sw || X + L.w < sx || !L.m) continue;
-    ctx.save();
-    deckRoundRect(X, Y, L.w, L.h, DECK_R);
-    ctx.clip();
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    const M = L.m;
-    // cover: crop the source (or its face) to the page's aspect, centred
-    const F = M.face || { x: 0, y: 0, w: M.w, h: M.h };
-    const want = L.w / L.h;
-    let cw = F.w, ch = F.h;
-    if (cw / ch > want) cw = ch * want; else ch = cw / want;
-    ctx.drawImage(M.src, F.x + (F.w - cw) / 2, F.y + (F.h - ch) / 2, cw, ch, X, Y, L.w, L.h);
-    if (k !== adDeck.i) { ctx.fillStyle = 'rgba(4,6,10,0.38)'; ctx.fillRect(X, Y, L.w, L.h); }
-    ctx.restore();
-    deckRoundRect(X + 0.5, Y + 0.5, L.w - 1, L.h - 1, DECK_R);
-    ctx.strokeStyle = k === adDeck.i && focus ? 'rgba(255,190,80,0.95)' : 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = k === adDeck.i && focus ? 2.4 : 1;
-    ctx.stroke();
-    adDeck.hits.push({ id: 'deck:card', idx: k, x: Math.max(sx, X), y: Y, w: Math.min(sx + sw, X + L.w) - Math.max(sx, X), h: L.h });
-  }
+  deckRoundRect(sx, sy, sw, sh, DECK_R); ctx.clip();
+  ctx.fillStyle = '#05070b'; ctx.fillRect(sx, sy, sw, sh);
+  const drawOne = (k, off) => {
+    const m = deckMedia(cards[k]);
+    if (!m) return;
+    drawDeckMedia(m, axisX ? sx + off : sx, axisX ? sy : sy + off, sw, sh);
+  };
+  if (other >= 0 && other !== adDeck.i) drawOne(other, offO);
+  drawOne(adDeck.i, offA);
   ctx.restore();
+  deckRoundRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1, DECK_R);
+  ctx.strokeStyle = focus ? 'rgba(255,190,80,0.95)' : 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = focus ? 2.4 : 1;
+  ctx.stroke();
+  adDeck.hits.push({ id: 'deck:card', idx: adDeck.i, x: sx, y: sy, w: sw, h: sh });
 
-  // a video's sound, on the active card's corner
-  const A = lay[adDeck.i], AX = sx + A.x - adDeck.scroll + off, AY = sy + (sh - A.h) / 2;
+  // a video's sound, on the frame's corner
   if (card.video) {
-    const vx = AX + A.w - 24, vy = AY + 24;
+    const vx = sx + sw - 26, vy = sy + 26;
     ctx.fillStyle = 'rgba(6,9,16,0.78)';
     ctx.beginPath(); ctx.arc(vx, vy, 15, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = C.paper; ctx.fillStyle = C.paper; ctx.lineWidth = 1.8;
@@ -24325,50 +24351,85 @@ function drawAdDeck(ui, px, py, pw, ph) {
     adDeck.hits.push({ id: 'deck:mute', x: vx - 18, y: vy - 18, w: 36, h: 36 });
   }
 
-  // round arrows on the strip's edges
-  if (n > 1) {
-    const arrow = (dir, cx) => {
-      const cy = sy + sh / 2;
-      ctx.fillStyle = 'rgba(244,240,230,0.94)';
-      ctx.beginPath(); ctx.arc(cx, cy, 19, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; ctx.stroke();
-      ctx.strokeStyle = '#10141c';
-      ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.beginPath(); ctx.moveTo(cx + dir * -4, cy - 7); ctx.lineTo(cx + dir * 4, cy); ctx.lineTo(cx + dir * -4, cy + 7); ctx.stroke();
+  // ▲ / ▼ paging chips on the frame's right edge, only in the post view
+  if (n > 1 && focus) {
+    const chip = (dir, cy) => {
+      const cx = sx + sw - 26;
+      ctx.fillStyle = 'rgba(244,240,230,0.92)';
+      ctx.beginPath(); ctx.arc(cx, cy, 17, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#10141c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(cx - 6, cy - dir * 3); ctx.lineTo(cx, cy + dir * 3); ctx.lineTo(cx + 6, cy - dir * 3); ctx.stroke();
       adDeck.hits.push({ id: dir < 0 ? 'deck:prev' : 'deck:next', x: cx - 24, y: cy - 24, w: 48, h: 48 });
     };
-    arrow(-1, sx + 20);
-    arrow(1, sx + sw - 20);
+    chip(-1, sy + sh / 2 - 30);
+    chip(1, sy + sh / 2 + 30);
   }
 
-  // the active post's words, and its link
+  // the active post's words
   ctx.textAlign = 'left';
   ui.setDisplay(700, 22, 1);
   ctx.fillStyle = C.paper;
-  ctx.fillText(card.title, ix, ty);
+  const lw = card.link ? (card.vacant ? 236 : 196) : 0;
+  ctx.fillText(card.title, ix, ty, iw - lw - 24);
   if (card.desc) {
     ui.setFont(500, 13, 0.2);
     ctx.fillStyle = C.muted;
-    ctx.fillText(card.desc, ix, ty + 22);
+    ctx.fillText(card.desc, ix, ty + 22, iw - lw - 24);
   }
+  // THE LINK BUTTON, alive (request 541): a warm gold pill that breathes, a shine that
+  // sweeps across it, and an arrow that keeps nudging out of its box
   if (card.link) {
-    const lw = 150, lh = 34, lx = ix + iw - lw, ly = ty - 24;
-    ctx.fillStyle = focus ? 'rgba(255,190,80,0.16)' : 'rgba(255,255,255,0.06)';
-    deckRoundRect(lx, ly, lw, lh, 17); ctx.fill();
-    ctx.strokeStyle = focus ? C.gold : 'rgba(255,255,255,0.25)';
-    ctx.lineWidth = 1.2;
-    deckRoundRect(lx + 0.5, ly + 0.5, lw - 1, lh - 1, 17); ctx.stroke();
-    // the link icon: a box with an arrow leaving it
-    const gx = lx + 22, gy = ly + lh / 2;
-    ctx.strokeStyle = C.paper; ctx.lineWidth = 1.7; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(gx + 1, gy - 7); ctx.lineTo(gx - 7, gy - 7); ctx.lineTo(gx - 7, gy + 7); ctx.lineTo(gx + 7, gy + 7); ctx.lineTo(gx + 7, gy - 1); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(gx - 1, gy + 1); ctx.lineTo(gx + 8, gy - 8); ctx.moveTo(gx + 3, gy - 8); ctx.lineTo(gx + 8, gy - 8); ctx.lineTo(gx + 8, gy - 3); ctx.stroke();
-    ui.setFont(800, 12, 2);
-    ctx.fillStyle = C.paper;
-    ctx.fillText('OPEN LINK', lx + 40, gy + 4);
+    const lh = 42, lx = ix + iw - lw, ly = ty - 30;
+    const pulse = 0.5 + 0.5 * Math.sin(now * 3.2);
+    ctx.save();
+    ctx.shadowColor = `rgba(255,170,60,${0.35 + 0.35 * pulse})`;
+    ctx.shadowBlur = 14 + 12 * pulse;
+    const g = ctx.createLinearGradient(lx, ly, lx, ly + lh);
+    g.addColorStop(0, '#ffc45c'); g.addColorStop(1, '#f08a24');
+    ctx.fillStyle = g;
+    deckRoundRect(lx, ly, lw, lh, lh / 2); ctx.fill();
+    ctx.restore();
+    ctx.save();
+    deckRoundRect(lx, ly, lw, lh, lh / 2); ctx.clip();
+    const u = ((now * 0.55) % 1.6) - 0.3, gx = lx + u * lw;
+    const shine = ctx.createLinearGradient(gx - 40, ly, gx + 40, ly + lh);
+    shine.addColorStop(0, 'rgba(255,255,255,0)'); shine.addColorStop(0.5, 'rgba(255,255,255,0.55)'); shine.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = shine; ctx.fillRect(lx, ly, lw, lh);
+    ctx.restore();
+    const gx2 = lx + 26, gy = ly + lh / 2, nud = 2.5 * Math.sin(now * 5);
+    ctx.strokeStyle = '#1a0f05'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(gx2 + 1, gy - 7); ctx.lineTo(gx2 - 7, gy - 7); ctx.lineTo(gx2 - 7, gy + 7); ctx.lineTo(gx2 + 7, gy + 7); ctx.lineTo(gx2 + 7, gy - 1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gx2 - 1 + nud, gy + 1 - nud); ctx.lineTo(gx2 + 8 + nud, gy - 8 - nud);
+    ctx.moveTo(gx2 + 3 + nud, gy - 8 - nud); ctx.lineTo(gx2 + 8 + nud, gy - 8 - nud); ctx.lineTo(gx2 + 8 + nud, gy - 3 - nud); ctx.stroke();
+    ui.setFont(800, 13, 1.8);
+    ctx.fillStyle = '#1a0f05';
+    ctx.textAlign = 'left';
+    ctx.fillText(card.vacant ? 'BOOK THIS SPACE' : 'OPEN LINK', lx + 46, gy + 5);
     adDeck.hits.push({ id: 'deck:link', x: lx, y: ly, w: lw, h: lh });
   }
   ctx.restore();
+
+}
+/* ← BACK on the lower-left bar while the post view is open (the ✕ is gone then).
+ * Drawn after the bar itself, so the strip never paints over it. */
+function drawDeckBack(ui) {
+  const C = ui.C;
+  if (adDeck.focus && adDeck.cards.length && !gameOver.active) {
+    const bx = 46, bw = 132, bh = 38, by = 664 + 9;
+    ctx.save();
+    ctx.fillStyle = 'rgba(10,14,22,0.78)';
+    deckRoundRect(bx, by, bw, bh, 8); ctx.fill();
+    ctx.strokeStyle = 'rgba(232,238,248,0.34)'; ctx.lineWidth = 1.2;
+    deckRoundRect(bx + 0.5, by + 0.5, bw - 1, bh - 1, 8); ctx.stroke();
+    ctx.strokeStyle = C.paper; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const ay = by + bh / 2;
+    ctx.beginPath(); ctx.moveTo(bx + 32, ay); ctx.lineTo(bx + 18, ay); ctx.moveTo(bx + 24, ay - 6); ctx.lineTo(bx + 18, ay); ctx.lineTo(bx + 24, ay + 6); ctx.stroke();
+    ui.setFont(800, 13, 2.2);
+    ctx.fillStyle = C.paper; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('BACK', bx + 44, ay + 1);
+    ctx.restore();
+    adDeck.hits.push({ id: 'deck:back', x: bx, y: by, w: bw, h: bh });
+  }
 }
 /* Pointer on the carousel: arrows, the link, the speaker, and a horizontal drag
  * (mouse or finger) across the media to swipe — pointer events, so one path
@@ -24388,27 +24449,32 @@ if (typeof canvas !== 'undefined') {
     const h = adDeckHitAt(e);
     if (!h) return;
     e.preventDefault();
-    adDeck.drag = { id: h.id, x0: h.x, dx: 0, pid: e.pointerId };
+    const p0 = frontEnd?.ui?.pointerPos(e);
+    adDeck.drag = { id: h.id, x0: h.x, y0: p0 ? p0.y : 0, dx: 0, dy: 0, axis: null, pid: e.pointerId };
     try { canvas.setPointerCapture?.(e.pointerId); } catch {}
   });
   canvas.addEventListener('pointermove', (e) => {
     const d = adDeck.drag;
     if (!d || d.pid !== e.pointerId) return;
     const pt = frontEnd?.ui?.pointerPos(e);
-    if (pt && d.id === 'deck:card' && adDeck.cards.length > 1) d.dx = Math.max(-220, Math.min(220, pt.x - d.x0));
+    // the posts slide only in the post view (request 541), and on either axis: up/left = next
+    if (!pt || d.id !== 'deck:card' || adDeck.cards.length < 2 || !adDeck.focus) return;
+    const dx = pt.x - d.x0, dy = pt.y - d.y0;
+    if (!d.axis && Math.hypot(dx, dy) >= 8) d.axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
+    if (d.axis === 'y') d.dy = dy; else if (d.axis === 'x') d.dx = dx;
   });
   const deckUp = (e) => {
     const d = adDeck.drag;
     if (!d || d.pid !== e.pointerId) return;
     adDeck.drag = null;
     if (!paused) return;
-    if (Math.abs(d.dx) > 56) {
-      // the strip follows the finger, so the swipe lands from where it was let go
-      if (!adDeck.focus) adDeckFocus(true);
-      if (adDeck.scroll != null) adDeck.scroll -= d.dx;
-      adDeckMove(d.dx < 0 ? 1 : -1);
+    const mv = d.axis === 'y' ? d.dy : d.axis === 'x' ? d.dx : 0;
+    if (Math.abs(mv) > 56) {
+      // the page follows the finger, so the swipe lands from where it was let go
+      adDeckMove(mv < 0 ? 1 : -1, 1 - Math.min(1, Math.abs(mv) / Math.max(1, adDeck.span || 400)));
       return;
     }
+    if (d.axis) return;                                       // a short drag is neither a swipe nor a tap
     const h = adDeckHitAt(e);
     if (!h || h.id !== d.id) return;                         // released somewhere else: no press
     if (!adDeck.focus) adDeckFocus(true);
@@ -24418,6 +24484,7 @@ if (typeof canvas !== 'undefined') {
     else if (h.id === 'deck:next') adDeckMove(1);
     else if (h.id === 'deck:link') adDeckOpenLink();
     else if (h.id === 'deck:mute') adDeckToggleMute();
+    else if (h.id === 'deck:back') adDeckFocus(false);         // leave the post view (request 541)
   };
   canvas.addEventListener('pointerup', deckUp);
   canvas.addEventListener('pointercancel', (e) => { if (adDeck.drag?.pid === e.pointerId) adDeck.drag = null; });
@@ -25189,7 +25256,7 @@ window.__ror = {
    * pointer events before the touch layer sees them.) */
   get noSwipeBack() { return !!(paused && !gameOver.active && adDeck.cards.length); },
   deckDragAt(clientX, clientY) {
-    if (!paused || gameOver.active || !adDeck.cards.length) return false;
+    if (!paused || gameOver.active || !adDeck.cards.length || !adDeck.focus) return false;   // a still deck takes taps (request 541)
     try { return !!adDeckHitAt({ clientX, clientY }); } catch { return false; }
   },
   menuHitAt(clientX, clientY) {
@@ -26031,7 +26098,7 @@ window.__ror = {
   /* The pause menu's posts carousel (request 454). */
   get adDeck() {
     return { n: adDeck.cards.length, i: adDeck.i, focus: adDeck.focus, muted: adDeck.muted,
-      cards: adDeck.cards.map((c) => ({ slot: c.slot, booking: c.booking, title: c.title, link: c.link, video: c.video })),
+      cards: adDeck.cards.map((c) => ({ slot: c.slot, booking: c.booking, title: c.title, link: c.link, video: c.video, vacant: !!c.vacant })), anim: !!adDeck.anim,
       videos: [...adDeck.videos].map(([url, v]) => ({ url, playing: !v.paused, muted: v.muted })),
       hits: adDeck.hits.map((h) => ({ ...h })) };
   },

@@ -1604,7 +1604,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     selReveal(select);
     return true;
   }
-  const selStep = (d) => { if (selMove(select + d)) { getUi()?.navSlide(); return true; } return false; };   // a card strip slides (request 540)
+  const selStep = (d) => { if (selMove(select + d)) { getUi()?.navScroll(); return true; } return false; };   // the menu-list scroll cue (request 541)
 
   /* POINTER INPUT FOR THIS SCREEN. game.js's mouse path accepts on mousedown
    * and touch.js's gesture layer turns a swipe into arrow keys or Enter — both
@@ -1993,7 +1993,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   }
 
   /* ------------------------------------------------------------- footers */
-  function prompt(ui, text, u = 1) {
+  function prompt(ui, text, u = 1, y = 672) {
     ctx.save();
     ctx.globalAlpha *= u * (0.66 + 0.34 * (0.5 + 0.5 * Math.sin(ui.clock * 2.7)));
     ctx.textAlign = 'center';
@@ -2001,7 +2001,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.fillStyle = ui.C.gold;
     // a phone has no X button: there the same prompt says TAP (request 538)
     if (ui.isTouchUI?.()) text = text.replace(/^PRESS X TO /, 'TAP TO ');
-    ctx.fillText(text, W / 2, 672);
+    ctx.fillText(text, W / 2, y);
     ctx.textAlign = 'left';
     ctx.restore();
   }
@@ -2400,8 +2400,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         }
         /* Left/right walk the strip in order (as do up/down, above); every move
          * keeps the highlighted card in the two-card window. */
-        if (action === 'left') { if (selMove(select - 1)) ui?.navSlide(); return true; }
-        if (action === 'right') { if (selMove(select + 1)) ui?.navSlide(); return true; }
+        if (action === 'left') { if (selMove(select - 1)) ui?.navScroll(); return true; }
+        if (action === 'right') { if (selMove(select + 1)) ui?.navScroll(); return true; }
         if (action === 'accept') {
           if (chosen) return true;               // one commit per sequence
           const card = selectCards()[select];
@@ -2449,7 +2449,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
           : `PRESS X TO BEGIN ${LEVELS[act.c.level].code}`, 0.85);
     }
     else if (state === 'LEVEL_SELECT') {
-      prompt(ui, `PRESS X TO ${cardAction(selectCards()[select])}`);
+      // halfway between the cards' bottom edge and the lower bar (request 541)
+      prompt(ui, `PRESS X TO ${cardAction(selectCards()[select])}`, 1, Math.round((SEL.top + SEL.ch + 664) / 2) + 4);
       ui.drawCloseButton?.(1, W - 52, 50);        // back to the network (request 538)
     } else prompt(ui, 'PRESS X TO SKIP', 0.5);
 

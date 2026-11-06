@@ -305,7 +305,7 @@ const MAIN_ITEMS = [
   { label: 'LEVEL SELECT', icon: 'map' },
   { label: 'CHARACTERS', icon: 'person' },
   { label: 'SHOP', icon: 'cart' },
-  { label: 'CONTROLS', icon: 'pad' },
+  // CONTROLS left the main list (request 541): it lives under OPTIONS > CONTROLS
   { label: 'OPTIONS', icon: 'gear' },
   { label: 'EXTRAS', icon: 'star' },
   { label: 'CREDITS', icon: 'users' },
@@ -1975,7 +1975,8 @@ export function createFrontEnd({
     /* request 540: the pause and the score cues are the new UI set when it has loaded
      * (pause -> "settings click", tick -> count-up click, tally -> "match end results",
      * stamp -> "collect all"); the synths below stay as the fallback. */
-    const FILE = { pause: 'settings', tick: 'tick', tally: 'results', stamp: 'collect' }[kind];
+    // the pause keeps its OLD synthesised cue (request 541); the score cues use the new set
+    const FILE = { tick: 'tick', tally: 'results', stamp: 'collect' }[kind];
     if (FILE && sfx.buffers[FILE]) { playCue(FILE, kind === 'tick' ? { rate: 1 + 0.25 * p } : {}); return true; }
     switch (kind) {
       case 'tick': tone(t, { f: 900 + 900 * p, dur: 0.035, type: 'square', peak: 0.07, attack: 0.002 }, level); break;
@@ -2729,7 +2730,7 @@ export function createFrontEnd({
     if (editingControls() && phase === 'controls') return;   // the layout editor owns the screen (its DONE/CANCEL)
     if (pressRunning) { backNow(); return; }
     if (pendingGameplay) return;                 // the handover cannot be cancelled
-    if (phase === 'title' || phase === 'splash') return;
+    if (phase === 'title' || phase === 'splash' || phase === 'disclaimer') return;
     runGated(backNow, navBack);
   }
 
@@ -2743,7 +2744,7 @@ export function createFrontEnd({
 
   function backNow() {
     if (pendingGameplay) return;                 // the handover cannot be cancelled
-    if (phase === 'title' || phase === 'splash') return;
+    if (phase === 'title' || phase === 'splash' || phase === 'disclaimer') return;
     if (phase === 'intro') { navBack(); finishIntro(); return; }
     /* Out of the case file is back up the setup trail. Note this does mean the
      * intro plays again on the way forward — it is skippable with Cross, and the
@@ -2866,7 +2867,8 @@ export function createFrontEnd({
   function confirmNow() {
     /* The studio card stays skippable — skipping it only arrives at the title
      * sooner, where the load gate below still holds. */
-    if (phase === 'splash') { navForward(); go('title'); return; }
+    if (phase === 'splash') { navForward(); go('disclaimer'); return; }
+    if (phase === 'disclaimer') { if (phaseT < DISCLAIMER.minRead) return; go('title'); return; }
     if (phase === 'controls') {
       if (controlsPage || editingControls()) return;
       const it = CONTROL_ITEMS()[selection];
@@ -3256,7 +3258,7 @@ export function createFrontEnd({
       return;
     }
     if (phase === 'splash') {
-      if (splashVideoT() >= SKIP_TAP.hintAt && videoTap.tap()) { navForward(); go('title'); }
+      if (splashVideoT() >= SKIP_TAP.hintAt && videoTap.tap()) { navForward(); go('disclaimer'); }
       return;
     }
     if (inputLock > 0 || pressGate.action) return;
@@ -4815,6 +4817,56 @@ export function createFrontEnd({
     ctx.fillText('PRESENTS', W / 2, H / 2 + 34);
     ctx.globalAlpha = 1;
     ctx.textBaseline = 'alphabetic';
+  }
+
+/* THE DISCLAIMER (request 541), between the studio card and the title. Read at
+   * the player's pace: a tap or X moves on once DISCLAIMER.minRead has passed, and
+   * it moves on by itself after DISCLAIMER.max. The words are the user's, verbatim. */
+  const DISCLAIMER = {
+    minRead: 1.5, max: 30, width: 880,
+    title: 'DISCLAIMER',
+    body: [
+      'This production is a work of fiction. All characters, names, organisations, institutions, locations, events, dialogue and circumstances portrayed in this work are either products of the author’s imagination or have been fictionalised for creative and storytelling purposes.',
+      'Any resemblance to actual persons, whether living or deceased, organisations, institutions, or real-life events is purely coincidental and is not intended to identify, represent, accuse, defame, or imply any wrongdoing by any individual or entity.',
+      'The views, statements, actions and opinions expressed by fictional characters are solely part of the creative narrative and do not necessarily represent the views or positions of the creators, producers, publishers or any affiliated parties.',
+      'This work is intended for entertainment, social commentary and artistic expression. It should not be interpreted as a factual account, investigative report, or an assertion of guilt, misconduct or criminal liability against any identifiable person or organisation.',
+    ],
+  };
+  function drawDisclaimer() {
+    clear('#05070b');
+    const k = easeOut(phaseT / 0.6);
+    ctx.save();
+    ctx.globalAlpha = k;
+    const cx = W / 2, w = Math.min(DISCLAIMER.width, W - 120), x0 = cx - w / 2;
+    setFont(500, 15, 0.2);
+    const paras = DISCLAIMER.body.map((p) => wrapLines(p, w));
+    const lineH = 23, gap = 16;
+    const bodyH = paras.reduce((a, l) => a + l.length * lineH, 0) + gap * (paras.length - 1);
+    let y = Math.round((H - (bodyH + 70)) / 2) + 26;
+    ctx.textBaseline = 'alphabetic';
+    setFont(800, 20, 6);
+    ctx.fillStyle = C.gold;
+    fillCentred(DISCLAIMER.title, cx, y);
+    ctx.fillStyle = 'rgba(233,182,84,0.5)';
+    ctx.fillRect(Math.round(cx - 34), y + 14, 68, 2);
+    y += 58;
+    setFont(500, 15, 0.2);
+    ctx.fillStyle = 'rgba(226,222,212,0.86)';
+    ctx.textAlign = 'left';
+    for (const lines of paras) {
+      for (const line of lines) { ctx.fillText(line, x0, y); y += lineH; }
+      y += gap;
+    }
+    ctx.restore();
+    if (phaseT >= DISCLAIMER.minRead) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (phaseT - DISCLAIMER.minRead) / 0.5) * (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(clock * 2.7)));
+      setFont(700, 12, 3.4);
+      ctx.fillStyle = C.gold;
+      fillCentred(isTouchUI() ? 'TAP TO CONTINUE' : 'PRESS X TO CONTINUE', cx, H - 44);
+      ctx.restore();
+    }
+    hitboxes.push({ x: 0, y: 0, w: W, h: H, index: 0, id: 'disclaimer:go' });
   }
 
   function drawSplash() {
@@ -7141,13 +7193,17 @@ export function createFrontEnd({
       }
       if (splashHoldT >= 0) splashHoldT += dt;
 
-      if (splashHoldT >= SPLASH_HOLD) go('title');
+      if (splashHoldT >= SPLASH_HOLD) go('disclaimer');
       /* `rolled`/`ended` still end the screen for a clip that got past the hold
        * point without being caught — a seek, a re-cut shorter than
        * SPLASH_HOLD_AT, or a frame so long it stepped over it. */
-      else if (splashHoldT < 0 && (splashEnded || rolled)) go('title');
-      else if (splashFailed && phaseT > SPLASH_CARD) go('title');
-      else if (phaseT > SPLASH_MAX) go('title');
+      else if (splashHoldT < 0 && (splashEnded || rolled)) go('disclaimer');
+      else if (splashFailed && phaseT > SPLASH_CARD) go('disclaimer');
+      else if (phaseT > SPLASH_MAX) go('disclaimer');
+    }
+    /* The disclaimer moves on by itself if it is left alone (request 541). */
+    else if (phase === 'disclaimer') {
+      if (phaseT > DISCLAIMER.max) go('title');
     }
     /* The title's load latch. In update() rather than in drawTitle() so the
      * press gate and the prompt agree on the same frame — see `titlePromptAt`. */
@@ -7294,6 +7350,7 @@ export function createFrontEnd({
   function drawPhase() {
     if (pendingGameplay || previewHandoff) { drawHandoff(); return; }
     if (phase === 'splash') drawSplash();
+    else if (phase === 'disclaimer') drawDisclaimer();
     else if (phase === 'title') drawTitle();
     else if (phase === 'menu') drawMenu();
     else if (phase === 'difficulty') drawDifficulty();
