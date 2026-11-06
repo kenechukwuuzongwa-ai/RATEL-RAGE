@@ -15469,13 +15469,19 @@ function bounceHop(t, table) {
  * and a shake scaled by how fast he arrived. A body flying high enough still clears a
  * keke or the danfo (vehicleClearedBy); nothing clears the bus, a pillar or the desk.
  * The blow is never lethal on its own — the knock that sent him decides that. */
-const SOLID_HIT = { restitution: 0.42, minSpeed: 90, fastSpeed: 900, damage: 10, slideKeep: 0.35, cooldown: 0.12 };
+/* A FLYING BODY MEETS THE SOLID'S WHOLE FOOTPRINT, not the walking strip. vehicleBlocks is
+ * an 18 px band at the wheel row (so people can walk behind a car); a thrown man is never
+ * lined up that finely, and a van or a pillar has real depth. depthBack/depthFront are
+ * the ground footprint a body strikes, behind and in front of the wheel row. */
+const SOLID_HIT = { restitution: 0.42, minSpeed: 90, fastSpeed: 900, damage: 10, slideKeep: 0.35, cooldown: 0.12, depthBack: 46, depthFront: 16 };
+const solidStruck = (v, x, y) => y > v.y - Math.max(solidBackGap(v), SOLID_HIT.depthBack) && y < v.y + SOLID_HIT.depthFront
+  && x > v.x - 22 && x < v.x + v.w + 22;
 function bodyMeetsSolids(e, x0, sliding = false) {
   if (e.solidCool > 0) return false;
   const vx = sliding ? (e.slideVx || 0) : (e.vx || 0);
   if (Math.abs(vx) < 1) return false;
   for (const v of solidBodies()) {
-    if (!vehicleBlocks(v, e.x, e.y, 0) || vehicleClearedBy(e, v)) continue;
+    if (!solidStruck(v, e.x, e.y) || vehicleClearedBy(e, v)) continue;
     const left = v.x - 22, right = v.x + v.w + 22;
     // only a body that ARRIVED this frame: one already inside the strip is left alone
     if (x0 > left && x0 < right) continue;
