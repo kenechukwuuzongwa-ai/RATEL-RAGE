@@ -812,11 +812,15 @@ const PLAY = {
      * he then arrives already in front of the vehicle with no way through.
      * (Measured: with tight pockets all three of these still failed.)
      *
-     * The two kekes share one pocket rather than having two that overlap. */
-    { name: 'behind the kekes', x: 4740, w: 1080, laneTop: 528, laneBottom: 1096, playerTop: 560,
-      assets: 'keke-b (row 620, 4948) and keke-c (row 610, 5361); one walk-behind strip' },
-    { name: 'behind the bus', x: 5970, w: 1170, laneTop: 528, laneBottom: 1096, playerTop: 560,
-      assets: 'the yellow bus parks at row 610 across 6172-6934; pocket lets Darki pass behind it' },
+     * The two kekes share one pocket rather than having two that overlap.
+     *
+     * …AND THE BUS SHARES IT TOO (request 549). The kekes' pocket ended at 5820 and the
+     * bus's began at 5970: in the 150 px between them his back edge fell to 645, so a
+     * player walking behind keke-c was shoved forward at 5820 and could not step back
+     * between the keke and the bus at all — an invisible wall in front of the Coaster. One
+     * strip now runs from the first keke's lead-in to past the bus. */
+    { name: 'behind the kekes and the bus', x: 4740, w: 2400, laneTop: 528, laneBottom: 1096, playerTop: 560,
+      assets: 'keke-b (row 620, 4948), keke-c (row 610, 5361) and the white Coaster bus (row 610, 6172-6934); one walk-behind strip' },
     { name: 'broken-wall forecourt', x: 2487, w: WORLD_W - 2487, laneTop: 528, laneBottom: 1096,
       assets: 'the wall opening 2612-5082; forecourt pavement down to the kerb' },
   ],
@@ -10885,8 +10889,7 @@ const ATTACKS = {
     frames: FR(0, 27),
     fps: 30,
     cancelStart: 20,                     // back in his guard: may swing again
-    // request 543: holding toward his facing he walks INTO the swing instead of planting on the spot
-    walkCarry: 230,
+    // planted on the spot: request 543's walk-into-the-swing carry was taken out again (request 549)
     windows: Object.fromEntries([6, 7, 8].map((st) => [st, {
       // bat tip measured 230-290 px ahead of his feet on 6-10; the box uses the shortest
       group: 'bat', swing: 'kick', cue: WEAPONS.bat.hitCue, box: { x: 16, w: 214, top: -200, h: 185 },
@@ -19516,16 +19519,6 @@ function advanceAttack(dt) {
   // A move that runs plants its own boots — crossed sheet frames, so once each.
   if (move.plants && player.grounded)
     for (let s = prevStep + 1; s <= step; s++) if (move.plants.includes(move.frames[s])) playDarkiPlant(true);
-  /* THE CARRY (request 543): a move with `carry` keeps him travelling while the player
-   * holds toward his facing — the swing goes where he is going. It stops at a body in
-   * front of him (the lunge's contact rule), so he does not swing through a man. */
-  if (move.walkCarry && step < (move.cancelStart ?? Infinity)) {
-    const dir = player.facing >= 0 ? 1 : -1;
-    const fwd = dir > 0 ? input.right && !input.left : input.left && !input.right;
-    const blocked = enemies.some((e) => !e.benched && e.hp > 0 && isEnemyHittable(e) && Math.abs(e.y - player.y) < GRAB.lane
-      && (e.x - player.x) * dir > 0 && (e.x - player.x) * dir < 70);
-    if (fwd && !blocked) { player.x += dir * move.walkCarry * dt; clampPlayerToArena(); }
-  }
   if (move.lunge) advanceAttackLunge(move, step, dt);  // â€¦before the hit scan
   /* THE SPEED TRAIL, armed (request 328): laid while the run is moving — after
    * the lunge has moved him, so each echo is where he really was — and retired
@@ -24317,10 +24310,14 @@ function drawPauseOverlay() {
 
   /* The right side was the FIGHT STATUS card; it is gone (request 454 — the run
    * statistics behind it are untouched) and the space is the posts carousel's. */
-  // the posts fill the pause screen's right side, from under the ✕ to the bar (request 541)
-  drawAdDeck(ui, 528, 84, VIEW_W - 528 - 28, 652 - 84);
-  // the ✕ resumes (request 540) — and steps aside while the post view has its own ← BACK (541)
-  if (!gameOver.active && !adDeck.focus) ui.drawCloseButton?.(1, VIEW_W - 52, 50);
+  // the posts fill the pause screen's whole right side, top to bar (requests 541, 549)
+  drawAdDeck(ui, 524, 22, VIEW_W - 524 - 16, 654 - 22);
+  // the ✕ resumes (request 540) — on the posts frame's corner when there are posts (549) — and
+  // steps aside while the post view has its own ← BACK (541)
+  if (!gameOver.active && !adDeck.focus) {
+    const at = adDeck.closeAt;
+    ui.drawCloseButton?.(1, at ? at.x : VIEW_W - 52, at ? at.y : 50);
+  }
 
   ctx.restore();
   ctx.restore();
@@ -24380,7 +24377,8 @@ function deckMedia(card) {
 /* THE POST VIEW (request 541). The panel fills the pause screen's whole right side.
  * Each post is drawn WHOLE (contained, nothing of its artwork cropped) over a blurred,
  * darkened cover of itself, so the frame is always full. Before VISIT POSTS it is a
- * still window (the ✕ resumes the fight); VISIT POSTS opens the post view: the ✕ goes,
+ * still window (taps do nothing, vertical drags scroll the list, the ✕ on its corner
+ * resumes the fight — request 549); VISIT POSTS opens the post view: the ✕ goes,
  * a ← BACK button takes the lower-left bar, a video post plays, and the posts page
  * VERTICALLY like a reel (swipe up = next) — horizontal swipes, keys and the ▲/▼ chips
  * page too. A vacant board is a post here as well: BOOK THIS SPACE (its booking page). */
@@ -24402,33 +24400,51 @@ function drawDeckMedia(M, X, Y, w, h) {
 }
 function drawAdDeck(ui, px, py, pw, ph) {
   adDeck.hits = [];
+  adDeck.closeAt = null;
   const cards = adDeck.cards;
   if (!cards.length) return;
   const C = ui.C, n = cards.length, card = cards[adDeck.i];
   const focus = adDeck.focus;
   const now = performance.now() / 1000;
-  ui.glass(px, py, pw, ph, 10, focus ? { border: 'rgba(255,190,80,0.85)' } : {});
-  const ix = px + 18, iw = pw - 36;
+  /* THE POST VIEW'S HIGHLIGHT IS THE LIST'S SHEEN (request 549), not a gold frame: an
+   * eased focus value lays the menu rows' diagonal wash over the glass and runs their
+   * slow glint across the post. */
+  const fdt = Math.min(0.1, Math.max(0, now - (adDeck.fxT ?? now)));
+  adDeck.fxT = now;
+  adDeck.fx = (adDeck.fx ?? 0) + ((focus ? 1 : 0) - (adDeck.fx ?? 0)) * Math.min(1, fdt * 12);
+  const f = adDeck.fx;
+  ui.glass(px, py, pw, ph, 10, f > 0.01 ? { border: `rgba(255,250,240,${0.14 + 0.16 * f})` } : {});
+  if (f > 0.01) {
+    ctx.save();
+    deckRoundRect(px, py, pw, ph, 10); ctx.clip();
+    const g = ctx.createLinearGradient(px, py, px + pw, py + ph);
+    g.addColorStop(0, `rgba(255,255,255,${0.12 * f})`);
+    g.addColorStop(0.45, `rgba(255,248,236,${0.05 * f})`);
+    g.addColorStop(1, `rgba(255,248,236,${0.015 * f})`);
+    ctx.fillStyle = g; ctx.fillRect(px, py, pw, ph);
+    ctx.restore();
+  }
+  const ix = px + 14, iw = pw - 28;
   const hasDesc = !!card.desc;
-  const ty = py + ph - (hasDesc ? 40 : 20);          // title baseline
+  const ty = py + ph - (hasDesc ? 36 : 16);          // title baseline
   ctx.save();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ui.setFont(700, 11, 4);
   ctx.fillStyle = C.gold;
-  ctx.fillText('POSTS', ix, py + 26);
+  ctx.fillText('POSTS', ix, py + 22);
   if (!focus) {
     ui.setFont(600, 10, 1.4);
     ctx.fillStyle = C.muted;
-    ctx.fillText('·  VISIT POSTS TO BROWSE', ix + 74, py + 26);
+    ctx.fillText('·  VISIT POSTS TO BROWSE', ix + 74, py + 22);
   }
   ui.setFont(700, 11, 4);
   ctx.textAlign = 'right';
   ctx.fillStyle = C.muted;
-  ctx.fillText(`${adDeck.i + 1} / ${n}`, ix + iw, py + 26);
+  ctx.fillText(`${adDeck.i + 1} / ${n}`, ix + iw, py + 22);
 
   // the media frame
-  const sx = ix, sy = py + 38, sw = iw, sh = Math.max(DECK_CARD_H, ty - 40 - sy);
+  const sx = ix, sy = py + 32, sw = iw, sh = Math.max(DECK_CARD_H, ty - 38 - sy);
   const span = sh + DECK_GAP;
   adDeck.span = span;
   let offA = 0, other = -1, offO = 0;
@@ -24455,12 +24471,24 @@ function drawAdDeck(ui, px, py, pw, ph) {
   };
   if (other >= 0 && other !== adDeck.i) drawOne(other, offO);
   drawOne(adDeck.i, offA);
+  if (f > 0.01) {
+    // the list's glint band, crossing the post on the same clock speed (frontend button())
+    const u = ((now * 0.38) % 1.7) - 0.35, gx = sx + u * sw, bw = sw * 0.42;
+    const breathe = 0.86 + Math.sin(now * 2.1) * 0.14;
+    const gl = ctx.createLinearGradient(gx - bw / 2, sy, gx + bw / 2, sy + sh);
+    gl.addColorStop(0, 'rgba(255,255,255,0)');
+    gl.addColorStop(0.5, `rgba(255,255,255,${0.09 * f * breathe})`);
+    gl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gl; ctx.fillRect(sx, sy, sw, sh);
+  }
   ctx.restore();
   deckRoundRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1, DECK_R);
-  ctx.strokeStyle = focus ? 'rgba(255,190,80,0.95)' : 'rgba(255,255,255,0.14)';
-  ctx.lineWidth = focus ? 2.4 : 1;
+  ctx.strokeStyle = `rgba(255,250,240,${0.14 + 0.16 * f})`;
+  ctx.lineWidth = 1;
   ctx.stroke();
   adDeck.hits.push({ id: 'deck:card', idx: adDeck.i, x: sx, y: sy, w: sw, h: sh });
+  // the pause ✕ sits on the frame's corner (request 549); drawPauseMenu draws it, the deck leaves it room
+  if (!focus && !gameOver.active) adDeck.closeAt = { x: sx + sw - 30, y: sy + 30 };
 
   // a video's sound, on the frame's corner
   if (card.video && focus) {
@@ -24553,6 +24581,9 @@ function drawDeckBack(ui) {
 function adDeckHitAt(e) {
   const pt = frontEnd?.ui?.pointerPos(e);
   if (!pt) return null;
+  // the pause ✕ on the frame's corner is the menu's own button, not the deck's (request 549)
+  const c = adDeck.closeAt;
+  if (c && Math.abs(pt.x - c.x) <= 30 && Math.abs(pt.y - c.y) <= 30) return null;
   for (let i = adDeck.hits.length - 1; i >= 0; i--) {
     const h = adDeck.hits[i];
     if (pt.x >= h.x && pt.x <= h.x + h.w && pt.y >= h.y && pt.y <= h.y + h.h) return { id: h.id, idx: h.idx, x: pt.x };
@@ -24566,7 +24597,8 @@ if (typeof canvas !== 'undefined') {
     if (!h) return;
     e.preventDefault();
     const p0 = frontEnd?.ui?.pointerPos(e);
-    adDeck.drag = { id: h.id, x0: h.x, y0: p0 ? p0.y : 0, dx: 0, dy: 0, axis: null, pid: e.pointerId };
+    adDeck.drag = { id: h.id, x0: h.x, y0: p0 ? p0.y : 0, dx: 0, dy: 0, axis: null, pid: e.pointerId,
+      cy0: e.clientY, step: 0 };
     try { canvas.setPointerCapture?.(e.pointerId); } catch {}
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -24574,6 +24606,18 @@ if (typeof canvas !== 'undefined') {
     if (!d || d.pid !== e.pointerId) return;
     const pt = frontEnd?.ui?.pointerPos(e);
     if (pt && Math.hypot(pt.x - d.x0, pt.y - d.y0) > 12) d.moved = true;   // a swipe is never a tap (request 543)
+    /* BEFORE VISIT POSTS THE POSTS ARE A SCROLL SURFACE FOR THE LIST (request 549): a vertical
+     * drag on them walks the pause rows exactly as the right-half swipe does elsewhere — one
+     * row per 46 screen px, down = next — until VISIT POSTS hands the swipe to the posts. */
+    if (!adDeck.focus) {
+      const dy = e.clientY - d.cy0;
+      const steps = Math.trunc((dy - d.step) / 46);
+      if (steps !== 0 && !gameOver.active) {
+        d.step += steps * 46;
+        for (let i = 0; i < Math.abs(steps); i++) movePauseChoice(steps > 0 ? 1 : -1);
+      }
+      return;
+    }
     // the posts slide only in the post view (request 541), and on either axis: up/left = next
     if (!pt || d.id !== 'deck:card' || adDeck.cards.length < 2 || !adDeck.focus) return;
     const dx = pt.x - d.x0, dy = pt.y - d.y0;
@@ -24594,8 +24638,9 @@ if (typeof canvas !== 'undefined') {
     if (d.axis || d.moved) return;                            // a short drag is neither a swipe nor a tap
     const h = adDeckHitAt(e);
     if (!h || h.id !== d.id) return;                         // released somewhere else: no press
-    // the posts are only touchable in the post view (request 543): a tap on the still deck opens it
-    if (!adDeck.focus) { adDeckFocus(true); return; }
+    // the posts are only touchable in the post view (request 543); a tap on the still deck does
+    // nothing at all — only VISIT POSTS opens the post view (request 549)
+    if (!adDeck.focus) return;
     // a tap on a card only browses — to that card; it never leaves the game (request 473)
     if (h.id === 'deck:card') { if (h.idx != null && h.idx !== adDeck.i) adDeckMove(h.idx - adDeck.i); }
     else if (h.id === 'deck:prev') adDeckMove(-1);
@@ -25375,7 +25420,7 @@ window.__ror = {
   get noSwipeBack() { return !!(paused && !gameOver.active && adDeck.cards.length); },
   deckDragAt(clientX, clientY) {
     // the deck always owns its own touches (request 543): a still deck neither slides nor opens
-    // anything (deckUp turns any tap into VISIT POSTS) — and a tap on it is never read as ENTER
+    // anything — a vertical drag on it scrolls the pause list (549) — and a tap on it is never ENTER
     if (!paused || gameOver.active || !adDeck.cards.length) return false;
     try { return !!adDeckHitAt({ clientX, clientY }); } catch { return false; }
   },
@@ -26224,7 +26269,7 @@ window.__ror = {
     return { n: adDeck.cards.length, i: adDeck.i, focus: adDeck.focus, muted: adDeck.muted,
       cards: adDeck.cards.map((c) => ({ slot: c.slot, booking: c.booking, title: c.title, link: c.link, video: c.video, vacant: !!c.vacant })), anim: !!adDeck.anim,
       videos: [...adDeck.videos].map(([url, v]) => ({ url, playing: !v.paused, muted: v.muted })),
-      hits: adDeck.hits.map((h) => ({ ...h })) };
+      hits: adDeck.hits.map((h) => ({ ...h })), closeAt: adDeck.closeAt ? { ...adDeck.closeAt } : null };
   },
   /* Stand in for the ad server: { slotId: [{ id, brand, link, url, video? }] }. */
   fakeAds(map) {
