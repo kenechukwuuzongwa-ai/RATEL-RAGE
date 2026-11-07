@@ -1000,15 +1000,43 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
  * bridge, and a menu item must never be able to take the front end down with
  * it. `canQuit` is read through the same guard so the menus can offer the
  * option only where it actually works, instead of printing the apology and
- * hoping nobody minds. */
+ * hoping nobody minds.
+ *
+ * AND IN A BROWSER, QUIT NOW LEAVES (request 551) instead of apologising: out of
+ * fullscreen, then window.close() (browsers allow it for a tab the game was opened
+ * into fresh), and if the tab is still here a moment later, back to the page the
+ * player came from — or, with nowhere to go back to, onto quit.html ("thanks for
+ * playing", PLAY AGAIN). Either way the game is gone and the player is in the browser. */
+const nativeQuit = () => {
+  try { return !!(window.RatelHost && window.RatelHost.canQuit && window.RatelHost.canQuit()); }
+  catch { return false; }
+};
+function webQuit() {
+  try { window.RRAnalytics?.flush?.(); } catch {}
+  try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch {}
+  try { window.close(); } catch {}
+  const leave = () => {
+    let fromElsewhere = false;
+    try { fromElsewhere = !!document.referrer && new URL(document.referrer).origin !== location.origin; } catch {}
+    if (fromElsewhere && history.length > 1) {
+      history.back();
+      // a back that goes nowhere (a blocked or empty history) still ends on the goodbye page
+      setTimeout(() => { try { location.replace('quit.html'); } catch {} }, 900);
+    } else {
+      location.replace('quit.html');
+    }
+  };
+  setTimeout(leave, 250);                 // still open? window.close() was refused
+}
 export const HOST = {
-  get canQuit() {
-    try { return !!(window.RatelHost && window.RatelHost.canQuit && window.RatelHost.canQuit()); }
-    catch { return false; }
-  },
+  get canQuit() { return true; },          // the native host, or the browser path above
   quit() {
-    try { window.RatelHost.quit(); return true; }
-    catch (e) { console.warn('[ror host] quit refused', e); return false; }
+    if (nativeQuit()) {
+      try { window.RatelHost.quit(); return true; }
+      catch (e) { console.warn('[ror host] quit refused', e); }
+    }
+    webQuit();
+    return true;
   },
 };
 /* The packaged build. Named once so the mobile branches read as one decision

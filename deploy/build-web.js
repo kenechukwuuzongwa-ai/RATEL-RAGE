@@ -36,7 +36,7 @@ const OUT = outAt >= 0 ? path.resolve(args[outAt + 1]) : path.join(__dirname, 'd
 const MOBILE = path.join(ROOT, 'mobile', 'assets-mobile');
 const CF_FILE_LIMIT = 25 * 1024 * 1024;
 
-const ALLOWLIST = ['index.html', 'privacy.html', 'styles.css', 'analytics-config.js', 'supabase-config.js', 'ads-config.js', 'favicon.png', 'src', 'frontend',
+const ALLOWLIST = ['index.html', 'privacy.html', 'quit.html','styles.css', 'analytics-config.js', 'supabase-config.js', 'ads-config.js', 'favicon.png', 'src', 'frontend',
   'layers', 'sprites', 'sounds', 'music', 'buildings', 'level1'];
 
 const sha = (f) => crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex');
