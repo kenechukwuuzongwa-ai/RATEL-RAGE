@@ -570,7 +570,9 @@
       if (gp !== null) return;
       gp = e.pointerId;
       gStart = { x: e.clientX, y: e.clientY };
-      gT = performance.now(); gStep = 0; gConsumed = false;
+      // the TOUCH's own clock, not the handler's: a heavy frame between finger-down and finger-up
+      // must not turn a tap into a "long press" that does nothing (request 550)
+      gT = e.timeStamp || performance.now(); gStep = 0; gConsumed = false;
       try { gest.setPointerCapture(e.pointerId); } catch {}
       gDeck = !!window.__ror?.deckDragAt?.(e.clientX, e.clientY);
       if (gDeck) { deckPointer('pointerdown', e, 1); return; }
@@ -614,7 +616,7 @@
         return;
       }
       const moved = Math.hypot(e.clientX - gStart.x, e.clientY - gStart.y);
-      if (!gConsumed && moved < 14 && (performance.now() - gT) < 500) {
+      if (!gConsumed && moved < 14 && ((e.timeStamp || performance.now()) - gT) < 500) {
         /* WHAT A TAP MEANS, in priority order.
          *
          * 1. Landed ON a row or button -> that button's press. Always wins:
@@ -630,7 +632,8 @@
          *    selection would be the opposite of what the hand meant. */
         if (window.__ror?.menuHitAt?.(e.clientX, e.clientY)) {
           forwardTap(e.clientX, e.clientY);
-        } else if (e.clientX > window.innerWidth * 0.5) {
+        } else if (e.clientX > window.innerWidth * 0.5 || window.__ror?.pauseTapEnters) {
+          // (the pause list takes the tap anywhere, left half too — request 550)
           tapKey('Enter');
         } else {
           forwardTap(e.clientX, e.clientY);

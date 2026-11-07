@@ -13777,10 +13777,11 @@ function ramPathClear(fromX, toX, y) {
   const dir = Math.sign(toX - fromX) || 1;
   const half = PLAYER.hitW / 2;
   const b = arenaBounds();
+  const left = Math.max(b.left, retreatLeft());     // the no-retreat wall is a wall to a charge too (request 550)
   const span = Math.abs(toX - fromX);
   for (let d = 24; d < span; d += 24) {
     const x = fromX + dir * d;
-    if (x < b.left - 1 || x > b.right + 1) return false;
+    if (x < left - 1 || x > b.right + 1) return false;
     if (waveState === 'fighting' && x > currentGate() - 60) return false;
     const band = laneBandAt(x);
     if (y < band.laneTop - RAM.laneTol || y > band.laneBottom + RAM.laneTol) return false;
@@ -15978,6 +15979,16 @@ function arenaBounds() {
   return { left, right };
 }
 
+/* NO RETREAT PAST ONE CLEARED ZONE (request 550). Running back down the street to dodge
+ * a wave, or to camp out of reach while the health comes back, now stops at the start of
+ * the zone just behind the fight: Darki may fall back ONE cleared zone, never two. A
+ * player-only wall (the men keep the street's own walls, so a rear entrance still walks
+ * in from off-screen); -Infinity in the first two zones, the boss room and the scenes. */
+function retreatLeft() {
+  if ((waveState !== 'fighting' && waveState !== 'cleared') || section < 2) return -Infinity;
+  return SECTIONS[section - 2].gateX + PLAYER.hitW / 2;
+}
+
 function clampEnemyToArena(enemy) {
   // Olodo's scripted retreat/return deliberately crosses the boss-room wall.
   // Keep his lane grounded, but do not let the ordinary combat wall pin him
@@ -16002,6 +16013,8 @@ function clampPlayerToArena() {
     const b = arenaBounds();
     player.x = Math.max(b.left, Math.min(b.right, player.x));
   }
+  const rl = retreatLeft();                         // one cleared zone back, no further (request 550)
+  if (player.x < rl) { player.x = rl; player.vx = Math.max(player.vx || 0, 0); }
   resolveVehicleCollision(player, half);            // the parked line is solid: he walks around
 }
 
@@ -16699,7 +16712,8 @@ const SENIOR_DECIDE = {
  * frame data, nothing behind him. */
 function seniorRead(enemy, distX) {
   const arena = arenaBounds();
-  const room = Math.min(player.x - arena.left, arena.right - player.x);
+  // backed against the no-retreat wall counts as cornered too (request 550)
+  const room = Math.min(player.x - Math.max(arena.left, retreatLeft()), arena.right - player.x);
   return {
     distX,
     blocking: playerBlocking(),
@@ -24638,9 +24652,10 @@ if (typeof canvas !== 'undefined') {
     if (d.axis || d.moved) return;                            // a short drag is neither a swipe nor a tap
     const h = adDeckHitAt(e);
     if (!h || h.id !== d.id) return;                         // released somewhere else: no press
-    // the posts are only touchable in the post view (request 543); a tap on the still deck does
-    // nothing at all — only VISIT POSTS opens the post view (request 549)
-    if (!adDeck.focus) return;
+    // the posts themselves are only touchable in the post view (requests 543, 549). A tap on the
+    // still deck is a tap on the pause screen like any other: it enters whichever row is lit —
+    // CONTROLS opens the controls, VISIT POSTS opens the post view (request 550)
+    if (!adDeck.focus) { activatePauseChoice(); return; }
     // a tap on a card only browses — to that card; it never leaves the game (request 473)
     if (h.id === 'deck:card') { if (h.idx != null && h.idx !== adDeck.i) adDeckMove(h.idx - adDeck.i); }
     else if (h.id === 'deck:prev') adDeckMove(-1);
@@ -25418,9 +25433,14 @@ window.__ror = {
    * (The select-operation strip is answered in aftermath.js, which takes its
    * pointer events before the touch layer sees them.) */
   get noSwipeBack() { return !!(paused && !gameOver.active && adDeck.cards.length); },
+  /* THE PAUSE LIST TAKES A TAP ANYWHERE (request 550): on the pause screen an empty-space
+   * tap enters the lit row wherever it lands, not only on the right half. Not in the post
+   * view (its taps are the posts'), not under an opened screen or the HUD editor. */
+  get pauseTapEnters() { return !!(paused && !frontEnd?.active && !adDeck.focus && !window.__rorTouch?.editing); },
+  get retreatLeft() { return retreatLeft(); },                   // request 550 tests
   deckDragAt(clientX, clientY) {
-    // the deck always owns its own touches (request 543): a still deck neither slides nor opens
-    // anything — a vertical drag on it scrolls the pause list (549) — and a tap on it is never ENTER
+    // the deck always owns its own touches (request 543): a still deck never slides — a vertical
+    // drag on it scrolls the pause list (549) — and a tap on it enters the lit row (550)
     if (!paused || gameOver.active || !adDeck.cards.length) return false;
     try { return !!adDeckHitAt({ clientX, clientY }); } catch { return false; }
   },
