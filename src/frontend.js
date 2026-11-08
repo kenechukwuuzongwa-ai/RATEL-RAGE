@@ -160,7 +160,24 @@ const figureH = (feet) => GROUND.k * (feet - GROUND.horizon);
  * looking under-set at half the tracking it was drawn for. `fontState()` says
  * which one is actually in use — never guess from a screenshot.
  */
-export const FONT = 'Montserrat, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+/* REQUEST 553 — THE REFERENCE VIDEO'S PIXEL TYPE, THROUGHOUT THE GAME. Montserrat is retired.
+ * Two faces (styles.css): 'RR Pixel' (Tiny5) for every label, row, paragraph and number, and
+ * 'RR Pixel Bold' (Silkscreen Bold) for headlines, display numbers and the hit counter. Each is
+ * ONE cut declared for every weight, so the weight a call site asks for picks the FAMILY
+ * (pixelFont: 900 = bold face) and is never synthesised — a smeared pixel font is unreadable.
+ *
+ * PIXEL_FIT keeps every layout tuned for Montserrat inside its box (req553/metrics.js):
+ *   Tiny5 is ~0.85x Montserrat's width and 0.90x its cap height at the same px -> x1.10
+ *   brings the caps level and still leaves the line ~6% narrower than before;
+ *   Silkscreen Bold is 1.15-1.40x WIDER than Montserrat Black -> x0.85 for headlines. */
+export const FONT = "'RR Pixel', monospace";
+export const FONT_BOLD = "'RR Pixel Bold', 'RR Pixel', monospace";
+export const PIXEL_FIT = { body: 1.1, bold: 0.85 };
+/* The one place a weight + px becomes a canvas/CSS font string. `bold` forces the display face. */
+export function pixelFont(weight, px, bold = false) {
+  const b = bold || weight >= 900;
+  return `400 ${+(px * (b ? PIXEL_FIT.bold : PIXEL_FIT.body)).toFixed(2)}px ${b ? FONT_BOLD : FONT}`;
+}
 /* The two debug overlays (F9 placement tool, execDebug) stay monospace on
  * purpose: they print columns of numbers, and column alignment is the entire
  * reason a reader can scan them. Neither is ever on screen for a player. */
@@ -455,7 +472,7 @@ export function drawSkipHint(ctx, W, t, y = 28, panel = false) {
   const a = Math.min(1, (t - SKIP_TAP.hintAt) / SKIP_TAP.fade);
   ctx.save();
   ctx.globalAlpha = a;
-  ctx.font = `600 15px ${FONT}`;
+  ctx.font = pixelFont(600, 15);
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   const x = W - 28;
@@ -527,7 +544,7 @@ export function drawTapCue(ctx, W, H, t, o = {}) {
   const newest = Math.min(...ages);
 
   ctx.save();
-  ctx.font = `700 15px ${FONT}`;
+  ctx.font = pixelFont(700, 15);
   const textW = Math.max(ctx.measureText(text).width, ctx.measureText(TAP_CUE.done).width);
   const pad = 17, glyphW = 52, h = 58;
   const w = Math.round(pad * 2 + glyphW + textW);
@@ -1738,8 +1755,8 @@ export function createFrontEnd({
      * `sx` still normalises to the reference width, which is what makes this
      * swap safe at all: it SQUEEZES a wide Montserrat now where it used to
      * stretch a narrow Impact, and either way the mark lands the same width. */
-    const size = Math.round(L.logo.cap / 0.70);
-    g.font = `900 ${size}px ${FONT}`;
+    const size = Math.round(L.logo.cap / 0.63);          // the bold pixel face: cap 0.63 em (request 553)
+    g.font = `400 ${size}px ${FONT_BOLD}`;
     g.textBaseline = 'alphabetic';
     g.textAlign = 'left';
 
@@ -3568,7 +3585,9 @@ export function createFrontEnd({
 
   let fontTrack = 0;                 // the tracking setFont last applied (request 489)
   function setFont(weight, size, spacing = 0, family = FONT) {
-    ctx.font = `${weight} ${size}px ${family}`;
+    // the pixel faces (request 553): weight picks the face, never a synthetic bold
+    ctx.font = family === FONT || family === FONT_BOLD ? pixelFont(weight, size, family === FONT_BOLD)
+      : `${weight} ${size}px ${family}`;
     fontTrack = ('letterSpacing' in ctx) ? spacing : 0;
     if ('letterSpacing' in ctx) ctx.letterSpacing = spacing ? `${spacing}px` : '0px';
   }
@@ -3605,7 +3624,8 @@ export function createFrontEnd({
    * places where that 24% actually broke something were found by looking at the
    * shots, not by predicting them, and are fixed at their own call sites. */
   function setDisplay(weight, impactSize, impactTrack = 0) {
-    setFont(weight, +(impactSize * DISPLAY_FIT.size).toFixed(2), impactTrack * DISPLAY_FIT.track);
+    // every headline is the bold pixel face (request 553)
+    setFont(weight, +(impactSize * DISPLAY_FIT.size).toFixed(2), impactTrack * DISPLAY_FIT.track, FONT_BOLD);
   }
 
   /* Rolling section timings — cheap enough to leave in, and the only way to
@@ -6052,7 +6072,7 @@ export function createFrontEnd({
         ctx.stroke();
         // the current line sits in the band's lower row; the row above it is the line before
         drawSubtitleScroll(ctx, subs, time, band,
-          { font: `600 ${fs}px ${FONT}`, lineH, cy: band.y + band.h - 5 - lineH / 2 });
+          { font: pixelFont(600, fs), lineH, cy: band.y + band.h - 5 - lineH / 2 });
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }

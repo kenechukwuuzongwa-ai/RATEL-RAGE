@@ -1,47 +1,39 @@
-/* MONTSERRAT, SELF-HOSTED, NOT FROM A CDN.
+/* THE PIXEL FACES, SELF-HOSTED (request 553: the reference video's font, throughout the game).
  *
- * One variable file per subset covering weight 100-900, so 700 and 900 are real
- * Bold and Black cut from the same family rather than the browser smearing one
- * face. Two subsets are served: `latin` (U+0000-00FF plus a short extras list)
- * and `latin-ext`. See _chromakey/glyphscan.js — it reports every non-ASCII
- * character the UI actually draws and which subset holds it, because a glyph
- * outside both falls back to a system face MID-STRING.
+ *   'RR Pixel'      Tiny5 — every label, row, paragraph and number (thin square pixel caps
+ *                   with real lowercase, the reference HUD's RAZE / SCORE look)
+ *   'RR Pixel Bold' Silkscreen Bold — headlines, display numbers and the hit counter (the
+ *                   reference's chunky 5 HIT)
  *
- * SELF-HOSTED because a Google Fonts fetch that fails does not error: the text
- * silently renders in the fallback, and a screenshot cannot tell the two apart.
- * This project has already shipped that exact failure once with the logo (see
- * the SVG-MIME note in frontend.js). Files live in frontend/fonts/ and travel
- * with the build. Montserrat is SIL OFL 1.1 — see frontend/fonts/OFL.txt.
+ * Each file is ONE cut, declared for the whole 100-900 weight range on purpose: the game asks
+ * for 600/700/900 all over, and a single-weight face asked for bold is SMEARED by the browser
+ * (synthetic bold) — the one thing a pixel font cannot survive. Weight is chosen by family
+ * (frontend.js setFont), never by synthesis.
  *
- * `font-display: block` rather than `swap`: CANVAS TEXT DOES NOT REFLOW. A
- * swapped-in font repaints DOM text for free, but every string in this game is
- * drawn once into a bitmap, so anything drawn before the face arrives keeps the
- * fallback's metrics until that screen is drawn again. boot() awaits
- * document.fonts.load() for this reason — block is only the second line. */
+ * SELF-HOSTED, not a CDN fetch that fails silently into a fallback. Both SIL OFL 1.1 — see
+ * frontend/fonts/OFL-Tiny5.txt and OFL-Silkscreen.txt. Montserrat's files stay in the folder,
+ * unused.
+ *
+ * font-display: block rather than swap: CANVAS TEXT DOES NOT REFLOW — every string is drawn
+ * once into a bitmap, so boot() awaits document.fonts.load() before the first frame. */
 @font-face {
-  font-family: 'Montserrat';
+  font-family: 'RR Pixel';
   font-style: normal;
   font-weight: 100 900;
   font-display: block;
-  src: url('frontend/fonts/montserrat-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
+  src: url('frontend/fonts/tiny5-latin.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Montserrat';
+  font-family: 'RR Pixel Bold';
   font-style: normal;
   font-weight: 100 900;
   font-display: block;
-  src: url('frontend/fonts/montserrat-latin-ext.woff2') format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
-    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  src: url('frontend/fonts/silkscreen-bold-latin.woff2') format('woff2');
 }
 
 :root {
   color-scheme: dark;
-  font-family: Montserrat, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'RR Pixel', monospace;
   background: #05070b;
 }
 
@@ -147,7 +139,7 @@ canvas {
   text-align: center;
   color: #ffe45e;
   background: #080b12;
-  font: 700 18px/1.6 Montserrat, "Segoe UI", Roboto, sans-serif;
+  font: 400 20px/1.6 'RR Pixel', monospace;
   letter-spacing: .14em;
 }
 @media (orientation: portrait) and (pointer: coarse) {

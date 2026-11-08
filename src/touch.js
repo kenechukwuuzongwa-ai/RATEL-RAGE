@@ -385,7 +385,7 @@
     wrap.id = 'ror-touch';
     wrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:60;'
       + 'display:none;user-select:none;-webkit-user-select:none;'
-      + 'font:700 11px/1 Montserrat,system-ui,sans-serif;color:#eaf0ff;letter-spacing:.06em;'
+      + 'font:400 12px/1 "RR Pixel",monospace;color:#eaf0ff;letter-spacing:.06em;'
       + 'opacity:1;';
     /* IN-GAME CUTSCENES (request 519): the pad is 100% transparent and takes no
      * touches for the whole scene, then dissolves back in once control returns.
@@ -847,7 +847,7 @@
       + 'background:rgba(18,24,38,.72);border:1px solid rgba(255,255,255,.22);'
       + 'backdrop-filter:blur(16px) saturate(1.4);'
       + '-webkit-backdrop-filter:blur(16px) saturate(1.4);pointer-events:auto;'
-      + 'box-shadow:0 10px 40px rgba(0,0,0,.45);font:700 10px/1.5 Montserrat,system-ui,sans-serif;';
+      + 'box-shadow:0 10px 40px rgba(0,0,0,.45);font:400 11px/1.5 "RR Pixel",monospace;';
     const style = document.createElement('style');
     style.textContent = '#ror-hud-panel input[type=range]{width:130px;accent-color:#ffe45e;}'
       + '#ror-hud-panel button{padding:7px 12px;border-radius:9px;cursor:pointer;'

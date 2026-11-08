@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v113';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v114';
 import { createAftermath } from './aftermath.js?v=ratelrage-ui544-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -29,8 +29,8 @@ import { BAR_EASE, BAR_DUR, easeBars, easeRest, rampBars, setBars, drawBarsPx, B
  * carried across verbatim would have burst every HUD plate. See the DISPLAY_FIT
  * comment in frontend.js for why the conversion is a compromise rather than a
  * match, and _chromakey/fontmetrics.js for the measurements behind it. */
-const display = (weight, impactPx) => `${weight} ${+(impactPx * DISPLAY_FIT.size).toFixed(1)}px ${FONT}`;
-const uiFont = (weight, px) => `${weight} ${px}px ${FONT}`;
+const display = (weight, impactPx) => pixelFont(weight, +(impactPx * DISPLAY_FIT.size).toFixed(1), true);   // headlines: the bold pixel face (request 553)
+const uiFont = (weight, px) => pixelFont(weight, px);
 
 /* Draw a line at `px`, or at whatever smaller size makes it FIT `maxW`.
  *
@@ -6557,6 +6557,8 @@ function advanceFx(dt) {
   if (glide.src && ((glide.owner === 'ram' && rushState !== RUSH_STATE.RAM) || mobClock - glide.fedAt > GLIDE.starve))
     stopGlide();
   updateDamageFx(dt);                    // the danger dim and the blood (request 483)
+  updateGore(dt);                        // the blow's blood: drops, splash, stains (request 552)
+  rageFlare = Math.max(0, rageFlare - dt);   // the rage flame's ignition flare dies down
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
   for (let i = sparks.length - 1; i >= 0; i--)
@@ -6577,15 +6579,7 @@ function shakeOffset() {
 }
 
 function drawSparks() {
-  for (const r of rings) {
-    const p = r.age / r.dur;
-    ctx.globalAlpha = (1 - p) * 0.8;
-    ctx.strokeStyle = '#fff4c2';
-    ctx.lineWidth = 3 * (1 - p) + 1;
-    ctx.beginPath();
-    ctx.arc(r.x - cameraX, r.y, r.r0 + (r.r1 - r.r0) * p, 0, Math.PI * 2);
-    ctx.stroke();
-  }
+  // (the expanding white ring is retired: the reference impact is the pixel starburst below — request 552)
   for (const e of embers) {
     const p = e.age / e.dur;
     ctx.globalAlpha = 1 - p;
@@ -6594,27 +6588,199 @@ function drawSparks() {
     ctx.arc(e.x - cameraX, e.y, (1 - p) * 4 + 1, 0, Math.PI * 2);
     ctx.fill();
   }
+  /* THE IMPACT: the reference's pixel starburst (request 552) — orange star, yellow star,
+   * white-hot core, a red pixel in its heart. It snaps open big and is gone in ~0.2 s. */
+  const T = goreTextures();
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
   for (const s of sparks) {
-    const p = s.age / s.dur;                 // 0 â†’ 1 over its life
-    const sx = s.x - cameraX, sy = s.y;
-    const r = (s.big ? 14 : 8) + p * (s.big ? 44 : 26);
-    ctx.globalAlpha = 1 - p;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(sx, sy, (1 - p) * (s.big ? 16 : 11), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = s.big ? '#ffbf3f' : '#ffe45e';
-    ctx.lineWidth = s.big ? 4 : 3;
-    const spikes = s.big ? 8 : 6;
-    for (let i = 0; i < spikes; i++) {
-      const ang = i * (Math.PI * 2 / spikes) + s.age * 6;
-      ctx.beginPath();
-      ctx.moveTo(sx + Math.cos(ang) * r * 0.4, sy + Math.sin(ang) * r * 0.4);
-      ctx.lineTo(sx + Math.cos(ang) * r, sy + Math.sin(ang) * r);
-      ctx.stroke();
+    const life = s.big ? GORE.burstLifeBig : GORE.burstLife;
+    const p = Math.min(1, s.age / life);
+    if (p >= 1) continue;
+    const tex = T.bursts[(s.v ??= Math.floor(Math.random() * T.bursts.length))];
+    const k = GORE.burstPx * (s.big ? 1.45 : 1) * (p < 0.3 ? 0.7 + p : 1);
+    const w = Math.round(tex.width * k);
+    ctx.globalAlpha = p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
+    ctx.drawImage(tex, Math.round(s.x - cameraX - w / 2), Math.round(s.y - w / 2), w, w);
+  }
+  ctx.restore();
+  drawGoreAir();                             // the splash and the flying drops, over the bodies
+  ctx.globalAlpha = 1;
+}
+
+/* ============================== BLOOD AND IMPACT, THE REFERENCE WAY (request 552)
+ *
+ * The reference video's blow: an orange-and-yellow pixel STARBURST at the point of contact
+ * with a white-hot core and a red pixel in its heart, and a spray of small chunky PIXEL
+ * droplets (bright red, deep red, near-black) bursting out of it away from the blow — they
+ * arc, fall and are gone in well under a second. The motion and the amount are copied.
+ * Two things are added on request: a few drops LAND and stay on the ground for a while (pixel
+ * stains at the struck body's own depth row, fading out), and the splash itself has a real
+ * SHAPE — a pixel splat (blob, tapered spurs flung along the blow, satellite drops) that bursts
+ * for a fraction of a second. All of it is pixel art: drawn at low resolution once, then
+ * scaled up with smoothing off, so it sits with the sprites instead of looking vector-drawn. */
+const GORE = {
+  drops: [12, 22], heavyMul: 1.6, life: [0.35, 0.8], speed: [170, 560], up: [120, 420], gravity: 1500,
+  sizes: [2, 3, 3, 4, 4, 5], colors: ['#c8001c', '#93001a', '#e5172c', '#5c000e', '#b0001a'],
+  stainChance: 0.3, stainLife: 7, stainFade: 1.8, maxDrops: 380, maxStains: 90,
+  splatLife: 0.2, splatPx: 1.3, stainPx: 2, burstLife: 0.16, burstLifeBig: 0.22, burstPx: 3,
+};
+const goreDrops = [], goreStains = [], goreSplats = [];
+let goreTex = null;
+/* Low-res shapes, alpha thresholded to hard pixels. */
+function goreTextures() {
+  if (goreTex) return goreTex;
+  const rnd = mulberry32(552);
+  const crisp = (c) => {
+    const g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height);
+    for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] >= 110 ? 255 : 0;
+    g.putImageData(d, 0, 0);
+    return c;
+  };
+  // the SPLAT: a blob with spurs flung toward +x (drawn rotated to the blow) and drops past their tips
+  const splats = [];
+  for (let v = 0; v < 6; v++) {
+    const S = 44, c = makeCanvas(S, S), g = c.getContext('2d');
+    const cx = 16, cy = S / 2;
+    g.fillStyle = '#9a0018';
+    for (let k = 0; k < 5; k++) { g.beginPath(); g.arc(cx + (rnd() - 0.3) * 6, cy + (rnd() - 0.5) * 6, 4 + rnd() * 3.5, 0, Math.PI * 2); g.fill(); }
+    const spurs = 6 + Math.floor(rnd() * 4);
+    for (let k = 0; k < spurs; k++) {
+      const a = (rnd() - 0.5) * Math.PI * (k < 2 ? 0.5 : 1.7), len = 9 + rnd() * (Math.cos(a) > 0 ? 17 : 8);
+      const w0 = 3 + rnd() * 1.6;
+      const ex = cx + Math.cos(a) * len, ey = cy + Math.sin(a) * len;
+      const nx = -Math.sin(a), ny = Math.cos(a);
+      g.beginPath();
+      g.moveTo(cx + nx * w0, cy + ny * w0);
+      g.lineTo(ex + nx * 0.6, ey + ny * 0.6);
+      g.lineTo(ex - nx * 0.6, ey - ny * 0.6);
+      g.lineTo(cx - nx * w0, cy - ny * w0);
+      g.closePath(); g.fill();
+      g.beginPath(); g.arc(ex, ey, 1.3 + rnd() * 1.2, 0, Math.PI * 2); g.fill();          // the spur's bead
+      if (rnd() < 0.7) { g.beginPath(); g.arc(ex + Math.cos(a) * (3 + rnd() * 4), ey + Math.sin(a) * (3 + rnd() * 4), 1 + rnd(), 0, Math.PI * 2); g.fill(); }
     }
+    crisp(c);
+    // a wet highlight and a dark rim, in pixels
+    const g2 = c.getContext('2d');
+    g2.globalCompositeOperation = 'source-atop';
+    g2.fillStyle = '#d8132a';
+    for (let k = 0; k < 4; k++) g2.fillRect(cx - 4 + Math.floor(rnd() * 6), cy - 4 + Math.floor(rnd() * 4), 2, 1 + Math.floor(rnd() * 2));
+    g2.fillStyle = '#5e000f';
+    g2.fillRect(cx - 2, cy + 3, 6, 2);
+    splats.push(c);
+  }
+  // the STARBURST: orange star, yellow star, white-hot core, red heart
+  const bursts = [];
+  for (let v = 0; v < 4; v++) {
+    const S = 28, c = makeCanvas(S, S), g = c.getContext('2d'), m = S / 2;
+    const star = (n, r0, r1, rot, col) => {
+      g.fillStyle = col; g.beginPath();
+      for (let i = 0; i < n * 2; i++) {
+        const r = i % 2 ? r0 : r1 * (0.75 + rnd() * 0.35), a = rot + i * Math.PI / n;
+        i ? g.lineTo(m + Math.cos(a) * r, m + Math.sin(a) * r) : g.moveTo(m + Math.cos(a) * r, m + Math.sin(a) * r);
+      }
+      g.closePath(); g.fill();
+    };
+    const rot = rnd() * Math.PI;
+    star(8, 5, 13, rot, '#ff6a14');
+    star(8, 3.5, 9, rot + 0.2, '#ffc12e');
+    g.fillStyle = '#fff6c8'; g.beginPath(); g.arc(m, m, 3.6, 0, Math.PI * 2); g.fill();
+    crisp(c);
+    c.getContext('2d').fillStyle = '#e3201c';
+    c.getContext('2d').fillRect(m - 1, m - 1, 2, 2);
+    bursts.push(c);
+  }
+  // the STAINS on the ground: small flat pixel puddles
+  const stains = [];
+  for (let v = 0; v < 6; v++) {
+    const c = makeCanvas(14, 7), g = c.getContext('2d');
+    g.fillStyle = '#6e0012';
+    for (let k = 0; k < 3 + Math.floor(rnd() * 3); k++) { g.beginPath(); g.ellipse(7 + (rnd() - 0.5) * 6, 3.5 + (rnd() - 0.5) * 2, 1.6 + rnd() * 2.4, 1 + rnd() * 1.1, 0, 0, Math.PI * 2); g.fill(); }
+    crisp(c);
+    const g2 = c.getContext('2d'); g2.globalCompositeOperation = 'source-atop';
+    g2.fillStyle = '#9c0019'; g2.fillRect(5, 2, 3, 1);
+    stains.push(c);
+  }
+  goreTex = { splats, bursts, stains };
+  return goreTex;
+}
+/* A blow landed at (x, y) on a body whose feet are on `groundY`, travelling `dir` (+1 right). */
+function spawnBlood(x, y, groundY, dir = 1, heavy = false) {
+  const R = Math.random, G = GORE;
+  const n = Math.round((G.drops[0] + R() * (G.drops[1] - G.drops[0])) * (heavy ? G.heavyMul : 1));
+  for (let i = 0; i < n; i++) {
+    const fwd = R() < 0.82 ? dir : -dir;                       // most of it goes with the blow
+    const sp = G.speed[0] + R() * (G.speed[1] - G.speed[0]);
+    goreDrops.push({
+      x: x + (R() - 0.5) * 14, y: y + (R() - 0.5) * 18,
+      vx: fwd * sp * (0.35 + 0.65 * R()), vy: -(G.up[0] + R() * (G.up[1] - G.up[0])) * (0.5 + 0.5 * R()),
+      ground: groundY + (R() - 0.55) * 20, age: 0, dur: G.life[0] + R() * (G.life[1] - G.life[0]),
+      s: G.sizes[Math.floor(R() * G.sizes.length)], c: G.colors[Math.floor(R() * G.colors.length)],
+    });
+  }
+  while (goreDrops.length > G.maxDrops) goreDrops.shift();
+  goreSplats.push({ x, y, dir, age: 0, v: Math.floor(R() * 6), rot: (R() - 0.5) * 0.7, big: heavy });
+  if (goreSplats.length > 24) goreSplats.shift();
+}
+function updateGore(dt) {
+  const G = GORE;
+  for (let i = goreDrops.length - 1; i >= 0; i--) {
+    const d = goreDrops[i];
+    d.age += dt; d.vy += G.gravity * dt; d.x += d.vx * dt; d.y += d.vy * dt;
+    if (d.vy > 0 && d.y >= d.ground) {
+      // a few of them stay where they land (request 552)
+      if (Math.random() < G.stainChance) {
+        goreStains.push({ x: d.x, y: d.ground, age: 0, v: Math.floor(Math.random() * 6), k: d.s >= 4 ? 1.25 : d.s <= 2 ? 0.6 : 0.9 });
+        while (goreStains.length > G.maxStains) goreStains.shift();
+      }
+      goreDrops.splice(i, 1);
+      continue;
+    }
+    if (d.age >= d.dur) goreDrops.splice(i, 1);
+  }
+  for (let i = goreSplats.length - 1; i >= 0; i--) if ((goreSplats[i].age += dt) >= G.splatLife) goreSplats.splice(i, 1);
+  for (let i = goreStains.length - 1; i >= 0; i--) if ((goreStains[i].age += dt) >= G.stainLife) goreStains.splice(i, 1);
+}
+/* Under every body, on the road: the drops that landed. */
+function drawGoreStains() {
+  if (!goreStains.length) return;
+  const T = goreTextures(), G = GORE;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  for (const s of goreStains) {
+    const sx = s.x - cameraX;
+    if (sx < -60 || sx > viewW() + 60) continue;
+    const left = G.stainLife - s.age;
+    ctx.globalAlpha = left < G.stainFade ? Math.max(0, left / G.stainFade) * 0.9 : 0.9;
+    const tex = T.stains[s.v], k = G.stainPx * s.k;
+    ctx.drawImage(tex, Math.round(sx - tex.width * k / 2), Math.round(s.y - tex.height * k / 2), Math.round(tex.width * k), Math.round(tex.height * k));
+  }
+  ctx.restore();
+}
+/* Over the bodies: the splash shapes and the flying drops. */
+function drawGoreAir() {
+  if (!goreDrops.length && !goreSplats.length) return;
+  const T = goreTextures(), G = GORE;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  for (const s of goreSplats) {
+    const p = s.age / G.splatLife;
+    const tex = T.splats[s.v], k = G.splatPx * (s.big ? 1.15 : 1) * (0.55 + 0.6 * Math.min(1, p * 2.4));
+    ctx.globalAlpha = p < 0.55 ? 1 : Math.max(0, 1 - (p - 0.55) / 0.45);
+    ctx.save();
+    ctx.translate(Math.round(s.x - cameraX), Math.round(s.y));
+    ctx.scale(s.dir < 0 ? -1 : 1, 1);
+    ctx.rotate(s.rot);
+    ctx.drawImage(tex, Math.round(-16 * k), Math.round(-tex.height * k / 2), Math.round(tex.width * k), Math.round(tex.height * k));
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
+  for (const d of goreDrops) {
+    const sz = d.age > d.dur * 0.7 ? Math.max(1, d.s - 1) : d.s;
+    ctx.fillStyle = d.c;
+    ctx.fillRect(Math.round(d.x - cameraX - sz / 2), Math.round(d.y - sz / 2), sz, sz);
+  }
+  ctx.restore();
 }
 
 // Full-frame colour wash for heavy/rage impacts (drawn in screen space).
@@ -6687,7 +6853,20 @@ function bloodTextures() {
     h.addColorStop(0, 'rgba(255,90,80,0.28)'); h.addColorStop(1, 'rgba(255,90,80,0)');
     x.fillStyle = h; x.fillRect(0, 0, S, S);
     x.globalCompositeOperation = 'source-over';
-    bloodTex.push(c);
+    /* PIXELATED (request 552), so the lens blood belongs to the same pixel world as the HUD and
+     * the blow's splash: the soft splat is resampled to 64 px, alpha cut hard and its reds
+     * snapped to three tones; drawn with smoothing off it lands in chunky 3-5 px pixels. */
+    const lo = makeCanvas(64, 64), lg = lo.getContext('2d', { willReadFrequently: true });
+    lg.drawImage(c, 0, 0, 64, 64);
+    const d = lg.getImageData(0, 0, 64, 64), px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] < 100) { px[i + 3] = 0; continue; }
+      const r = px[i];
+      const [R, G, B] = r > 150 ? [200, 0, 28] : r > 100 ? [142, 0, 19] : [92, 0, 14];
+      px[i] = R; px[i + 1] = G; px[i + 2] = B; px[i + 3] = 235;
+    }
+    lg.putImageData(d, 0, 0);
+    bloodTex.push(lo);
   }
   return bloodTex;
 }
@@ -6750,6 +6929,7 @@ function drawDamageFx() {
       const fade = b.age < BLOOD.hold ? 1 : 1 - (b.age - BLOOD.hold) / (BLOOD.life - BLOOD.hold);
       const pop = Math.min(1, 0.82 + b.age / 0.08 * 0.18);
       ctx.save();
+      ctx.imageSmoothingEnabled = false;            // chunky pixels (request 552)
       ctx.globalAlpha = BLOOD.alpha * Math.max(0, fade);
       ctx.translate(b.x, b.y);
       ctx.rotate(b.rot);
@@ -7514,6 +7694,8 @@ function startLevelEntry(transitionFrame = null, duration = LEVEL_ENTRY.fallback
    * (`player.weapon` reads the list), so emptying it is also what starts him
    * every level empty-handed — and it takes any weapon still in flight with it. */
   weapons.length = 0;
+  goreDrops.length = 0; goreStains.length = 0; goreSplats.length = 0;   // a new attempt starts on a clean road (request 552)
+  hudFoe.e = null; hudScoreShown = 0;
   resetRun();                      // the clock, the streak, the score and the medpacks (request 338)
   refreshAds();                    // a long session picks up newly approved adverts (request 446)
   // The bat is back on its spawn point — a Level 01 street prop, so not in the facility.
@@ -9258,6 +9440,8 @@ function updateExecution(dt) {
     const shakeMul = isFinal
       ? ({ FAILED: 0.85, GOOD: 1.0, POWER: 1.25, PERFECT: 1.55 }[ex.finalGrade] ?? 1) : 1;
     if (ev.hitstop || ev.shake) triggerHitFx(at, ex.anchorY - 110, ev.hitstop ?? 0, (ev.shake ?? 0) * shakeMul * bmul, !!ev.flash || !!bru);
+    // each landed finisher blow bleeds like any other (request 552), the reward round included
+    if (ev.hitstop || ev.shake || ev.dmg) spawnBlood(at, ex.anchorY - 110, ex.anchorY, ex.facing >= 0 ? 1 : -1, !!ev.flash || isFinal);
     if (ev.flash) triggerFlash('255,255,255', 0.16 * (isFinal && ex.finalGrade === 'PERFECT' ? 1.6 : 1) * (bru ? 1.5 : 1));
     // Damage, once per event, through the existing enemy health â€” no second
     // health system.
@@ -12129,9 +12313,9 @@ function activateRage() {
   player.rageActive = true;
   player.rageTimer = RAGE_DUR;
   player.rage = RAGE_MAX;
-  triggerFlash('255,196,64', 0.4);               // gold screen wash
+  triggerFlash('255,96,28', 0.32);               // a fire-red screen wash (request 552: no gold bubbles)
   triggerHitFx(player.x, player.y - 110, 0.12, 16, true);
-  spawnEmbers(player.x, player.y - 40, 40, '#ffcf5a', 120);
+  rageFlare = 0.45;                               // the flame outline flares up as it ignites
   // shockwave: shove and chip everyone nearby â€” in FRONT of Darki only, so
   // nobody at his back falls over from a hit he never aimed at them.
   const face = player.facing >= 0 ? 1 : -1;
@@ -12377,6 +12561,8 @@ function hitEnemy(e, win, src = player) {
   if (src === player) streetLearn(e, ko, !!win.launch);   // the street watches (request 403)
   const impactX = (src.x + e.x) / 2;
   triggerHitFx(impactX, e.y - 110, win.hitstop, win.shake, !!win.big);
+  if (dmg > 0) spawnBlood(impactX, e.y - 110, e.y, dir, !!win.big || ko);   // the reference blood (request 552)
+  if (src === player) noteFoe(e);            // the HUD shows the man he is hitting (request 552)
   // A window may name its OWN impact clip (the combo's opening two fists carry
   // the two bursts of 2hits_punch1). It replaces the generic bag rather than
   // stacking on it â€” two impact sounds on one impact is mud, not weight.
@@ -12738,6 +12924,8 @@ function applyGrabHit(e, h) {
   e.grabHitT = e.kind === 'senior' ? GRAB.seniorRecoil : GRAB.hitRecoil;
   e.animTime = 0;                    // replay that recoil from its first frame
   triggerHitFx((player.x + e.x) / 2, e.y - 110, h.hitstop, h.shake, !!h.big);
+  spawnBlood((player.x + e.x) / 2, e.y - 110, e.y, player.facing >= 0 ? 1 : -1, !!h.big);   // request 552
+  noteFoe(e);
   playHit(h);
   if (isHeavyHit(h)) triggerFlash('255,255,255', 0.14);
   if (e.hp <= 0) releaseGrab({ launch: true, lethal: true });
@@ -13043,6 +13231,8 @@ function releaseGrab(opts = {}) {
     registerHit(damage);
     addRage(r.rage);
     triggerHitFx((player.x + e.x) / 2, e.y - 110, r.hitstop, r.shake, true);
+    spawnBlood((player.x + e.x) / 2, e.y - 110, e.y, dir, true);   // request 552
+    noteFoe(e);
     playHit(r);
     if (isHeavyHit(r)) triggerFlash('255,255,255', 0.14);
     // lethal hits already took their damage; launchEnemy flags the KO either way
@@ -15913,6 +16103,8 @@ function damagePlayer(amount, from, heavy = amount >= HEAVY_DAMAGE, breaksGuard 
   player.hurtTimer = dur;
   player.invuln = dur + 0.45;
   triggerHitFx(player.x, player.y - 110, 0.08, 8);
+  spawnBlood(player.x, player.y - 110, player.y, dir, heavy);   // his own blood, the same way (request 552)
+  if (from && from !== player && enemies.includes(from)) noteFoe(from);   // …and the HUD shows who did it
   onDarkiHurtFx(from, heavy);           // the camera shake and blood on the lens (request 483)
   rumbleController(heavy ? 180 : 105, heavy ? 0.92 : 0.58, heavy ? 0.68 : 0.38);
   /* AND HE SAYS SOMETHING ABOUT IT — unless that blow just killed him, in
@@ -20891,11 +21083,11 @@ function drawCopyBar(x, y, w, frac, label, alpha = 1) {
   };
   ctx.save();
   ctx.globalAlpha = alpha;
-  /* The label (request 501): the reference's SERIF, sentence case
+  /* The label (request 501; serif until request 553 put it in the game's pixel face), sentence case
    * ("Copying files..." / "Upload completed") — sized off the bar's width so it
    * scales with the laptop it sits on. White since request 510. */
   const px = Math.max(8, Math.min(26, w * 0.1));
-  ctx.font = `700 ${px.toFixed(1)}px Georgia, "Times New Roman", Times, serif`;
+  ctx.font = pixelFont(700, +px.toFixed(1));            // the pixel face like every other string (request 553)
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = 'rgba(0,0,0,0.75)';
@@ -21033,7 +21225,7 @@ function update(dt) {
   if (player.rageActive) {
     player.rageTimer -= dt;
     player.rage = RAGE_MAX * Math.max(0, player.rageTimer / RAGE_DUR);
-    spawnEmbers(player.x, player.y - 30, 1, '#ffcf5a', 46);   // trailing aura
+    // (the trailing gold ember bubbles are gone — the flame outline is the rage now, request 552)
     if (player.rageTimer <= 0) { player.rageActive = false; player.rage = 0; }
   }
   player.hpShown += (player.hp - player.hpShown) * Math.min(1, dt * 8);
@@ -22736,6 +22928,83 @@ function tintedFrame(frame, color, alpha) {
   return sBuf;
 }
 
+/* RAGE, BY FIRE (request 552). The gold glow, gold tint and trailing ember "bubbles" are gone.
+ * While the rage burns his skin runs a little more saturated (a filter on his own draw), and a
+ * SHORT, BRIGHT FLAME OUTLINE burns round his body: his silhouette dilated into a rim (white-gold
+ * near the body, orange, then red at the edge), plus the same rim cut into tongues by a scrolling
+ * flame mask and stretched upward, so it licks off his outline instead of floating around him.
+ * Built per frame in two small scratch canvases at screen resolution (no per-frame caches: Darki
+ * has hundreds of frames). Drawn UNDER his sprite, which stays at full opacity (project rule). */
+const RAGE_FX = { rim: 3.2, flare: 1.3, lick: 7, scroll: 95, skin: 'saturate(1.45) contrast(1.05)' };
+let rageFlare = 0;                       // the ignition flare, decays in advanceFx
+let rfBuf = null, rfCtx = null, rfTmp = null, rfTmpCtx = null, rfNoise = null;
+function rageFlameMask() {
+  if (rfNoise) return rfNoise;
+  const c = makeCanvas(48, 96), g = c.getContext('2d');
+  const rnd = mulberry32(5520);
+  g.fillStyle = '#fff';
+  for (let i = 0; i < 9; i++) {
+    const x = rnd() * 48, w = 4 + rnd() * 7, tip = 8 + rnd() * 50;
+    for (const dx of [0, -48, 48]) {                      // tile seamlessly across x
+      g.beginPath();
+      g.moveTo(x + dx - w, 96);
+      g.quadraticCurveTo(x + dx - w * 0.9, tip + (96 - tip) * 0.45, x + dx + (rnd() - 0.5) * 3, tip);
+      g.quadraticCurveTo(x + dx + w * 0.9, tip + (96 - tip) * 0.45, x + dx + w, 96);
+      g.closePath(); g.fill();
+    }
+  }
+  rfNoise = c;
+  return c;
+}
+function drawRageFlames(frame, x, y, ps) {
+  const k = Math.max(0.05, Math.abs(ps));                // sprite px -> screen px
+  const R = RAGE_FX.rim * (1 + rageFlare * RAGE_FX.flare);
+  const pad = Math.ceil(R * 2 + RAGE_FX.lick + 4);
+  const fw = frame.width * k, fh = frame.height * k;
+  const W = Math.ceil(fw) + pad * 2, H = Math.ceil(fh) + pad * 2;
+  if (!rfBuf) { rfBuf = makeCanvas(W, H); rfCtx = rfBuf.getContext('2d'); rfTmp = makeCanvas(W, H); rfTmpCtx = rfTmp.getContext('2d'); }
+  if (rfBuf.width < W || rfBuf.height < H) {
+    rfBuf.width = rfTmp.width = Math.max(rfBuf.width, W);
+    rfBuf.height = rfTmp.height = Math.max(rfBuf.height, H);
+  }
+  const g = rfCtx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+  g.clearRect(0, 0, rfBuf.width, rfBuf.height);
+  // the silhouette, dilated — a little more upward than down, as flame rises
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    g.drawImage(frame, pad + Math.cos(a) * R, pad + Math.sin(a) * R - R * 0.45, fw, fh);
+  }
+  g.globalCompositeOperation = 'source-in';
+  const grad = g.createLinearGradient(0, pad, 0, pad + fh);
+  grad.addColorStop(0, '#fff2b0'); grad.addColorStop(0.35, '#ffb52a'); grad.addColorStop(0.75, '#ff6a18'); grad.addColorStop(1, '#ff3810');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, W, H);
+  // the tongues: the rim cut by a scrolling flame mask
+  const t = rfTmpCtx;
+  t.setTransform(1, 0, 0, 1, 0, 0);
+  t.globalCompositeOperation = 'source-over'; t.globalAlpha = 1;
+  t.clearRect(0, 0, rfTmp.width, rfTmp.height);
+  t.drawImage(rfBuf, 0, 0);
+  t.globalCompositeOperation = 'destination-in';
+  const off = (mobClock * RAGE_FX.scroll) % 96;
+  t.translate(0, -off);
+  t.fillStyle = t.createPattern(rageFlameMask(), 'repeat');
+  t.fillRect(0, 0, W, H + 96);
+  t.setTransform(1, 0, 0, 1, 0, 0);
+  // onto the frame, in his own (scaled) space
+  const flick = 0.82 + 0.18 * Math.sin(mobClock * 23) * Math.sin(mobClock * 7.3);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = Math.min(1, (0.7 + rageFlare) * flick);
+  ctx.drawImage(rfBuf, 0, 0, W, H, x - pad / k, y - pad / k, W / k, H / k);
+  ctx.globalAlpha = 0.95;
+  const lift = (RAGE_FX.lick + 4 * flick) / k;           // the tongues reach up past the rim
+  ctx.drawImage(rfTmp, 0, 0, W, H, x - pad / k, y - pad / k - lift, W / k, H / k + lift);
+  ctx.restore();
+}
+
 const healthColor = (f) => (f > 0.5 ? '#5dd45d' : f > 0.25 ? '#ffd23f' : '#ff5442');
 
 /* DARKI'S OWN BAR RUNS GOLD, because the supplied plate art does.
@@ -22840,14 +23109,7 @@ function drawPlayer() {
   ctx.fill();
 
   // rage aura â€” pulsing golden glow behind Darki + ground ring
-  if (player.rageActive) {
-    const pulse = 0.5 + 0.5 * Math.sin(mobClock * 16);
-    const g = ctx.createRadialGradient(screenX, player.y - 70, 8, screenX, player.y - 70, 130);
-    g.addColorStop(0, `rgba(255,190,70,${0.30 + 0.18 * pulse})`);
-    g.addColorStop(1, 'rgba(255,120,0,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(screenX, player.y - 70, 130, 0, Math.PI * 2); ctx.fill();
-  }
+  // (the golden glow is retired: the rage is the flame outline drawn with his sprite — request 552)
 
   /* THE SPEED TRAIL, in his own depth slot and UNDER his own sprite. Drawn here
    * rather than as a separate actor in the sort list for two reasons: the echoes
@@ -22861,7 +23123,8 @@ function drawPlayer() {
   // flash/tint: hit â†’ red, else rage â†’ gold
   let img = frame, tint = null;
   if (player.hpFlash > 0) tint = ['#ff3040', Math.min(0.7, player.hpFlash / 0.3 * 0.7)];
-  else if (player.rageActive) tint = ['#ffb020', 0.22 + 0.12 * (0.5 + 0.5 * Math.sin(mobClock * 16))];
+  // RAGE (request 552): no gold tint — his skin runs a little more saturated, and a short
+  // bright flame outline burns round his body (drawn just under the sprite, below)
   if (tint) img = tintedFrame(frame, tint[0], tint[1]);
 
   /* DARKI IS ALWAYS DRAWN AT FULL OPACITY (request 349). There used to be an
@@ -22905,7 +23168,11 @@ function drawPlayer() {
     ctx.translate(0, -pivotY);
   }
   // lifts: see feetOnGround; sink: see groundRow (both 0 on a sheet that sets neither)
-  ctx.drawImage(img, -anchor, -drawH + (animationSprite.lifts?.[player.frame] ?? 0) + (animationSprite.sink || 0));
+  const bodyY = -drawH + (animationSprite.lifts?.[player.frame] ?? 0) + (animationSprite.sink || 0);
+  if (player.rageActive && !reflecting) drawRageFlames(frame, -anchor, bodyY, ps);   // under the body (request 552)
+  if (player.rageActive) ctx.filter = RAGE_FX.skin;   // a little more saturation in his skin while raging (request 552)
+  ctx.drawImage(img, -anchor, bodyY);
+  if (player.rageActive) ctx.filter = 'none';
   ctx.restore();
   ctx.globalAlpha = 1;
   if (!reflecting) drawRamDust(true);   // …and the dust on the camera's side of his feet
@@ -23060,13 +23327,9 @@ function drawEnemy(enemy) {
   /* …and goes with him (request 495): a dead man's EMPTY bar used to hang on at
    * full strength over the corpse while it faded (it drew after the body's alpha
    * was reset), which read as empty bars stuck by the strong-room door. */
-  if (!enemy.boss && enemy.hp < enemy.maxHp && enemy.hp > 0 && enemy.state !== 'ko' && !enemy.dying) {
-    const bw = 52, bh = 5;
-    const bx = screenX - bw / 2;
-    const by = enemy.y - es.drawH * es2 - 22;
-    drawBar(bx, by, bw, bh, enemy.hp / enemy.maxHp, enemy.hpShown / enemy.maxHp,
-      healthColor(enemy.hp / enemy.maxHp));
-  }
+  /* REQUEST 552: the floating bars are retired — the man being fought has his health, portrait
+   * and name on the HUD's other end (drawPixelHud), as in the reference, where no bar floats
+   * over anyone's head. */
 }
 
 function drawActors() {
@@ -23502,184 +23765,334 @@ function engravedFill(x, y, w, h, r, col, alpha = 1) {
   ctx.restore();
 }
 
-function drawHud() {
-  const plate = HP_PLATE.img;
-  const hpFrac = player.hp / player.maxHp;
-  const rf = player.rage / RAGE_MAX;
-  const pulse = 0.5 + 0.5 * Math.sin(mobClock * 12);
-  const rageCol = player.rageActive
-    ? `rgb(255,${Math.round(140 + 60 * pulse)},40)`
-    : (rf >= 1 ? '#ff2e2e' : '#ff3d6e');
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
+/* ======================================== THE GAMEPLAY HUD, REBUILT (request 552)
+ *
+ * In the reference video's style and its pixel type (request 553): plain beveled shapes, no
+ * ornament. Darki top-left — a framed portrait, a thin RAGE bar with his name beside it and a
+ * thick HP bar under it (yellow over dark red, the drained part showing). The man he is
+ * fighting on the OTHER end — mirrored: portrait at the right edge, his HP bar anchored to it,
+ * his NAME under it (AGBERO, AYE, TASKFORCE or SARS). MC Olodo's bar shares Darki's row at
+ * the top right, and the man under it. The SCORE counts up at the top centre. The hit counter
+ * sits on the right under those rows, the reference's chunky gradient "N HIT" (see
+ * drawHitCounter). The stamina bar, the sword plate and the splatter streak are gone. */
+const PHUD = {
+  top: 18, side: 20, port: 70, gap: 12,
+  thinW: 190, thinH: 12, barW: 270, barH: 22,
+  foePort: 56, foeBarW: 210, foeBarH: 16,
+  ink: '#0b0a0c', bevel: '#9ea5ae', bevelHi: '#dfe3e8', inner: '#16151a',
+  hp: '#f6c431', hpHi: '#ffe27c', hpLo: '#c99512', low: '#ff7a1e', back: '#4d0d14', ghost: '#fff1e6',
+  rage: '#ff8193', rageHi: '#ffc4cc', rageLo: '#c84d60', rageFull: '#ff3d57', fire: '#ff8a1e', fireHi: '#ffd25a',
+  touchInset: 118,        // rows under the top one keep clear of the phone's pause button
+};
+const FOE_NAMES = { ginger: 'AGBERO', shaved: 'AYE', senior: 'TASKFORCE', sars: 'SARS', olodo: 'MC OLODO' };
+/* The man the HUD is showing: the last one Darki hit or was hit by. */
+const hudFoe = { e: null, t: 0, ghost: 1, fade: 1 };
+function noteFoe(e) {
+  if (!e || e === player || e.boss || !e.kind || !FOE_NAMES[e.kind]) return;
+  if (hudFoe.e !== e) { hudFoe.e = e; hudFoe.ghost = Math.max(0, e.hp / (e.maxHp || 1)); }
+  hudFoe.t = 3.4; hudFoe.fade = 1;
+}
+let hudScoreShown = 0, hudLastT = 0;
+const liveScore = () => Math.round(levelKills * SCORE.perKo + run.comboScore + run.maxCombo * SCORE.perComboHit
+  + run.topHit * SCORE.perTopHitDmg);
 
-  if (plate && plate.width) {
-    const h = VIEW_H * HP_PLATE.hFrac, w = h * HP_PLATE.aspect;
-    const k = h / HP_PLATE.artH;                       // art px -> virtual px
-    const x = HP_PLATE.left + hpKickPx(), y = HP_PLATE.top;   // 03: the whole sword flinches
-    const ax = (v) => x + v * k, ay = (v) => y + v * k;
-    /* HIS FACE IN THE RING — behind the frame, so the ring's own bevel sits over
-     * the edge of the crop. Same 1.12x head-and-shoulders framing as before. */
-    const face = frontEnd?.ui?.avatar;
-    if (face) {
-      const F = HP_PLATE.face, fcx = ax(F.cx), fcy = ay(F.cy), fr = F.r * k;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(fcx, fcy, fr + 1, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.fillStyle = '#10141c';
-      ctx.fillRect(fcx - fr - 2, fcy - fr - 2, fr * 2 + 4, fr * 2 + 4);
-      const fs = fr * 2 * 1.12;
-      ctx.drawImage(face, fcx - fs / 2, fcy - fs / 2 + fr * 0.04, fs, fs);
-      ctx.restore();
-    }
-    ctx.drawImage(plate, x, y, w, h);
-
-    /* HEALTH — the long channel, with all four lessons. */
-    const H = HP_PLATE.hp, hx = ax(H.x0), hy = ay(H.y0), hw = (H.x1 - H.x0) * k, hh = (H.y1 - H.y0) * k, hr = H.r * k;
-    const J = hpJuice;
-    engravedFill(hx, hy, hw * J.ghost, hh, hr, HP_JUICE.ghost, 0.92);          // 02
-    engravedFill(hx, hy, hw * J.fill, hh, hr, hpJuiceColor(hpFrac));           // 01 + 04
-    const fl = hpFlashAmt();
-    if (fl > 0) engravedFill(hx, hy, hw * Math.max(J.fill, 0.02), hh, hr, '#ffffff', fl);   // 03
-
-    /* RUN ENERGY — the second channel. Always shown now: it has its own slot. */
-    const R = HP_PLATE.run, rx = ax(R.x0), ry = ay(R.y0), rw = (R.x1 - R.x0) * k, rh = (R.y1 - R.y0) * k, rr = R.r * k;
-    const ef = Math.max(0, Math.min(1, player.rushStam));
-    const denied = player.rushDeniedT > 0 && Math.sin(mobClock * 40) > 0;
-    const eCol = denied ? '#ff4d4d'
-      : player.rushWinded ? '#8a6a52'
-      : rushInexhaustible() ? '#ffb020'
-      : rushState !== RUSH_STATE.NONE ? '#ffd27a'
-      : ef >= 1 ? '#7be0a4' : '#c8a76a';
-    engravedFill(rx, ry, rw * ef, rh, rr, eCol);
-    if (player.rushWinded || denied) {
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-      ctx.font = uiFont(800, Math.max(7, Math.round(rh * 0.78)));
-      ctx.fillStyle = denied ? '#ffd7d7' : '#e0c4ad';
-      ctx.fillText(player.rushWinded ? 'WINDED' : 'NO STAMINA', rx + rh * 0.4, ry + rh / 2 + 0.5);
-    }
-
-    /* RAGE — the blade's panel, filling from the hilt toward the tip. While the
-     * burst burns it DRAINS with the timer, and full-but-unspent it pulses. */
-    const poly = HP_PLATE.rage.map(([px2, py2]) => [ax(px2), ay(py2)]);
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const [px2, py2] of poly) { minX = Math.min(minX, px2); maxX = Math.max(maxX, px2); minY = Math.min(minY, py2); maxY = Math.max(maxY, py2); }
-    const rfShow = player.rageActive ? Math.max(0, player.rageTimer / RAGE_DUR) : Math.max(0, Math.min(1, rf));
+/* A beveled pixel frame: black outline, light grey bevel (brighter on top), dark inside. */
+function pixFrame(x, y, w, h) {
+  ctx.fillStyle = PHUD.ink; ctx.fillRect(x - 4, y - 4, w + 8, h + 8);
+  ctx.fillStyle = PHUD.bevel; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  ctx.fillStyle = PHUD.bevelHi; ctx.fillRect(x - 2, y - 2, w + 4, 2);
+  ctx.fillStyle = PHUD.inner; ctx.fillRect(x, y, w, h);
+}
+/* A plain pixel bar. `rtl`: anchored at its RIGHT end (the mirrored side). */
+function pixBar(x, y, w, h, frac, ghost, col, hi, lo, back = null, rtl = false) {
+  x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+  pixFrame(x, y, w, h);
+  if (back) { ctx.fillStyle = back; ctx.fillRect(x, y, w, h); }
+  const seg = (f, c) => {
+    const fw = Math.round(w * Math.max(0, Math.min(1, f)));
+    if (fw <= 0) return;
+    ctx.fillStyle = c; ctx.fillRect(rtl ? x + w - fw : x, y, fw, h);
+    return fw;
+  };
+  if (ghost > frac) seg(ghost, PHUD.ghost);
+  const fw = seg(frac, col);
+  if (fw) {
+    const fx = rtl ? x + w - fw : x;
+    ctx.fillStyle = hi; ctx.fillRect(fx, y, fw, Math.max(2, Math.round(h * 0.28)));
+    ctx.fillStyle = lo; ctx.fillRect(fx, y + h - 2, fw, 2);
+  }
+}
+/* Pixel portraits: Darki's own face, and each enemy kind's head cropped from its standing
+ * frame — downsampled to 26 px and blown back up with smoothing off, so they read as the
+ * reference's pixel portraits. Facing inward (toward the centre of the screen). */
+const hudPortraits = new Map();
+function pixelate(src, sx, sy, sw, sh, flip) {
+  const lo = makeCanvas(26, 26), g = lo.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  if (flip) { g.translate(26, 0); g.scale(-1, 1); }
+  g.drawImage(src, sx, sy, sw, sh, 0, 0, 26, 26);
+  const out = makeCanvas(78, 78), o = out.getContext('2d');
+  o.imageSmoothingEnabled = false;
+  o.drawImage(lo, 0, 0, 78, 78);
+  return out;
+}
+function darkiPortrait() {
+  if (hudPortraits.has('darki')) return hudPortraits.get('darki');
+  const face = frontEnd?.ui?.avatar;
+  if (!face || !(face.width || face.naturalWidth)) return null;
+  const w = face.width || face.naturalWidth, h = face.height || face.naturalHeight, s = Math.min(w, h);
+  const c = pixelate(face, (w - s) / 2, (h - s) / 2, s, s, false);
+  hudPortraits.set('darki', c);
+  return c;
+}
+function foePortrait(e) {
+  const key = e.boss ? 'boss' : e.kind;
+  if (hudPortraits.has(key)) return hudPortraits.get(key);
+  let anim = null;
+  try {
+    anim = enemyAnim({ ...e, state: 'walk', react: null, attack: null, carried: false, grabbed: false,
+      dying: false, dead: false, frame: 0, animTime: 0 });
+  } catch { anim = null; }
+  const fr = anim?.sprite?.frames?.[anim.spec?.frames?.[0] ?? 0] ?? anim?.sprite?.frames?.[0];
+  const fw = fr?.width || fr?.naturalWidth, fh = fr?.height || fr?.naturalHeight;
+  if (!fw || !fh) return null;                          // not loaded yet: try again next frame
+  // the opaque box, on a small copy
+  const sc = Math.min(1, 220 / fh), cw = Math.max(1, Math.round(fw * sc)), chh = Math.max(1, Math.round(fh * sc));
+  const t = makeCanvas(cw, chh), tg = t.getContext('2d', { willReadFrequently: true });
+  tg.drawImage(fr, 0, 0, cw, chh);
+  let d;
+  try { d = tg.getImageData(0, 0, cw, chh).data; } catch { return null; }
+  let top = -1, bot = -1;
+  for (let y = 0; y < chh && top < 0; y++) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 40) { top = y; break; }
+  for (let y = chh - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 40) { bot = y; break; }
+  if (top < 0 || bot <= top) return null;
+  const bh = bot - top, side = Math.max(8, bh * 0.3);
+  // the head's centre: the opaque columns in its top rows
+  let sx = 0, n = 0;
+  for (let y = top; y < top + Math.max(2, bh * 0.12); y++) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 40) { sx += x; n++; }
+  const hcx = n ? sx / n : cw / 2;
+  const c = pixelate(fr, (hcx - side / 2) / sc, (top - side * 0.06) / sc, side / sc, side / sc, anim.config?.faces === 1);
+  hudPortraits.set(key, c);
+  return c;
+}
+function drawPortrait(img, x, y, s) {
+  pixFrame(x, y, s, s);
+  if (img) {
     ctx.save();
-    ctx.beginPath();
-    poly.forEach(([px2, py2], i) => (i ? ctx.lineTo(px2, py2) : ctx.moveTo(px2, py2)));
-    ctx.closePath();
-    ctx.clip();
-    ctx.fillStyle = 'rgba(8,4,2,0.55)';                 // the empty panel reads as a slot
-    ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
-    if (rfShow > 0) {
-      const g = ctx.createLinearGradient(minX, 0, maxX, 0);
-      g.addColorStop(0, player.rageActive ? '#ff8a1e' : '#b0122e');
-      g.addColorStop(1, rageCol);
-      ctx.fillStyle = g;
-      ctx.fillRect(minX, minY, (maxX - minX) * rfShow, maxY - minY);
-      if (player.rageActive || rf >= 1) {
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = `rgba(255,200,90,${0.18 + 0.22 * pulse})`;
-        ctx.fillRect(minX, minY, (maxX - minX) * rfShow, maxY - minY);
-      }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, x, y, s, s);
+    ctx.restore();
+  }
+}
+/* Outlined pixel text: a hard drop shadow, then the colour. */
+function pixText(text, x, y, col, shadow = '#0b0a0c', off = 2) {
+  ctx.fillStyle = shadow; ctx.fillText(text, x + off, y + off);
+  ctx.fillStyle = col; ctx.fillText(text, x, y);
+}
+
+function drawPixelHud() {
+  const P = PHUD, now = mobClock;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';   // the menus' tracking must not leak into the HUD
+  const dt = Math.min(0.1, Math.max(0, now - (hudLastT || now))); hudLastT = now;
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  /* ---- DARKI, top left */
+  const kick = hpKickPx();
+  const ox = P.side + kick, oy = P.top;
+  drawPortrait(darkiPortrait(), ox, oy, P.port);
+  const bx = ox + P.port + P.gap + 4;
+  // rage: fills toward full, pulses when full, burns down in fire colours while active
+  const rf = Math.max(0, Math.min(1, player.rage / RAGE_MAX));
+  const rageShow = player.rageActive ? Math.max(0, player.rageTimer / RAGE_DUR) : rf;
+  const pulse = 0.5 + 0.5 * Math.sin(now * 12);
+  const rCol = player.rageActive ? (pulse > 0.5 ? P.fire : P.fireHi) : rf >= 1 ? (pulse > 0.5 ? P.rageFull : P.rage) : P.rage;
+  pixBar(bx, oy + 6, P.thinW, P.thinH, rageShow, rageShow, rCol, player.rageActive ? '#ffe9a0' : P.rageHi, P.rageLo);
+  ctx.textAlign = 'left';
+  ctx.font = pixelFont(400, 18);
+  pixText('DARKI', bx + P.thinW + 14, oy + 6 + P.thinH / 2 + 1, '#f4f1ea');
+  if (player.rageActive) {
+    ctx.font = pixelFont(400, 14);
+    pixText(`RAGE ${player.rageTimer.toFixed(1)}`, bx + P.thinW + 14 + ctx.measureText('DARKI  ').width * 1.25, oy + 6 + P.thinH / 2 + 1, P.fireHi);
+  }
+  // health: the reference's thick yellow bar over dark red, the ghost chip and the flash
+  const J = hpJuice, hpF = Math.max(0, Math.min(1, J.fill));
+  const low = hpF <= 0.25 && Math.sin(now * 14) > 0;
+  pixBar(bx, oy + 6 + P.thinH + 14, P.barW, P.barH, hpF, J.ghost, low ? P.low : P.hp, low ? '#ffc07a' : P.hpHi, P.hpLo, P.back);
+  const fl = hpFlashAmt();
+  if (fl > 0) { ctx.globalAlpha = fl * 0.85; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(bx), Math.round(oy + 6 + P.thinH + 14), Math.round(P.barW * Math.max(hpF, 0.02)), P.barH); ctx.globalAlpha = 1; }
+  // out of the fight and healing
+  if (run.regen) {
+    ctx.font = pixelFont(400, 15);
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now * 5);
+    pixText('+ RECOVERING', bx, oy + 6 + P.thinH + 14 + P.barH + 18, '#7dffa0');
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---- THE SCORE, top centre: counts up to the live figure */
+  const target = liveScore();
+  hudScoreShown += (target - hudScoreShown) * Math.min(1, dt * 7);
+  if (Math.abs(target - hudScoreShown) < 1) hudScoreShown = target;
+  ctx.textAlign = 'center';
+  ctx.font = pixelFont(400, 17);
+  pixText('SCORE', VIEW_W / 2, oy + 10, '#f4f1ea');
+  ctx.font = pixelFont(400, 26);
+  pixText(String(Math.round(hudScoreShown)).padStart(7, '0'), VIEW_W / 2, oy + 36, P.hp);
+
+  /* ---- THE OTHER END: the boss on Darki's row, the man under it */
+  const RX = VIEW_W - P.side;                      // the right edge everything hangs from
+  let rowY = oy, rightBottom = oy;
+  if (waveState === 'boss' && boss) {
+    const bp = RX - P.port;
+    drawPortrait(foePortrait(boss), bp, oy, P.port);
+    const be = RX - P.port - P.gap - 4;              // bars end here, growing left
+    const enraged = bossEnraged(boss);
+    ctx.textAlign = 'right';
+    ctx.font = pixelFont(400, 18);
+    pixText(enraged ? 'MC OLODO — VEX!' : 'MC OLODO', be, oy + 6 + P.thinH / 2 + 1, enraged ? (pulse > 0.5 ? '#ff6a3d' : '#ffd25a') : '#f4f1ea');
+    ctx.font = pixelFont(400, 12);
+    pixText('AREA BOSS · LAGOS ISLAND', be, oy + 6 + P.thinH + 14 + P.barH + 14, '#b8bcc4');
+    const bf = Math.max(0, boss.hp / boss.maxHp), bg = Math.max(bf, (boss.hpShown ?? boss.hp) / boss.maxHp);
+    pixBar(be - P.barW, oy + 6 + P.thinH + 14, P.barW, P.barH, bf, bg, enraged ? P.fire : P.hp, enraged ? P.fireHi : P.hpHi, P.hpLo, P.back, true);
+    rowY = oy + P.port + 22;
+    rightBottom = rowY;
+  }
+  const f = hudFoe.e;
+  if (f) {
+    const gone = f.benched || f.offstage;
+    const dead = f.hp <= 0 || f.dying || f.dead;
+    hudFoe.t -= dt;
+    if (dead) hudFoe.t = Math.min(hudFoe.t, 1.1);
+    if (hudFoe.t <= 0 || gone) hudFoe.fade = Math.max(0, hudFoe.fade - dt * 4);
+    if (hudFoe.fade <= 0) hudFoe.e = null;
+    else {
+      const ff = Math.max(0, f.hp / (f.maxHp || 1));
+      hudFoe.ghost = hudFoe.ghost > ff ? Math.max(ff, hudFoe.ghost - dt * 0.6) : ff;
+      const inset = rowY > oy && isTouchUI() ? P.touchInset : 0;
+      const fx = RX - inset - P.foePort;
+      ctx.globalAlpha = hudFoe.fade;
+      drawPortrait(foePortrait(f), fx, rowY, P.foePort);
+      const fe = fx - P.gap - 4;
+      pixBar(fe - P.foeBarW, rowY + 8, P.foeBarW, P.foeBarH, ff, hudFoe.ghost, P.hp, P.hpHi, P.hpLo, P.back, true);
+      ctx.textAlign = 'right';
+      ctx.font = pixelFont(400, 17);
+      pixText(FOE_NAMES[f.kind] || 'AGBERO', fe, rowY + 8 + P.foeBarH + 18, '#f4f1ea');
+      ctx.globalAlpha = 1;
+      rightBottom = Math.max(rightBottom, rowY + P.foePort + 4);
+    }
+  }
+  hudRightBottom = Math.max(oy + P.port, rightBottom);
+  ctx.restore();
+}
+let hudRightBottom = 90;
+
+/* ---- THE HIT COUNTER (request 552): the reference's — chunky bold pixel type, yellow running
+ * to red down the letters, a dark outline and a hard shadow, right-aligned on the right under
+ * the HUD rows, punching up on every hit. Ours adds three things: the letters HEAT with the
+ * chain (white-hot crowns from 10, a flickering heat shimmer from 20), a thin pixel bar under
+ * it draining the time left to land the next blow, and when the chain breaks the counter does
+ * not just vanish — it drops and tumbles away. The score multiplier rides beside it and the
+ * milestone word slams in under it. */
+const hitCtr = { last: 0, breakT: 0, t: 0 };
+function drawHitCounter() {
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  const dt = Math.min(0.1, Math.max(0, mobClock - (hitCtr.t || mobClock))); hitCtr.t = mobClock;
+  const n = run.combo;
+  if (n >= 2) { hitCtr.last = n; hitCtr.breakT = 0; }
+  else if (hitCtr.last >= 2 && hitCtr.breakT === 0) hitCtr.breakT = 0.0001;
+  const breaking = n < 2 && hitCtr.breakT > 0;
+  if (breaking) hitCtr.breakT += dt;
+  if (breaking && hitCtr.breakT > 0.45) { hitCtr.last = 0; hitCtr.breakT = 0; }
+  const show = n >= 2 ? n : breaking ? hitCtr.last : 0;
+  const rx = VIEW_W - PHUD.side - (isTouchUI() ? PHUD.touchInset : 4);
+  const by = Math.max(hudRightBottom + 64, isTouchUI() ? 268 : 0);
+  if (show) {
+    const text = `${show} HIT`;
+    const p = breaking ? Math.min(1, hitCtr.breakT / 0.45) : 0;
+    const pop = breaking ? 1 : 1 + 0.45 * Math.pow(run.popT / 0.2, 2);
+    ctx.save();
+    ctx.font = pixelFont(900, 74);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    const tw = ctx.measureText(text).width;
+    ctx.translate(rx - tw / 2, by - 22 + p * p * 120);
+    if (breaking) { ctx.rotate(p * 0.5); ctx.globalAlpha = 1 - p; }
+    ctx.scale(pop, pop);
+    if (run.popT > 0.12) ctx.translate((Math.random() - 0.5) * 4, 0);
+    const x = tw / 2, y = 22;
+    // shadow, outline
+    ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
+    ctx.fillStyle = '#140604'; ctx.fillText(text, x + 5, y + 5);
+    ctx.strokeStyle = '#140604'; ctx.lineWidth = 7; ctx.strokeText(text, x, y);
+    // the fill: yellow to red, hotter as the chain grows
+    const hot = show >= 10, hotter = show >= 20;
+    const g = ctx.createLinearGradient(0, y - 50, 0, y + 2);
+    g.addColorStop(0, hot ? '#fffbe2' : '#ffe24a');
+    g.addColorStop(hot ? 0.3 : 0.25, hot ? '#ffd23c' : '#ffc12e');
+    g.addColorStop(0.62, '#ff7a1a');
+    g.addColorStop(1, '#ff2414');
+    ctx.fillStyle = g;
+    ctx.fillText(text, x, y);
+    if (hotter) {                                    // the heat shimmer
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha *= 0.28 + 0.18 * Math.sin(mobClock * 31);
+      ctx.fillStyle = '#ffb040';
+      ctx.fillText(text, x, y - 3 - 2 * Math.sin(mobClock * 17));
     }
     ctx.restore();
-    if (player.rageActive) {
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.font = uiFont(900, Math.max(8, Math.round(h * 0.13)));
-      ctx.fillStyle = '#fff2c4';
-      ctx.fillText(`${player.rageTimer.toFixed(1)}s`, ax(700), ay(208));
+    if (!breaking) {
+      // the window left, as a thin pixel bar under the number
+      const left = Math.max(0, run.comboT / run.comboWin);
+      const bw = 150;
+      ctx.fillStyle = '#140604'; ctx.fillRect(Math.round(rx - bw - 2), Math.round(by + 10), bw + 4, 8);
+      ctx.fillStyle = left > 0.35 ? '#ffc12e' : (Math.sin(mobClock * 20) > 0 ? '#ff2414' : '#ff7a1a');
+      ctx.fillRect(Math.round(rx - bw * left), Math.round(by + 12), Math.round(bw * left), 4);
+      // the multiplier the streak is earning
+      const mul = comboMul(show);
+      if (mul > 1) {
+        ctx.save();
+        ctx.font = pixelFont(400, 18);
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        pixText(`x${mul.toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`, rx - bw - 12, by + 14, '#ffe27c', '#140604');
+        ctx.restore();
+      }
     }
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-  } else {
-    /* THE DRAWN PLATE, kept as the fallback. The art is fetched after boot like
-     * every other non-blocking asset, so the first frames of a fight can land
-     * before it does — and a HUD that simply is not there for a second is worse
-     * than one that looks like the old one for a second. */
-    const px = 22, py = 20, barW = 300;
-    ctx.fillStyle = 'rgba(8,11,18,0.5)';
-    ctx.fillRect(px - 10, py - 10, barW + 20, 78);
-    ctx.fillStyle = '#ffe45e';
-    ctx.font = display(700, 22);
-    ctx.fillText('DARKI', px, py - 4);
-    drawBar(px, py + 22, barW, 16, hpFrac, player.hpShown / player.maxHp, healthColor(hpFrac));
-    ctx.fillStyle = '#eaf0ff';
-    ctx.font = uiFont(700, 12);
-    ctx.textAlign = 'right';
-    ctx.fillText(`${Math.ceil(Math.max(0, player.hp))}/${player.maxHp}`, px + barW - 4, py + 24);
-    drawBar(px, py + 44, barW, 10, rf, rf, rageCol, { chipCol: 'none' });
-    ctx.textAlign = 'left';
-    ctx.font = uiFont(700, 10);
-    ctx.fillStyle = player.rageActive ? '#fff2c4' : '#ffc2d2';
-    ctx.fillText(player.rageActive ? `RAGE!  ${player.rageTimer.toFixed(1)}s` : 'RAGE', px + 5, py + 45);
   }
-  /* THE SPRINT / COMBO ROW SITS RIGHT UNDER THE PLATE.
-   *
-   * Both bars draw at `py + 60`, which is the retired drawn HUD's spacing;
-   * against the plate that left them floating ~45px below it, reading as a
-   * stray bar rather than part of the status block. `py` is therefore solved
-   * BACKWARDS from where the row has to land — four pixels under the plate's
-   * bottom edge — so the two call sites keep their `+60` and the row follows
-   * the plate at any size. Width matches the plate so the edges line up. */
-  const hasPlate = !!(plate && plate.width);
-  const plateH = hasPlate ? VIEW_H * HP_PLATE.hFrac : 78;
-  const px = hasPlate ? HP_PLATE.left + 6 : 22;
-  const py = hasPlate ? (HP_PLATE.top + plateH + 4) - 60 : 20;
-  const barW = hasPlate ? plateH * HP_PLATE.aspect - 12 : 300;
+  if (run.milestoneT > 0 && run.milestone) {
+    const u = run.milestoneT / 1.4;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, u * 3);
+    ctx.font = pixelFont(900, 34 + (1 - u) * 6);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
+    ctx.strokeStyle = '#140604'; ctx.lineWidth = 6;
+    ctx.strokeText(run.milestone, rx, by + 56);
+    ctx.fillStyle = '#ff4a2a';
+    ctx.fillText(run.milestone, rx, by + 56);
+    ctx.restore();
+  }
+}
 
-  // manual grab-combo stamina â€” only on screen while the combo owns the input.
-  // The prompt names the fist that sustains by alternation, but flips to MASH
-  // once a same-button streak has taken over, so the feedback matches the input.
+function drawHud() {
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  drawPixelHud();
+  const px = PHUD.side, py = PHUD.top + PHUD.port + 30;
+  /* The manual grab-combo's own gauge, under Darki's row while it owns the input: it names
+   * the fist that sustains by alternation, and flips to MASH once a same-button streak has
+   * taken over. (This is that move's prompt, not the retired stamina bar.) */
   if (player.attack === 'contCombo') {
     const f = Math.max(0, player.mcStamina / MCOMBO.stamina);
-    drawBar(px, py + 60, barW, 8, f, f, f > 0.35 ? '#5ad1ff' : '#ff8b3d', { chipCol: 'none' });
-    ctx.textAlign = 'left';
-    ctx.font = uiFont(700, 10);
-    ctx.fillStyle = '#dff3ff';
+    pixBar(px, py, PHUD.barW, 8, f, f, f > 0.35 ? '#5ad1ff' : '#ff8b3d', '#bfefff', '#2a7fa8');
     const mashing = player.mcRepeat > MCOMBO.mashRepeats;
     const prompt = player.mcSection === 'finish' ? '—'
       : mashing ? `MASH ${player.mcFist === 0 ? 'LMB' : 'RMB'}`
       : (player.mcFist === 0 ? 'RMB' : 'LMB');
     const lap = `lap ${Math.max(1, player.mcLaps)}/${MCOMBO.laps}`;
-    ctx.fillText(`COMBO  ${player.mcStamina.toFixed(1)}s  ${lap}  next: ${prompt}`, px + 5, py + 61);
-  } else if (!hasPlate && (rushState !== RUSH_STATE.NONE || player.rushStam < 0.999 || player.rushDeniedT > 0)) {
-    // (With the sword frame up, the gauge lives in its own channel — request 410.)
-    // THE SPRINT GAUGE. It shares the combo's row and yields to it, because the
-    // two can never be needed at once â€” you cannot be running and holding a man.
-    //
-    // On screen only when it is saying something: while he is running, while it
-    // refills, and for a beat after a dash was refused. A bar that is permanently
-    // full and permanently visible is furniture, and the player stops reading it
-    // long before the one moment it matters.
-    const f = Math.max(0, Math.min(1, player.rushStam));
-    const denied = player.rushDeniedT > 0 && Math.sin(mobClock * 40) > 0;
-    const col = denied ? '#ff4d4d'
-      : player.rushWinded ? '#8a6a52'
-      // Rage outranks the ordinary running colour: a bar that sits pinned at
-      // full through a whole sprint has to look DELIBERATE, or it reads as the
-      // gauge having stopped working.
-      : rushInexhaustible() ? '#ffb020'
-      : rushState !== RUSH_STATE.NONE ? '#ffd27a'
-      : f >= 1 ? '#7be0a4' : '#c8a76a';
-    drawBar(px, py + 60, barW, 8, f, f, col, { chipCol: 'none' });
-    ctx.textAlign = 'left';
-    ctx.font = uiFont(700, 10);
-    ctx.fillStyle = denied ? '#ffd7d7' : player.rushWinded ? '#e0c4ad' : '#f2e3c6';
-    // Names the state rather than the number: "WINDED" tells the player why the
-    // dash was refused, which a percentage never does.
-    const label = player.rushWinded ? 'WINDED'
-      : rushState === RUSH_STATE.RAM || player.ramPending ? 'RAMRAGE'
-      : rushInexhaustible() && rushState === RUSH_STATE.FREE ? 'RAGE  SPRINT'
-      : rushInexhaustible() && rushState === RUSH_STATE.CHARGE ? 'RAGE  RUSH'
-      : rushState === RUSH_STATE.FREE ? 'SPRINT'
-      : rushState === RUSH_STATE.CHARGE ? 'RUSH'
-      : f >= 1 ? 'SPRINT  READY' : 'SPRINT';
-    ctx.fillText(label, px + 5, py + 61);
+    ctx.save();
+    ctx.font = pixelFont(400, 14);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    pixText(`COMBO  ${player.mcStamina.toFixed(1)}s  ${lap}  next: ${prompt}`, px, py + 22, '#dff3ff');
+    ctx.restore();
   }
 
   // controls hint (bottom-left)
@@ -23722,96 +24135,7 @@ function drawHud() {
  * the bar under it is the time left to land the next one, and a milestone word
  * shouts over it. The multiplier the score is earning sits beside the count. */
 function drawRunHud() {
-  if (run.regen) {
-    // healing out of the fight: a quiet pill under the health plate
-    const a = 0.55 + 0.45 * Math.sin(mobClock * 5);
-    ctx.save();
-    ctx.globalAlpha = a;
-    ctx.fillStyle = 'rgba(10,30,18,0.72)';
-    ctx.fillRect(22, 112, 132, 22);
-    ctx.fillStyle = '#7dffa0';
-    ctx.font = uiFont(800, 11);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('+  RECOVERING', 32, 123);
-    ctx.restore();
-  }
-  const show = run.combo >= 1;
-  if (!show && run.milestoneT <= 0) return;
-  /* TOP LEFT, UNDER DARKI'S HEALTH (request 344; it was under the top-right
-   * buttons). Below the plate's own row — the sprint/grab gauge sits directly
-   * under it and the RECOVERING pill under that — and left-aligned with the
-   * plate so the streak reads as part of his status block. */
-  const x = HP_PLATE.left + 8;
-  const y = HP_PLATE.top + VIEW_H * HP_PLATE.hFrac + 96;   // the count's baseline
-  ctx.save();
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  if (show) {
-    const left = Math.max(0, run.comboT / run.comboWin);
-    const pop = 1 + run.popT * 1.6;
-    const frame = Math.min(COMBO_SPLASH.count, run.combo) - 1;
-    const sx = (frame % COMBO_SPLASH.cols) * COMBO_SPLASH.frame;
-    const sy = Math.floor(frame / COMBO_SPLASH.cols) * COMBO_SPLASH.frame;
-    const size = COMBO_SPLASH.draw;
-    const artX = x - 10, artY = y - 94;   // 12px larger, centre preserved
-    ctx.save();
-    ctx.translate(artX + size / 2, artY + size / 2);
-    ctx.scale(pop, pop);                 // the supplied splatter punches toward the screen on each hit
-    if (COMBO_SPLASH.img?.width) {
-      ctx.drawImage(COMBO_SPLASH.img, sx, sy, COMBO_SPLASH.frame, COMBO_SPLASH.frame,
-        -size / 2, -size / 2, size, size);
-    } else {
-      // A failed optional UI image must never take the combat readout with it.
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = display(900, 54);
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = 'rgba(5,6,10,0.85)';
-      ctx.strokeText(String(run.combo), 0, -5);
-      ctx.fillStyle = '#ffe45e';
-      ctx.fillText(String(run.combo), 0, -5);
-      ctx.font = uiFont(900, 13);
-      ctx.fillStyle = '#f4f5f7';
-      ctx.fillText('HIT', 0, 29);
-    }
-    ctx.restore();
-    const lx = artX + size + 4;
-    const mul = comboMul(run.combo);
-    if (mul > 1) {
-      ctx.font = uiFont(900, 14);
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = 'rgba(5,6,10,0.85)';
-      ctx.strokeText(`x${mul.toFixed(2).replace(/0$/, '')}`, lx, y - 6);
-      ctx.fillStyle = '#ff9a3d';
-      ctx.fillText(`x${mul.toFixed(2).replace(/0$/, '')}`, lx, y - 6);
-    }
-    if (run.combo > COMBO_SPLASH.count) {
-      ctx.font = uiFont(900, 13);
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = 'rgba(5,6,10,0.85)';
-      ctx.strokeText(`+${run.combo - COMBO_SPLASH.count}`, lx, y + 15);
-      ctx.fillStyle = '#f4f5f7';
-      ctx.fillText(`+${run.combo - COMBO_SPLASH.count}`, lx, y + 15);
-    }
-    // the window: drains to nothing, and warms to red as it does
-    const bw = 170, bh = 6, by = y + 30;
-    ctx.fillStyle = 'rgba(5,6,10,0.7)';
-    ctx.fillRect(x - 1, by - 1, bw + 2, bh + 2);
-    ctx.fillStyle = left > 0.35 ? '#ffe45e' : '#ff4a3a';
-    ctx.fillRect(x, by, bw * left, bh);
-  }
-  if (run.milestoneT > 0 && run.milestone) {
-    const u = run.milestoneT / 1.4;
-    ctx.globalAlpha = Math.min(1, u * 3);
-    ctx.font = display(900, 30 + (1 - u) * 6);
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = 'rgba(5,6,10,0.9)';
-    ctx.strokeText(run.milestone, x, y + 72);
-    ctx.fillStyle = '#ff6a3d';
-    ctx.fillText(run.milestone, x, y + 72);
-  }
-  ctx.restore();
+  drawHitCounter();                 // the reference-style counter replaces the splatter streak (request 552)
 }
 
 /* A medpack lying in the street: a battered white tin with a red cross, bobbing
@@ -23852,31 +24176,8 @@ function drawMedpacks() {
   }
 }
 
-function drawBossHud() {
-  const w = 560, x = (VIEW_W - w) / 2, y = 58;
-  const frac = Math.max(0, boss.hp / boss.maxHp);
-  const enraged = bossEnraged(boss);
-  const pulse = 0.5 + 0.5 * Math.sin(mobClock * 9);
-  ctx.save();
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'center';
-  // name tag
-  ctx.fillStyle = 'rgba(8,11,18,0.55)';
-  ctx.fillRect(x - 6, y - 26, w + 12, 24);
-  ctx.font = display(900, 20);
-  ctx.fillStyle = enraged ? `rgb(255,${Math.round(80 + 70 * pulse)},60)` : '#ff5442';
-  ctx.fillText(enraged ? 'MC OLODO — VEX!' : 'MC OLODO', VIEW_W / 2, y - 8);
-  ctx.font = uiFont(700, 10);
-  ctx.fillStyle = 'rgba(207,216,234,0.8)';
-  ctx.textAlign = 'right';
-  ctx.fillText('AREA BOSS', x + w - 4, y - 8);
-  ctx.textAlign = 'left';
-  ctx.fillText('LAGOS ISLAND', x + 4, y - 8);
-  ctx.restore();
-  const fill = enraged ? `rgb(255,${Math.round(60 + 50 * pulse)},40)` : (frac > 0.35 ? '#ff5442' : '#ffd23f');
-  drawBar(x, y, w, 14, frac, boss.hpShown / boss.maxHp, fill,
-    { borderCol: enraged ? `rgba(255,180,90,${0.5 + 0.5 * pulse})` : 'rgba(255,120,90,0.6)' });
-}
+/* MC Olodo's bar now shares Darki's row at the top right (drawPixelHud, request 552). */
+function drawBossHud() {}
 
 // Wave state: enemies-left tag while fighting, a pulsing GO â†’ arrow when the
 // wall drops, the boss plate during the MC_Olodo fight, and an AREA CLEARED
@@ -24877,6 +25178,7 @@ function draw() {
    * it. Level 02 has its own, heavier tier (request 408). */
   drawEnvGrade(activeLevel === 2 ? 'l2' : 'near');
   drawMedpacks();   // on the road, under every body
+  drawGoreStains(); // the drops of blood that landed, on the road too (request 552)
   drawActors();   // fighters, parked vehicles (or Level 02's pillars) and the ledger, depth-sorted together
   drawSparks();
   if (activeLevel === 2) drawLevel2Front();   // the front pillars, over everything that walks
@@ -26789,6 +27091,10 @@ window.__ror = {
   // the ORDER the bag produces, so the test has to read the order itself.
   stepOrder(n) { const out = []; for (let i = 0; i < n; i++) out.push(nextStep()); return out; },
   burstRage() { activateRage(); },              // test: fire the shockwave directly
+  goreProbe() { return { drops: goreDrops.length, splats: goreSplats.length, stains: goreStains.length }; },   // request 552 tests
+  emberCount(col = '#ffcf5a') { return embers.filter((m) => m.color === col).length; },   // the old rage gold
+  get hudFoe() { return hudFoe.e ? { kind: hudFoe.e.kind, name: FOE_NAMES[hudFoe.e.kind], t: +hudFoe.t.toFixed(2) } : null; },
+  noteFoe(e) { noteFoe(e); },
   get rageBurstConfig() { return RAGE_BURST; },
   togglePause() { togglePause(); },
   // --- pause menu ---
@@ -27722,7 +28028,8 @@ async function loadWorld() {
  * harness which face actually got used. Silence is the one outcome not allowed:
  * a fallback that merely looks a bit different is exactly how the wrong font
  * ships unnoticed. */
-const FONT_WEIGHTS = [400, 600, 700, 800, 900];
+// the two pixel faces (request 553); each is one cut for every weight, so one load apiece
+const FONT_FACES = ["40px 'RR Pixel'", "40px 'RR Pixel Bold'"];
 /* THE FONT MAY NEVER BLOCK BOOT. This ceiling is not belt-and-braces.
  *
  * The first version awaited `document.fonts.ready` unconditionally, and
@@ -27740,7 +28047,7 @@ async function loadFont() {
   try {
     if (!document.fonts) throw new Error('FontFaceSet unavailable');
     const load = (async () => {
-      await Promise.all(FONT_WEIGHTS.map((w) => document.fonts.load(`${w} 40px Montserrat`)));
+      await Promise.all(FONT_FACES.map((f) => document.fonts.load(f)));
       /* Best-effort, and deliberately NOT the thing being awaited on its own:
        * load() above is what actually starts and finishes the fetches. */
       await document.fonts.ready;
@@ -27750,17 +28057,17 @@ async function loadFont() {
       timer = setTimeout(() => rej(new Error(`timed out after ${FONT_TIMEOUT_MS}ms`)), FONT_TIMEOUT_MS);
     });
     try { await Promise.race([load, ceiling]); } finally { clearTimeout(timer); }
-    fontReady = document.fonts.check('900 40px Montserrat');
-    if (!fontReady) throw new Error('Montserrat did not resolve after load()');
+    fontReady = FONT_FACES.every((f) => document.fonts.check(f));
+    if (!fontReady) throw new Error('the pixel faces did not resolve after load()');
   } catch (err) {
     /* The face may still have arrived even though the wait did not finish —
      * check before crying wolf, because a spurious console error here would
      * send the next person looking for a font bug that is not there. */
-    try { fontReady = !!document.fonts?.check('900 40px Montserrat'); } catch { fontReady = false; }
+    try { fontReady = FONT_FACES.every((f) => !!document.fonts?.check(f)); } catch { fontReady = false; }
     if (!fontReady) {
       fontError = err.message;
-      console.error(`[ratel-ui] Montserrat failed to load (${err.message}) — every screen `
-        + 'falls back to the system sans. Check frontend/fonts/*.woff2 is being served.');
+      console.error(`[ratel-ui] the pixel faces failed to load (${err.message}) — every screen `
+        + 'falls back to monospace. Check frontend/fonts/*.woff2 is being served.');
     }
   }
 }
@@ -27772,13 +28079,13 @@ async function loadFont() {
 function fontState() {
   const probe = document.createElement('canvas').getContext('2d');
   const w = (fam) => { probe.font = `900 100px ${fam}`; return probe.measureText('RAGE OF RATELS').width; };
-  const mont = w('Montserrat, monospace');
+  const mont = w("'RR Pixel', monospace");
   const a = w('monospace'), b = w('serif');
   return {
     ready: fontReady,
     error: fontError,
-    checks: typeof document.fonts?.check === 'function' ? document.fonts.check('900 40px Montserrat') : null,
-    // If Montserrat is missing, "Montserrat, monospace" IS monospace.
+    checks: typeof document.fonts?.check === 'function' ? FONT_FACES.every((f) => document.fonts.check(f)) : null,
+    // If the pixel face is missing, "RR Pixel, monospace" IS monospace.
     resolved: Math.abs(mont - a) > 0.5 && Math.abs(mont - b) > 0.5,
     width: +mont.toFixed(2),
     family: FONT,
