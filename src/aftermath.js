@@ -1087,8 +1087,12 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.textAlign = 'center';
     ui.setFont(700, 8.6, 1.9);
     ctx.fillStyle = page === null ? C.dim : C.gold;
-    ctx.fillText(page === null ? `FOLLOWING THE READ  ·  ${idx + 1} / ${pages.length}`
-      : `${idx + 1} / ${pages.length}`, (left + right) / 2, y + 3);
+    // the longest wording that fits between L1 and R1 (request 563: the lifted type no longer fit)
+    const room = right - left - 2 * (16 + ctx.measureText('R1').width + 10);
+    const pos = `${idx + 1} / ${pages.length}`;
+    const say = [page === null ? `FOLLOWING THE READ  ·  ${pos}` : pos, page === null ? `AUTO  ·  ${pos}` : pos, pos]
+      .find((t) => ctx.measureText(t).width <= room) ?? pos;
+    ctx.fillText(say, (left + right) / 2, y + 3);
     ctx.textAlign = 'left';
     ctx.restore();
   }

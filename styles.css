@@ -107,16 +107,16 @@ canvas {
   background: #080b12;
   letter-spacing: .16em;
   text-align: center;
-  font-size: clamp(16px, 2vw, 30px);
+  font-size: clamp(20px, 2.4vw, 32px);
 }
 
 .loading.hidden { display: none; }
 
 /* A failed load (game.js showLoadFailure): the message and a reload button. */
 .loading .load-fail { display: grid; gap: 14px; justify-items: center; padding: 24px; }
-.loading .load-fail small { color: #9fb2d8; letter-spacing: .04em; font-size: 12px; max-width: 80vw; word-break: break-all; }
+.loading .load-fail small { color: #9fb2d8; letter-spacing: .04em; font-size: 16px; max-width: 80vw; word-break: break-all; }
 .loading .load-fail button {
-  font: inherit; font-size: 14px; letter-spacing: .14em; color: #080b12; background: #ffe45e;
+  font: inherit; font-size: 18px; letter-spacing: .14em; color: #080b12; background: #ffe45e;
   border: 0; border-radius: 6px; padding: 10px 22px; cursor: pointer;
 }
 

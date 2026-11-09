@@ -174,9 +174,19 @@ export const FONT = "'RR Pixel', monospace";
 export const FONT_BOLD = "'RR Pixel Bold', 'RR Pixel', monospace";
 export const PIXEL_FIT = { body: 1.1, bold: 0.85 };
 /* The one place a weight + px becomes a canvas/CSS font string. `bold` forces the display face. */
+/* SMALL TYPE IS LIFTED, NOT JUST CONVERTED (request 563). The layouts were tuned for Montserrat,
+ * where 9-15 px still read. Tiny5 is a 5-pixel face: at those sizes on a phone (the 720-high canvas
+ * lands at ~0.54x) it became a smear. Everything under READABLE.knee is pulled toward it — the
+ * smaller the text, the harder the pull — so labels roughly double, body copy grows ~40-60% and
+ * headlines (over the knee) are untouched. The curve is monotonic, so no smaller size ever ends up
+ * bigger than a larger one. */
+export const READABLE = { knee: 28, pull: 0.4 };
+export function readablePx(eff) {
+  return eff < READABLE.knee ? eff + (READABLE.knee - eff) * READABLE.pull : eff;
+}
 export function pixelFont(weight, px, bold = false) {
   const b = bold || weight >= 900;
-  return `400 ${+(px * (b ? PIXEL_FIT.bold : PIXEL_FIT.body)).toFixed(2)}px ${b ? FONT_BOLD : FONT}`;
+  return `400 ${+readablePx(px * (b ? PIXEL_FIT.bold : PIXEL_FIT.body)).toFixed(2)}px ${b ? FONT_BOLD : FONT}`;
 }
 /* The two debug overlays (F9 placement tool, execDebug) stay monospace on
  * purpose: they print columns of numbers, and column alignment is the entire
@@ -689,17 +699,26 @@ export function drawSubtitleScroll(ctx, lines, t, band, o) {
   ctx.textAlign = 'left';
   const space = ctx.measureText(' ').width;
   const now = Math.round(p);
+  /* THE MATTE (request 563). With the larger type a line scrolling up out of the band reached the
+   * band's top edge with its glyphs half-cut — words spilling up out of the bar. Now a line fades out
+   * BEFORE its glyph tops can touch the clip, and a rising line fades in the same way at the bottom,
+   * so the band only ever shows whole words. */
+  const fh = +(/([\d.]+)px/.exec(o.font)?.[1] ?? 20);
+  const top = band.y + pad, bot = band.y + band.h, ramp = Math.max(4, o.lineH * 0.45);
+  const matte = (y) => Math.max(0, Math.min(1, (y - fh * 0.5 - top) / ramp, (bot - (y + fh * 0.5)) / ramp));
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (t < line.at - S.lead) continue;                // never shown before it starts to rise
     const y = cy + (i - p) * o.lineH;
     if (y < band.y - o.lineH || y > band.y + band.h + o.lineH) continue;
+    const m = matte(y);
+    if (m <= 0) continue;
     const widths = line.words.map(([w]) => ctx.measureText(w).width);
     let x = band.x + band.w / 2 - (widths.reduce((a, b) => a + b, 0) + space * (widths.length - 1)) / 2;
     const said = i < now;                              // scrolled past: dimmed
     line.words.forEach(([w, at], k) => {
       const lit = said || t >= at;
-      ctx.globalAlpha = alpha * (said ? 0.5 : lit ? 1 : 0.32);
+      ctx.globalAlpha = alpha * m * (said ? 0.5 : lit ? 1 : 0.32);
       ctx.fillStyle = lit && !said ? '#ffffff' : '#cfd8ea';
       ctx.fillText(w, x, y);
       x += widths[k] + space;
@@ -955,7 +974,9 @@ const CUES = {
    * different sounds. `rate` is applied by navScroll. */
   scroll: { src: '../frontend/audio/ui/ui-scroll.mp3', at: 0, len: 0.20, gain: 0.41 },      // "menu check"
   close: { src: '../frontend/audio/ui/ui-close.mp3', at: 0, len: 0.12, gain: 0.40 },        // "event screen X"
-  start: { src: '../frontend/audio/ui/ui-start.mp3', at: 0, len: 2.80, gain: 0.62 },        // "match start", textured (request 543)
+  /* Request 563: the textured "match start" (ui-start.mp3, request 543) is out. The level start
+   * plays the BACK take the player likes — the sound it had before request 540 replaced it. */
+  start: { src: '../frontend/audio/Fowardselection sound.mp3', at: 0.068, len: 0.34, gain: 0.68 },
   cancel: { src: '../frontend/audio/ui/ui-cancel.mp3', at: 0, len: 0.80, gain: 0.53 },      // "match cancel"
   slide: { src: '../frontend/audio/ui/ui-slide.mp3', at: 0, len: 1.00, gain: 0.47 },        // "screen slide"
   settings: { src: '../frontend/audio/ui/ui-settings.mp3', at: 0, len: 0.70, gain: 0.53 },  // "settings menu click"
@@ -3664,7 +3685,12 @@ export function createFrontEnd({
 
   /* A run of wrapped lines from a baseline. Returns the next free baseline, so
    * stacked paragraphs do not need hand-counted y values. */
+  /* Wrapped lines never overlap (request 563): the lifted small type can be taller than the
+   * line height a layout was tuned with, so a block's leading is at least 1.12x the drawn size. */
+  const fontPx = () => +(/([\d.]+)px/.exec(ctx.font)?.[1] ?? 12);
+  const leading = (lineH) => Math.max(lineH, fontPx() * 1.12);
   function textBlock(text, x, y, maxW, lineH) {
+    lineH = leading(lineH);
     const lines = wrapLines(text, maxW);
     for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], x, y + i * lineH);
     return y + lines.length * lineH;
@@ -3687,7 +3713,8 @@ export function createFrontEnd({
    *
    * Returns the next free baseline (as textBlock does) plus where the reveal
    * head is, so the caller can put a caret on it. */
-  function textBlockTyped(text, x, y, maxW, lineH, reveal) {
+  function textBlockTyped(text, x, y, maxW, lineH, reveal, lineAlpha = null) {
+    lineH = leading(lineH);
     const lines = wrapLines(text, maxW);
     const r = clamp(reveal, 0, 1);
     let total = lines.length - 1;                 // the breaks
@@ -3701,7 +3728,14 @@ export function createFrontEnd({
       const take = Math.min(line.length, shown - seen);
       const part = take === line.length ? line : line.slice(0, take);
       const ly = y + i * lineH;
-      ctx.fillText(part, x, ly);
+      // the scrolling window's matte (request 563): a line dissolves as it rises to the top edge
+      const la = lineAlpha ? lineAlpha(ly) : 1;
+      if (la < 1) {
+        const ga = ctx.globalAlpha;
+        ctx.globalAlpha = ga * la;
+        if (la > 0) ctx.fillText(part, x, ly);
+        ctx.globalAlpha = ga;
+      } else ctx.fillText(part, x, ly);
       out.drew = true;
       out.endX = x + ctx.measureText(part).width;
       out.endY = ly;
@@ -3946,7 +3980,9 @@ export function createFrontEnd({
     setFont(hero ? 700 : 600, hero ? 19 : 15.5, hero ? 2.2 : 1.5);
     ctx.fillStyle = tint;
     ctx.globalAlpha = disabled ? 0.55 : 1;
-    ctx.fillText(label, x + padX + (o.icon ? (hero ? 30 : 26) : 0), y + h / 2 + 0.5);
+    const labelX = x + padX + (o.icon ? (hero ? 30 : 26) : 0);
+    ctx.fillText(label, labelX, y + h / 2 + 0.5);
+    const labelEnd = labelX + ctx.measureText(label).width;     // the note must clear it (request 563)
     ctx.globalAlpha = 1;
 
     if (o.value) {
@@ -3959,6 +3995,10 @@ export function createFrontEnd({
     if (disabled && o.note) {
       ctx.textAlign = 'right';
       setFont(600, 10.5, 1.2);
+      // the lifted type (request 563) can reach the label: tighten, then smaller, then leave it out
+      const room = x + w - 18 - (labelEnd + 12);
+      if (ctx.measureText(o.note).width > room) setFont(600, 8, 0.2);
+      if (ctx.measureText(o.note).width > room) o = { ...o, note: '' };
       ctx.fillStyle = 'rgba(120,130,145,0.75)';
       ctx.fillText(o.note, x + w - 18, y + h / 2 + 0.5);
     }
@@ -4561,9 +4601,12 @@ export function createFrontEnd({
     setFont(700, 13, 2.2);
     ctx.fillStyle = 'rgba(232,226,214,0.62)';          // dimmed (request 540)
     ctx.fillText('DARKI', tx, y + 19);
-    setFont(600, 9.5, 1.6);
+    // laid out off the measured widths, so the lifted type never runs together (request 563)
+    const nameEnd = tx + ctx.measureText('DARKI').width;
+    setFont(600, 9.5, 0.6);
     ctx.fillStyle = C.muted;
-    ctx.fillText('LEVEL 1', tx + 64, y + 18.5);
+    const xpW = ctx.measureText('0 / 1000 XP').width, lvW = ctx.measureText('LEVEL 1').width;
+    if (nameEnd + 10 + lvW + 10 <= right - xpW) ctx.fillText('LEVEL 1', nameEnd + 10, y + 18.5);
     ctx.textAlign = 'right';
     ctx.fillStyle = 'rgba(233,182,84,0.62)';
     ctx.fillText('0 / 1000 XP', right, y + 18.5);
@@ -5530,12 +5573,14 @@ export function createFrontEnd({
   }
 
   function statBar(label, value, x, y) {
-    setFont(700, 10, 2.2);
+    setFont(700, 10, 1.2);
     ctx.fillStyle = C.muted;
     ctx.textAlign = 'left';
     ctx.fillText(label, x, y);
+    // the bars start past the WIDEST label, measured, so the lifted type never runs into them (request 563)
+    const col = Math.max(86, ctx.measureText('DEFENSE').width + 14);
     for (let i = 0; i < 5; i++) {
-      const bx = x + 86 + i * 27;
+      const bx = x + col + i * 27;
       roundRectPath(ctx, bx, y - 8, 20, 8, 2);
       ctx.fillStyle = i < value ? C.gold : 'rgba(255,255,255,0.10)';
       ctx.fill();
@@ -6046,7 +6091,7 @@ export function createFrontEnd({
      * cannot drift into each other. */
     if (isTouchUI()) {
       const bandH = settings.subtitles
-        ? Math.round(Math.round(20 * settings.subtitleSize) * 1.4) * 2 + 10 : 0;
+        ? Math.round(readablePx(Math.round(20 * settings.subtitleSize) * PIXEL_FIT.body) * 1.4) * 2 + 10 : 0;
       drawTapCue(ctx, W, H, introFallbackT, { inset: 32 + bandH });
     }
     ctx.textBaseline = 'alphabetic';
@@ -6058,7 +6103,7 @@ export function createFrontEnd({
        * top edge, words lighting as they are spoken. */
       const time = introTime();
       const fs = Math.round(20 * settings.subtitleSize);
-      const lineH = Math.round(fs * 1.4);
+      const lineH = Math.round(readablePx(fs * PIXEL_FIT.body) * 1.4);   // off the size really drawn (request 563)
       const bh = lineH * 2 + 10, bw = Math.min(W - 80, 980);
       const band = { x: (W - bw) / 2, y: H - 20 - bh, w: bw, h: bh };
       const subs = introSubs();
@@ -6125,6 +6170,9 @@ export function createFrontEnd({
    * DOSSIER and is wrapped at draw time, so a longer sentence grows a column
    * silently — this is what the harness reads to catch that. */
   const briefY = {};
+  /* The dossier's scrolling window (request 563): the type it is set in, and where it is scrolled to. */
+  const BRIEF_TYPE = { size: 15, px: readablePx(15 * PIXEL_FIT.body), lineH: 27, matte: 22 };
+  const briefScroll = { y: 0, headY: 0, contentH: 0, at: 0 };
 
   /* GO BACK first, START MISSION second — and the ORDER OF THIS LIST IS THE
    * ORDER ON SCREEN. That is the whole point of the arrangement: the row is
@@ -6574,26 +6622,50 @@ export function createFrontEnd({
      * reveal into whichever block is currently landing characters and stays at
      * the end of the last finished one through the pauses between them, so there
      * is exactly ONE caret on the page at any moment and it is never nowhere. */
-    let y = 338;
+    /* A READABLE DOSSIER THAT SCROLLS AS IT IS READ (request 563). The copy was 11 px so the
+     * whole file fitted the column — unreadable in the pixel face. It is now set large, inside
+     * a WINDOW between the DOSSIER rule and the pledge; the window follows the typing head down
+     * the page (eased, never jumping), and a MATTE at its top edge dissolves each line as it
+     * scrolls up, so nothing spills over the rule. */
+    const win = { top: 326, bot: (dossier().stamp ? BRIEF.stampY : 652) - 8 };
+    const winH = win.bot - win.top;
+    const now = clock, dt = clamp(now - briefScroll.at, 0, 0.1);
+    briefScroll.at = now;
+    if (briefT < 0.05) briefScroll.headY = 0;                   // a fresh file starts at its top
+    const target = clamp(briefScroll.headY + BRIEF_TYPE.lineH * 0.6 - winH, 0, Math.max(0, briefScroll.contentH - winH));
+    if (target < briefScroll.y - 2 || briefT < 0.05) briefScroll.y = target;      // a new file / a rewind: no slide
+    else briefScroll.y += (target - briefScroll.y) * Math.min(1, dt * 5);
+    const off = briefScroll.y;
+    const matte = (ly) => clamp((ly - BRIEF_TYPE.px * 0.9 - win.top) / BRIEF_TYPE.matte, 0, 1);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(l.x - 6, win.top, l.w + 26, winH);
+    ctx.clip();
+    const y0 = win.top + BRIEF_TYPE.lineH;
+    let y = y0 - off;
     let head = null;
     for (let i = 0; i < dossier().body.length; i++) {
-      setFont(500, 11, 0.1);
+      setFont(500, BRIEF_TYPE.size, 0.1);
       ctx.fillStyle = C.text;
-      const t = textBlockTyped(dossier().body[i], l.x, y, l.w, 15.5, briefReveal('body', i));
-      if (t.drew) head = { x: t.endX, y: t.endY, size: 11, typing: t.typing };
-      y = t.next + 8;
+      const t = textBlockTyped(dossier().body[i], l.x, y, l.w, BRIEF_TYPE.lineH, briefReveal('body', i), matte);
+      if (t.drew) head = { x: t.endX, y: t.endY, size: BRIEF_TYPE.px, typing: t.typing };
+      y = t.next + 10;
     }
     y += 12;
     for (let i = 0; i < dossier().call.length; i++) {
-      setFont(700, 11, 0.3);
+      setFont(700, BRIEF_TYPE.size, 0.3);
       ctx.fillStyle = C.gold;
-      const t = textBlockTyped(dossier().call[i], l.x, y, l.w, 16, briefReveal('call', i));
-      if (t.drew) head = { x: t.endX, y: t.endY, size: 11, typing: t.typing };
+      const t = textBlockTyped(dossier().call[i], l.x, y, l.w, BRIEF_TYPE.lineH, briefReveal('call', i), matte);
+      if (t.drew) head = { x: t.endX, y: t.endY, size: BRIEF_TYPE.px, typing: t.typing };
       y = t.next;
     }
+    briefScroll.contentH = y + off - win.top;                  // the whole file, unscrolled
+    if (head) briefScroll.headY = head.y + off - win.top;
     briefY.call = y;
+    briefY.scroll = off;
 
-    if (head) typeCaret(head.x, head.y, head.size, head.typing);
+    if (head && matte(head.y) > 0) typeCaret(head.x, head.y, head.size, head.typing);
+    ctx.restore();
 
     /* Static pledge: it is interface copy, not part of the briefing recording.
      * Nothing here reads briefT or clock, so it cannot type, pulse or drift. */

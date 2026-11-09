@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v114';
-import { createAftermath } from './aftermath.js?v=ratelrage-ui544-v1';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v123';
+import { createAftermath } from './aftermath.js?v=ratelrage-ui563-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -2904,7 +2904,9 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
    * is each frame's gap below its lowest ink, in drawn px; the draw adds it
    * back, so that lowest point always sits on his physical height. */
   const lifts = config.feetOnGround ? frames.map((f) => lowestInkGap(f)) : null;
-  return { frames, anchors, footAnchors, drawW, drawH, anims, hits, faces: config.faces ?? 1, sink, lifts };
+  // the cut, kept so a matching overlay (the rage beads, request 563) can be cut identically
+  const crop = { minX, minY, bw, bh, workW, workH: WORK_H, cols, rows };
+  return { frames, anchors, footAnchors, drawW, drawH, anims, hits, faces: config.faces ?? 1, sink, lifts, crop, src: config.src };
 }
 function lowestInkGap(frame) {
   const { width, height } = frame;
@@ -4794,10 +4796,21 @@ function updateBatPickup(dt) {
     spawnEmbers(BAT_PICKUP.x, BAT_PICKUP.y - BAT_PICKUP.hover - 40, 10, '#ffd27a', 60);
     return;
   }
+  // (collected only by a GRAB press in reach — consumeAttackInput -> collectBatPickup, request 563)
+}
+/* THE BAT IS TAKEN, NOT WALKED INTO (request 563). Walking through the floating bat used to
+ * put it in his hands; now he has to press GRAB while he stands at it. The press is spent on
+ * the bat (no grab whiff), and anywhere else GRAB is the grab as before. */
+function batPickupReachable() {
+  if (activeLevel === 2 || batPickup.taken || !batPickupSprite) return false;
   // One weapon at a time: armed, he walks straight through it.
-  if (player.weapon || !weaponsAllowed()) return;
-  if (player.state !== 'normal' || player.react || player.attack || player.jumpY < -40) return;
-  if (Math.abs(player.x - BAT_PICKUP.x) > BAT_PICKUP.reachX || Math.abs(player.y - BAT_PICKUP.y) > BAT_PICKUP.reachY) return;
+  if (player.weapon || !weaponsAllowed()) return false;
+  if (player.state !== 'normal' || player.react || player.jumpY < -40) return false;
+  if (player.attack && ATTACKS[player.attack]?.lock) return false;
+  return Math.abs(player.x - BAT_PICKUP.x) <= BAT_PICKUP.reachX && Math.abs(player.y - BAT_PICKUP.y) <= BAT_PICKUP.reachY;
+}
+function collectBatPickup() {
+  if (player.attack) endAttack();               // a jab in progress gives way to the take
   batPickup.taken = true;
   batPickup.flash = 0.35;
   const bat = createWeapon('bat', player);
@@ -4848,6 +4861,19 @@ function drawBatPickup() {
   ctx.globalAlpha = 1;
   ctx.drawImage(img, -batPickupSprite.anchors[f], -h);
   ctx.restore();
+  // in reach: say which button takes it (request 563 — it is no longer walked into)
+  if (batPickupReachable()) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = pixelFont(900, 18);
+    ctx.globalAlpha = 0.75 + 0.25 * pulse;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillText('GRAB', sx + 2, BAT_PICKUP.y - lift - h - 16 + 2);
+    ctx.fillStyle = '#8cdcff';
+    ctx.fillText('GRAB', sx, BAT_PICKUP.y - lift - h - 16);
+    ctx.restore();
+  }
 }
 
 function clearMachetesOf(owner) {
@@ -6448,6 +6474,97 @@ function applyGameplaySettings(difficulty, settings) {
 const LEVEL_MUSIC_SRCS = ['../music/bg1.mp3', '../music/bg2.mp3'];
 const MUSIC_VOL = 0.5, MUSIC_FADE = 6;
 
+/* ============================================ LEVEL 02's OWN SCORE (request 563)
+ *
+ * music/level2.mp3 (the supplied level_2.mp3, 87.7 s, ~104.7 BPM) replaces the bg1/bg2 playlist
+ * on Level 02, and it is MIXED to the level rather than played and repeated:
+ *
+ *   INTRO   0 -> 45.45 s plays once from the start of the level (the sparse open and the build);
+ *   LOOP    45.45 -> 63.79 s, the full section, loops for as long as the fight lasts. 18.34 s is
+ *           the track's own 32-beat phrase (the strongest long-lag periodicity in the section,
+ *           _chromakey/req563/l2lag.js), so the wrap lands on the same beat of the same bar;
+ *   ENDING  when the level's ending begins (the last body down: the ending leaves 'hold'), the
+ *           next BAR LINE of the loop cuts to 72.96 s — 48 beats after the loop's start, so the
+ *           bar phase is unchanged — and the track plays out: its drop, its last climax and its
+ *           own tail, to its real last note at 87.7 s. Nothing fades it or cuts it short.
+ *
+ * Web Audio rather than the <audio> element, because a loop and a bar-line cut have to be
+ * sample-accurate to be seamless. It rides a gain of its own (never the SFX slider) that
+ * follows exactly the same fade and settings as the playlist (musicVol), and it dips under
+ * Level 02's spoken lines so the voice always sits on top. */
+const L2_MUSIC = {
+  src: 'music/level2.mp3', loopStart: 45.451, loopEnd: 63.788, ending: 72.958,
+  bar: 4 * 60 / 104.69, xfade: 0.03, duck: 0.55, duckRate: 2.5,
+};
+const l2Music = { buf: null, loading: false, src: null, gain: null, startedAt: 0, released: false, ended: false, duck: 1, pending: false, cuts: 0 };
+const l2MusicOn = () => activeLevel === 2 && !!audioCtx;
+function loadL2Music() {
+  if (l2Music.buf || l2Music.loading || !audioCtx) return;
+  l2Music.loading = true;
+  loadSound(L2_MUSIC.src).then((b) => { l2Music.buf = b; l2Music.loading = false; });
+}
+function stopL2Music() {
+  try { l2Music.src?.stop(); } catch {}
+  l2Music.src = null; l2Music.pending = false; l2Music.released = false; l2Music.ended = false;
+}
+function playL2Music() {
+  if (!l2Music.buf) { l2Music.pending = true; loadL2Music(); return; }
+  stopL2Music();
+  if (!l2Music.gain) { l2Music.gain = audioCtx.createGain(); l2Music.gain.connect(audioCtx.destination); }
+  l2Music.gain.gain.value = musicVol;
+  const s = audioCtx.createBufferSource();
+  s.buffer = l2Music.buf;
+  s.loop = true; s.loopStart = L2_MUSIC.loopStart; s.loopEnd = L2_MUSIC.loopEnd;
+  s.connect(l2Music.gain);
+  s.onended = () => { if (l2Music.src === s) { l2Music.ended = true; l2Music.src = null; } };
+  l2Music.startedAt = audioCtx.currentTime;
+  s.start();
+  l2Music.src = s;
+}
+/* Where the loop's playhead is, in track seconds (for the bar-line cut and the harness). */
+function l2MusicPos(at = audioCtx?.currentTime ?? 0) {
+  const t = at - l2Music.startedAt, { loopStart: a, loopEnd: b } = L2_MUSIC;
+  return t < b ? t : a + ((t - a) % (b - a));
+}
+/* The ending: on the loop's next bar line, hand over to the track's own close. */
+function releaseL2Music() {
+  if (l2Music.released || !l2Music.src || !audioCtx) return;
+  l2Music.released = true;
+  const now = audioCtx.currentTime, pos = l2MusicPos(now);
+  // the next bar line on the track's grid (it runs back through the intro at the same tempo)
+  const into = (((pos - L2_MUSIC.loopStart) % L2_MUSIC.bar) + L2_MUSIC.bar) % L2_MUSIC.bar;
+  let wait = L2_MUSIC.bar - into;
+  if (wait < 0.12) wait += L2_MUSIC.bar;                                // never a cut we cannot schedule cleanly
+  const at = now + wait, x = L2_MUSIC.xfade;
+  const old = l2Music.src;
+  const og = audioCtx.createGain(); og.gain.value = 1;
+  try { old.disconnect(); } catch {}
+  old.connect(og); og.connect(l2Music.gain);
+  og.gain.setValueAtTime(1, at - x); og.gain.linearRampToValueAtTime(0, at);
+  try { old.stop(at + 0.01); } catch {}
+  const s = audioCtx.createBufferSource();
+  s.buffer = l2Music.buf;
+  const ng = audioCtx.createGain();
+  ng.gain.setValueAtTime(0, at - x); ng.gain.linearRampToValueAtTime(1, at);
+  s.connect(ng); ng.connect(l2Music.gain);
+  s.onended = () => { if (l2Music.src === s) { l2Music.ended = true; l2Music.src = null; } };
+  s.start(at - x, L2_MUSIC.ending - x);
+  l2Music.src = s;
+  l2Music.cuts++;
+  l2Music.cutAt = +at.toFixed(3); l2Music.cutFrom = +l2MusicPos(at).toFixed(3);
+}
+function updateL2Music(dt) {
+  if (!l2MusicOn()) return;
+  if (l2Music.pending && l2Music.buf) { l2Music.pending = false; playL2Music(); }
+  // the ending begins when the last man is down and the scene takes over
+  if (waveState === 'l2ending' && l2m.ePhase !== 'hold') releaseL2Music();
+  // under a spoken line the score steps back
+  const talking = !!l2m.vo || levelEntry.active;
+  const want = talking ? L2_MUSIC.duck : 1;
+  l2Music.duck += Math.sign(want - l2Music.duck) * Math.min(Math.abs(want - l2Music.duck), L2_MUSIC.duckRate * dt);
+  if (l2Music.gain) l2Music.gain.gain.value = Math.max(0, Math.min(1, musicVol * l2Music.duck));
+}
+
 function setMusicTrack(index, playNow = false) {
   if (!musicEl) return;
   musicTrack = (index + LEVEL_MUSIC_SRCS.length) % LEVEL_MUSIC_SRCS.length;
@@ -6464,6 +6581,7 @@ function setMusicTrack(index, playNow = false) {
 const musicLife = {};                  // keepMediaAlive's state for the level music
 
 function resetMusicPlaylist() {
+  stopL2Music();                        // Level 02's score too (request 563)
   if (!musicEl) return;
   musicEl.pause();
   musicVol = 0;
@@ -6488,19 +6606,23 @@ function startMusic() {
   if (musicStarted || !musicEl) return;
   musicStarted = true;
   musicVol = 0.03;
+  if (l2MusicOn()) { playL2Music(); return; }   // Level 02 has its own score (request 563)
   musicEl.volume = musicVol;
   const pr = musicEl.play();
   if (pr?.catch) pr.catch(() => {});   // retried by updateMusic (request 347)
 }
 function updateMusic(dt) {
   if (!musicEl || !musicStarted) return;
+  const l2 = l2MusicOn();
   // Android can pause or stall the element at any moment; put it back (request 347).
-  keepMediaAlive(musicEl, musicLife, dt, true);
+  if (!l2) keepMediaAlive(musicEl, musicLife, dt, true);
+  else if (!musicEl.paused) musicEl.pause();          // never the playlist under Level 02's score
   const target = audioMuted ? 0 : MUSIC_VOL * musicSetting;
   const rate = MUSIC_VOL / MUSIC_FADE;
   if (musicVol < target) musicVol = Math.min(target, musicVol + rate * dt);
   else if (musicVol > target) musicVol = Math.max(target, musicVol - rate * 2 * dt);
   musicEl.volume = Math.max(0, Math.min(1, musicVol));
+  if (l2) updateL2Music(dt);
 }
 // Fire the impact trio at (x,y). `hitStop`/`shake` default to the tuned values;
 // callers scale them per attack weight so a jab and an uppercut feel different.
@@ -6509,7 +6631,8 @@ function triggerHitFx(x, y, hitStop = tune.hitStop, shake = tune.shakeMag, big =
   shakeDur = 0.16;
   shakeTimer = shakeDur;
   shakeMag = Math.max(shakeMag * (shakeTimer > 0 ? 1 : 0), shake);
-  sparks.push({ x, y, age: 0, dur: big ? 0.3 : 0.22, big });
+  // (no splash here any more — request 563: the impact sprite is placed by strikeImpact at the
+  // limb's contact point on the man; this helper also fires for blows ON Darki, falls and glints)
   rings.push({ x, y, age: 0, dur: big ? 0.4 : 0.26, r0: big ? 20 : 10, r1: big ? 120 : 64 });
   rumbleImpact(hitStop, shake, big);
 }
@@ -6547,6 +6670,30 @@ function spawnEmbers(x, y, n, color, spread = 40) {
   }
 }
 
+/* A MAN'S BLOOD, IN FLIGHT (request 561). A body thrown across the street used to
+ * trail gold ENERGY — the same ember particles as a rage aura, drifting up. The
+ * DYNAMICS are kept exactly as they were: the same one-per-step cadence, the same
+ * spread around the body, the same life. What changed is what comes off him. These
+ * are droplets, not embers: they start with the throw and then FALL under their own
+ * weight instead of floating, and they are drawn small, round and wet — the same
+ * blood the rest of the game bleeds, not a power-up.
+ *
+ * They ride the existing `embers` buffer rather than opening a second particle
+ * system, so there is one update loop and one draw loop for all of it. */
+function spawnBloodTrail(x, y, n, power = 0.5, spread = 40) {
+  const hi = fxRng() < 0.35 + power * 0.4;          // the harder the throw, the more bright red
+  const col = hi ? (fxRng() < 0.5 ? '#e5172c' : '#c8001c') : '#93001a';
+  const k = spread / 40;                            // a wider burst also throws them faster
+  for (let i = 0; i < n; i++) {
+    embers.push({
+      x: x + (fxRng() - 0.5) * spread, y: y - fxRng() * 34,
+      vx: (fxRng() - 0.5) * 70 * k, vy: (-20 - fxRng() * 70) * k,
+      age: 0, dur: 0.45 + fxRng() * 0.45, color: col,
+      blood: true, s: 2 + Math.round(fxRng() * 2 + power * 1.5),
+    });
+  }
+}
+
 // Advances even during hit-stop so sparks/shake/flash keep playing while frozen.
 function advanceFx(dt) {
   /* Ages the speed trail alongside every other effect — and unconditionally, so
@@ -6558,7 +6705,7 @@ function advanceFx(dt) {
     stopGlide();
   updateDamageFx(dt);                    // the danger dim and the blood (request 483)
   updateGore(dt);                        // the blow's blood: drops, splash, stains (request 552)
-  rageFlare = Math.max(0, rageFlare - dt);   // the rage flame's ignition flare dies down
+  solidReactUpdate(dt);                  // the parked line ringing back to rest (request 563)
   if (shakeTimer > 0) shakeTimer -= dt;
   if (flashTimer > 0) flashTimer -= dt;
   for (let i = sparks.length - 1; i >= 0; i--)
@@ -6567,7 +6714,8 @@ function advanceFx(dt) {
     if ((rings[i].age += dt) >= rings[i].dur) rings.splice(i, 1);
   for (let i = embers.length - 1; i >= 0; i--) {
     const e = embers[i];
-    e.age += dt; e.x += e.vx * dt; e.y += e.vy * dt; e.vy += 60 * dt;
+    e.age += dt; e.x += e.vx * dt; e.y += e.vy * dt;
+    e.vy += (e.blood ? 900 : 60) * dt;            // droplets fall; embers only drift (request 561)
     if (e.age >= e.dur) embers.splice(i, 1);
   }
 }
@@ -6578,130 +6726,180 @@ function shakeOffset() {
   return { sx: Math.sin(shakeTimer * 130) * a, sy: Math.cos(shakeTimer * 97) * a * 0.6 };
 }
 
+/* ------------------------------------------------------ THE HIT IMPACT (request 563)
+ *
+ * The supplied sprite (sprites/hit-impact.png, 3x2 cells of 341 px, 5 frames: a hot orange
+ * burst, its bloom, then three frames of dark smoke breaking up), played once at 26 fps. It
+ * replaces the four drawn candidates (request 567).
+ *
+ * WHERE IT GOES is the point of the request: ONLY where Darki's fist or foot (or the weapon in
+ * his hand) meets a man — never on Darki, never on a fall, a wall or a pickup glint. The spot
+ * is the struck man's NEAR SURFACE (the side facing Darki) at the height the blow arrives:
+ * the face for fists, the chest/torso for kicks, kept inside the attack's own reach box so
+ * it can never land behind him. strikeImpact() computes it; nothing else pushes one. */
+const IMPACT = { fps: 26, frames: 5, cell: 341, cols: 3, scale: 0.44, bigScale: 0.6, surface: 0.11, max: 24 };
+let impactImg = null;
+function impactSheet() {
+  if (impactImg) return impactImg.complete && impactImg.naturalWidth ? impactImg : null;
+  impactImg = new Image();
+  impactImg.src = 'sprites/hit-impact.png';
+  return null;
+}
+impactSheet();                                   // start the load now: the first blow must not miss it
+/* Where a blow from `src` (Darki) lands on `e`. `win` is the attack window (its `box` is the reach,
+ * relative to his feet and facing); `kind` 'fist' | 'kick' | 'face'. */
+function strikeContact(e, win, src = player, kind = 'fist') {
+  const F = enemyFacePoints(e);
+  const edir = e.facing >= 0 ? 1 : -1;
+  const centreX = e.x - edir * F.h * FACE.bodyOffset;                 // the drawn body's middle
+  const side = Math.sign(centreX - src.x) || (src.facing >= 0 ? 1 : -1);   // he is this side of Darki
+  let x = centreX - side * F.h * IMPACT.surface;                      // the near surface
+  let y = kind === 'kick' ? F.chest.y : kind === 'face' ? F.nose.y : (F.nose.y * 0.7 + F.chest.y * 0.3);
+  const box = win?.box;
+  if (box) {
+    const f = (src.facing >= 0 ? 1 : -1) * (box.back ? -1 : 1);   // a back kick reaches behind him
+    const bx0 = src.x + f * box.x, bx1 = src.x + f * (box.x + box.w);
+    const top = src.y + (src.jumpY || 0) + box.top, bot = top + box.h;
+    x = Math.max(Math.min(bx0, bx1), Math.min(Math.max(bx0, bx1), x));
+    const feet = e.y + (e.jumpY || 0);
+    y = Math.max(Math.max(top, feet - F.h), Math.min(Math.min(bot, feet - 10), y));
+  }
+  return { x, y, dir: side };
+}
+function strikeImpact(e, win, src = player, kind = 'fist', big = false) {
+  if (!e || src !== player) return null;
+  const c = strikeContact(e, win, src, kind);
+  if (sparks.length >= IMPACT.max) sparks.shift();
+  sparks.push({ x: c.x, y: c.y, age: 0, dur: IMPACT.frames / IMPACT.fps, big, dir: c.dir, kind, rot: (fxRng() - 0.5) * 0.5 });
+  impactCount++;
+  lastImpact = { x: Math.round(c.x), y: Math.round(c.y), kind, attack: player.attack, ex: Math.round(e.x), ey: Math.round(e.y), px: Math.round(player.x), py: Math.round(player.y) };
+  return c;
+}
+let impactCount = 0, lastImpact = null;
+/* Fist or foot: a window that swings as a boot (every kick, and the weapons, which strike at
+ * body height) lands on the torso; everything else is a fist to the face. */
+const strikeKind = (win) => (win?.swing === 'kick' ? 'kick' : 'fist');
+function drawHitSplash(s) {
+  const img = impactSheet();
+  if (!img) return;
+  const f = Math.min(IMPACT.frames - 1, Math.floor((s.age / s.dur) * IMPACT.frames));
+  const sx = (f % IMPACT.cols) * IMPACT.cell, sy = Math.floor(f / IMPACT.cols) * IMPACT.cell;
+  const k = s.big ? IMPACT.bigScale : IMPACT.scale, w = IMPACT.cell * k;
+  ctx.save();
+  ctx.translate(s.x - cameraX, s.y);
+  ctx.rotate(s.rot || 0);
+  ctx.scale(s.dir < 0 ? -1 : 1, 1);
+  // the cells carry a one-pixel seam at their edges: sample 2 px inside each
+  ctx.drawImage(img, sx + 2, sy + 2, IMPACT.cell - 4, IMPACT.cell - 4, -w / 2, -w / 2, w, w);
+  ctx.restore();
+}
+
 function drawSparks() {
-  // (the expanding white ring is retired: the reference impact is the pixel starburst below — request 552)
+  // the impact sprite at each limb's contact point (request 563); blood and embers are separate
+  for (const s of sparks) drawHitSplash(s);
   for (const e of embers) {
     const p = e.age / e.dur;
+    if (e.blood) {
+      // a droplet, not a spark: round, shrinking as it dries (request 561)
+      ctx.globalAlpha = (1 - p) * 0.95;
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.arc(e.x - cameraX, e.y, Math.max(0.6, e.s * (1 - p * 0.45)), 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
     ctx.globalAlpha = 1 - p;
     ctx.fillStyle = e.color;
     ctx.beginPath();
     ctx.arc(e.x - cameraX, e.y, (1 - p) * 4 + 1, 0, Math.PI * 2);
     ctx.fill();
   }
-  /* THE IMPACT: the reference's pixel starburst (request 552) — orange star, yellow star,
-   * white-hot core, a red pixel in its heart. It snaps open big and is gone in ~0.2 s. */
-  const T = goreTextures();
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  for (const s of sparks) {
-    const life = s.big ? GORE.burstLifeBig : GORE.burstLife;
-    const p = Math.min(1, s.age / life);
-    if (p >= 1) continue;
-    const tex = T.bursts[(s.v ??= Math.floor(Math.random() * T.bursts.length))];
-    const k = GORE.burstPx * (s.big ? 1.45 : 1) * (p < 0.3 ? 0.7 + p : 1);
-    const w = Math.round(tex.width * k);
-    ctx.globalAlpha = p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
-    ctx.drawImage(tex, Math.round(s.x - cameraX - w / 2), Math.round(s.y - w / 2), w, w);
-  }
-  ctx.restore();
   drawGoreAir();                             // the splash and the flying drops, over the bodies
   ctx.globalAlpha = 1;
 }
 
-/* ============================== BLOOD AND IMPACT, THE REFERENCE WAY (request 552)
+/* ============================== BLOOD AND IMPACT (request 552, reworked 559/560)
  *
- * The reference video's blow: an orange-and-yellow pixel STARBURST at the point of contact
- * with a white-hot core and a red pixel in its heart, and a spray of small chunky PIXEL
- * droplets (bright red, deep red, near-black) bursting out of it away from the blow — they
- * arc, fall and are gone in well under a second. The motion and the amount are copied.
- * Two things are added on request: a few drops LAND and stay on the ground for a while (pixel
- * stains at the struck body's own depth row, fading out), and the splash itself has a real
- * SHAPE — a pixel splat (blob, tapered spurs flung along the blow, satellite drops) that bursts
- * for a fraction of a second. All of it is pixel art: drawn at low resolution once, then
- * scaled up with smoothing off, so it sits with the sprites instead of looking vector-drawn. */
+ * NO IMPACT STARBURST (request 560): the orange-and-yellow pixel star that used to snap open
+ * at every contact point is gone — draw code, textures and tuning. The blood is the impact
+ * now: a splat and a spray, and nothing else painted over the blow.
+ *
+ * THE BLOOD IS PAINTED, NOT PIXELLATED (request 559): the droplets are round, the splash is a
+ * soft-edged splat and the stains on the road are soft puddles, all drawn at full resolution
+ * with smoothing on. The motion, the amount and the colours are the same as request 552 — only
+ * the rendering changed, so the spray reads as liquid instead of chunky blocks. */
 const GORE = {
   drops: [12, 22], heavyMul: 1.6, life: [0.35, 0.8], speed: [170, 560], up: [120, 420], gravity: 1500,
   sizes: [2, 3, 3, 4, 4, 5], colors: ['#c8001c', '#93001a', '#e5172c', '#5c000e', '#b0001a'],
   stainChance: 0.3, stainLife: 7, stainFade: 1.8, maxDrops: 380, maxStains: 90,
-  splatLife: 0.2, splatPx: 1.3, stainPx: 2, burstLife: 0.16, burstLifeBig: 0.22, burstPx: 3,
+  // splatPx / stainPx are relative to the SOFT textures (128 px splat, 56x28 stain): each keeps the
+  // on-screen size the old 44 px / 14x7 pixel art had, so the spray covers the same ground as before.
+  splatLife: 0.2, splatPx: 0.45, stainPx: 0.5,
 };
+/* The splat texture's contact point (the blow itself, body of the splat); drawGoreAir anchors it. */
+const SPLAT_CENTRE = { x: 46, y: 64 };
 const goreDrops = [], goreStains = [], goreSplats = [];
 let goreTex = null;
-/* Low-res shapes, alpha thresholded to hard pixels. */
+/* Soft shapes at full resolution. */
 function goreTextures() {
   if (goreTex) return goreTex;
   const rnd = mulberry32(552);
-  const crisp = (c) => {
-    const g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height);
-    for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] >= 110 ? 255 : 0;
-    g.putImageData(d, 0, 0);
-    return c;
-  };
-  // the SPLAT: a blob with spurs flung toward +x (drawn rotated to the blow) and drops past their tips
+  // the SPLAT: a soft blob with spurs flung toward +x (drawn rotated to the blow) and beads past their tips
   const splats = [];
   for (let v = 0; v < 6; v++) {
-    const S = 44, c = makeCanvas(S, S), g = c.getContext('2d');
-    const cx = 16, cy = S / 2;
-    g.fillStyle = '#9a0018';
-    for (let k = 0; k < 5; k++) { g.beginPath(); g.arc(cx + (rnd() - 0.3) * 6, cy + (rnd() - 0.5) * 6, 4 + rnd() * 3.5, 0, Math.PI * 2); g.fill(); }
+    const S = 128, c = makeCanvas(S, S), g = c.getContext('2d');
+    const cx = SPLAT_CENTRE.x, cy = SPLAT_CENTRE.y;
+    const blob = (bx, by, r) => {
+      const rg = g.createRadialGradient(bx, by, r * 0.15, bx, by, r);
+      rg.addColorStop(0, 'rgba(150,0,24,0.97)');
+      rg.addColorStop(0.6, 'rgba(128,0,20,0.92)');
+      rg.addColorStop(1, 'rgba(92,0,15,0)');
+      g.fillStyle = rg;
+      g.beginPath(); g.arc(bx, by, r, 0, Math.PI * 2); g.fill();
+    };
+    for (let k = 0; k < 7; k++) blob(cx + (rnd() - 0.45) * 12, cy + (rnd() - 0.5) * 14, 9 + rnd() * 8);
     const spurs = 6 + Math.floor(rnd() * 4);
     for (let k = 0; k < spurs; k++) {
-      const a = (rnd() - 0.5) * Math.PI * (k < 2 ? 0.5 : 1.7), len = 9 + rnd() * (Math.cos(a) > 0 ? 17 : 8);
-      const w0 = 3 + rnd() * 1.6;
+      const a = (rnd() - 0.5) * Math.PI * (k < 2 ? 0.5 : 1.7), len = 16 + rnd() * (Math.cos(a) > 0 ? 40 : 22);
       const ex = cx + Math.cos(a) * len, ey = cy + Math.sin(a) * len;
-      const nx = -Math.sin(a), ny = Math.cos(a);
-      g.beginPath();
-      g.moveTo(cx + nx * w0, cy + ny * w0);
-      g.lineTo(ex + nx * 0.6, ey + ny * 0.6);
-      g.lineTo(ex - nx * 0.6, ey - ny * 0.6);
-      g.lineTo(cx - nx * w0, cy - ny * w0);
-      g.closePath(); g.fill();
-      g.beginPath(); g.arc(ex, ey, 1.3 + rnd() * 1.2, 0, Math.PI * 2); g.fill();          // the spur's bead
-      if (rnd() < 0.7) { g.beginPath(); g.arc(ex + Math.cos(a) * (3 + rnd() * 4), ey + Math.sin(a) * (3 + rnd() * 4), 1 + rnd(), 0, Math.PI * 2); g.fill(); }
+      const lg = g.createLinearGradient(cx, cy, ex, ey);
+      lg.addColorStop(0, 'rgba(140,0,22,0.95)');
+      lg.addColorStop(1, 'rgba(120,0,19,0.30)');
+      g.strokeStyle = lg; g.lineWidth = 5 + rnd() * 3; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(ex, ey); g.stroke();
+      g.fillStyle = 'rgba(128,0,20,0.78)';                                      // the spur's bead
+      g.beginPath(); g.arc(ex, ey, 2.4 + rnd() * 2.2, 0, Math.PI * 2); g.fill();
+      if (rnd() < 0.7) { g.beginPath(); g.arc(ex + Math.cos(a) * (5 + rnd() * 8), ey + Math.sin(a) * (5 + rnd() * 8), 1.6 + rnd() * 1.8, 0, Math.PI * 2); g.fill(); }
     }
-    crisp(c);
-    // a wet highlight and a dark rim, in pixels
-    const g2 = c.getContext('2d');
-    g2.globalCompositeOperation = 'source-atop';
-    g2.fillStyle = '#d8132a';
-    for (let k = 0; k < 4; k++) g2.fillRect(cx - 4 + Math.floor(rnd() * 6), cy - 4 + Math.floor(rnd() * 4), 2, 1 + Math.floor(rnd() * 2));
-    g2.fillStyle = '#5e000f';
-    g2.fillRect(cx - 2, cy + 3, 6, 2);
+    // a wet sheen, soft, only where there is blood
+    g.globalCompositeOperation = 'source-atop';
+    const hi = g.createRadialGradient(cx - 9, cy - 12, 2, cx - 9, cy - 12, 30);
+    hi.addColorStop(0, 'rgba(255,96,108,0.26)'); hi.addColorStop(1, 'rgba(255,96,108,0)');
+    g.fillStyle = hi; g.fillRect(0, 0, S, S);
+    g.globalCompositeOperation = 'source-over';
     splats.push(c);
   }
-  // the STARBURST: orange star, yellow star, white-hot core, red heart
-  const bursts = [];
-  for (let v = 0; v < 4; v++) {
-    const S = 28, c = makeCanvas(S, S), g = c.getContext('2d'), m = S / 2;
-    const star = (n, r0, r1, rot, col) => {
-      g.fillStyle = col; g.beginPath();
-      for (let i = 0; i < n * 2; i++) {
-        const r = i % 2 ? r0 : r1 * (0.75 + rnd() * 0.35), a = rot + i * Math.PI / n;
-        i ? g.lineTo(m + Math.cos(a) * r, m + Math.sin(a) * r) : g.moveTo(m + Math.cos(a) * r, m + Math.sin(a) * r);
-      }
-      g.closePath(); g.fill();
-    };
-    const rot = rnd() * Math.PI;
-    star(8, 5, 13, rot, '#ff6a14');
-    star(8, 3.5, 9, rot + 0.2, '#ffc12e');
-    g.fillStyle = '#fff6c8'; g.beginPath(); g.arc(m, m, 3.6, 0, Math.PI * 2); g.fill();
-    crisp(c);
-    c.getContext('2d').fillStyle = '#e3201c';
-    c.getContext('2d').fillRect(m - 1, m - 1, 2, 2);
-    bursts.push(c);
-  }
-  // the STAINS on the ground: small flat pixel puddles
+  // the STAINS on the ground: soft puddles
   const stains = [];
   for (let v = 0; v < 6; v++) {
-    const c = makeCanvas(14, 7), g = c.getContext('2d');
-    g.fillStyle = '#6e0012';
-    for (let k = 0; k < 3 + Math.floor(rnd() * 3); k++) { g.beginPath(); g.ellipse(7 + (rnd() - 0.5) * 6, 3.5 + (rnd() - 0.5) * 2, 1.6 + rnd() * 2.4, 1 + rnd() * 1.1, 0, 0, Math.PI * 2); g.fill(); }
-    crisp(c);
-    const g2 = c.getContext('2d'); g2.globalCompositeOperation = 'source-atop';
-    g2.fillStyle = '#9c0019'; g2.fillRect(5, 2, 3, 1);
+    const W = 56, H = 28, c = makeCanvas(W, H), g = c.getContext('2d');
+    for (let k = 0; k < 3 + Math.floor(rnd() * 3); k++) {
+      const bx = W / 2 + (rnd() - 0.5) * 26, by = H / 2 + (rnd() - 0.5) * 10;
+      const rx = 4 + rnd() * 9, ry = Math.max(2, rx * (0.35 + rnd() * 0.25));
+      const rg = g.createRadialGradient(bx, by, 1, bx, by, rx);
+      rg.addColorStop(0, 'rgba(116,0,19,0.92)');
+      rg.addColorStop(0.65, 'rgba(96,0,16,0.85)');
+      rg.addColorStop(1, 'rgba(78,0,13,0)');
+      g.fillStyle = rg;
+      g.beginPath(); g.ellipse(bx, by, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    }
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = 'rgba(190,20,40,0.18)';
+    g.beginPath(); g.ellipse(W / 2 - 6, H / 2 - 3, 5, 1.6, 0, 0, Math.PI * 2); g.fill();
+    g.globalCompositeOperation = 'source-over';
     stains.push(c);
   }
-  goreTex = { splats, bursts, stains };
+  goreTex = { splats, stains };
   return goreTex;
 }
 /* A blow landed at (x, y) on a body whose feet are on `groundY`, travelling `dir` (+1 right). */
@@ -6746,7 +6944,7 @@ function drawGoreStains() {
   if (!goreStains.length) return;
   const T = goreTextures(), G = GORE;
   ctx.save();
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = true;                 // soft puddles (request 559)
   for (const s of goreStains) {
     const sx = s.x - cameraX;
     if (sx < -60 || sx > viewW() + 60) continue;
@@ -6762,23 +6960,32 @@ function drawGoreAir() {
   if (!goreDrops.length && !goreSplats.length) return;
   const T = goreTextures(), G = GORE;
   ctx.save();
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = true;                 // soft splash (request 559)
   for (const s of goreSplats) {
     const p = s.age / G.splatLife;
     const tex = T.splats[s.v], k = G.splatPx * (s.big ? 1.15 : 1) * (0.55 + 0.6 * Math.min(1, p * 2.4));
     ctx.globalAlpha = p < 0.55 ? 1 : Math.max(0, 1 - (p - 0.55) / 0.45);
     ctx.save();
-    ctx.translate(Math.round(s.x - cameraX), Math.round(s.y));
+    ctx.translate(s.x - cameraX, s.y);
     ctx.scale(s.dir < 0 ? -1 : 1, 1);
     ctx.rotate(s.rot);
-    ctx.drawImage(tex, Math.round(-16 * k), Math.round(-tex.height * k / 2), Math.round(tex.width * k), Math.round(tex.height * k));
+    ctx.drawImage(tex, -SPLAT_CENTRE.x * k, -SPLAT_CENTRE.y * k, tex.width * k, tex.height * k);
     ctx.restore();
   }
   ctx.globalAlpha = 1;
   for (const d of goreDrops) {
     const sz = d.age > d.dur * 0.7 ? Math.max(1, d.s - 1) : d.s;
+    const r = sz / 2;                                // ROUND droplets, anti-aliased (request 559)
     ctx.fillStyle = d.c;
-    ctx.fillRect(Math.round(d.x - cameraX - sz / 2), Math.round(d.y - sz / 2), sz, sz);
+    ctx.beginPath();
+    ctx.arc(d.x - cameraX, d.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    if (sz >= 4) {                                   // a wet glint on the bigger ones
+      ctx.fillStyle = 'rgba(255,150,150,0.45)';
+      ctx.beginPath();
+      ctx.arc(d.x - cameraX - r * 0.3, d.y - r * 0.35, Math.max(0.6, r * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
 }
@@ -6853,20 +7060,10 @@ function bloodTextures() {
     h.addColorStop(0, 'rgba(255,90,80,0.28)'); h.addColorStop(1, 'rgba(255,90,80,0)');
     x.fillStyle = h; x.fillRect(0, 0, S, S);
     x.globalCompositeOperation = 'source-over';
-    /* PIXELATED (request 552), so the lens blood belongs to the same pixel world as the HUD and
-     * the blow's splash: the soft splat is resampled to 64 px, alpha cut hard and its reds
-     * snapped to three tones; drawn with smoothing off it lands in chunky 3-5 px pixels. */
-    const lo = makeCanvas(64, 64), lg = lo.getContext('2d', { willReadFrequently: true });
-    lg.drawImage(c, 0, 0, 64, 64);
-    const d = lg.getImageData(0, 0, 64, 64), px = d.data;
-    for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] < 100) { px[i + 3] = 0; continue; }
-      const r = px[i];
-      const [R, G, B] = r > 150 ? [200, 0, 28] : r > 100 ? [142, 0, 19] : [92, 0, 14];
-      px[i] = R; px[i + 1] = G; px[i + 2] = B; px[i + 3] = 235;
-    }
-    lg.putImageData(d, 0, 0);
-    bloodTex.push(lo);
+    /* SOFT AGAIN (request 559): the request-552 64 px / hard-alpha / three-tone resample is gone.
+     * The lens blood is a painted splat at full 256 px resolution, drawn with smoothing on, so it
+     * stays out of focus in front of the camera instead of sharing the pixel grid with the HUD. */
+    bloodTex.push(c);
   }
   return bloodTex;
 }
@@ -6929,7 +7126,7 @@ function drawDamageFx() {
       const fade = b.age < BLOOD.hold ? 1 : 1 - (b.age - BLOOD.hold) / (BLOOD.life - BLOOD.hold);
       const pop = Math.min(1, 0.82 + b.age / 0.08 * 0.18);
       ctx.save();
-      ctx.imageSmoothingEnabled = false;            // chunky pixels (request 552)
+      ctx.imageSmoothingEnabled = true;             // soft lens blood (request 559, pre-552)
       ctx.globalAlpha = BLOOD.alpha * Math.max(0, fade);
       ctx.translate(b.x, b.y);
       ctx.rotate(b.rot);
@@ -9440,6 +9637,8 @@ function updateExecution(dt) {
     const shakeMul = isFinal
       ? ({ FAILED: 0.85, GOOD: 1.0, POWER: 1.25, PERFECT: 1.55 }[ex.finalGrade] ?? 1) : 1;
     if (ev.hitstop || ev.shake) triggerHitFx(at, ex.anchorY - 110, ev.hitstop ?? 0, (ev.shake ?? 0) * shakeMul * bmul, !!ev.flash || !!bru);
+    // the finisher's blow on the man's face (request 563)
+    if ((ev.hitstop || ev.shake || ev.dmg) && ex.victim) strikeImpact(ex.victim, null, player, 'face', !!ev.flash || isFinal);
     // each landed finisher blow bleeds like any other (request 552), the reward round included
     if (ev.hitstop || ev.shake || ev.dmg) spawnBlood(at, ex.anchorY - 110, ex.anchorY, ex.facing >= 0 ? 1 : -1, !!ev.flash || isFinal);
     if (ev.flash) triggerFlash('255,255,255', 0.16 * (isFinal && ex.finalGrade === 'PERFECT' ? 1.6 : 1) * (bru ? 1.5 : 1));
@@ -11233,6 +11432,13 @@ const GRAB = {
   },
 };
 
+/* THE GRAB+PUNCH CHORD (request 563). On the touch pad GRAB is the pickup/carry button, so the
+ * beat-down used to be reachable only out of a rush. Now GRAB then PUNCH, in quick succession,
+ * grabs the man in front and beats him: one punch is the quick beat-down (six strikes and the
+ * uppercut), a second punch arms the long one (the punch circle first, the same uppercut last).
+ * `window` is how long a GRAB press waits for the punch before it becomes the pickup. */
+const GRAB_CHORD = { window: 0.22, longAt: 2 };
+
 /* --------------------------------------------- manual combo (Cont.Combo) */
 // Player-driven punches, read off the 7x6/38 sheet: each punch is a chamber â†’
 // strike â†’ retract cycle that starts and ends on the same guard pose, so the
@@ -12299,6 +12505,74 @@ function enemyBodyBox(e) {
   return { x: e.x - halfW, y: (e.y + e.jumpY) - h, w: halfW * 2, h: h + 10 };
 }
 
+/* THE INK OF ONE FRAME, measured once and cached per sheet+frame (request 560).
+ *
+ * A sprite frame is cropped to the SHEET's union box, not to the man: a raised fist
+ * or a kicked leg on any one frame adds headroom above every frame, and the enemy
+ * body box is likewise built off the walk sheet. So a fixed fraction of the box is
+ * not the same place on the body from pose to pose — measured, the flat `e.y - 110`
+ * landed on a Ginger's chest and the body-box nose floated a hand's width above his
+ * hat. The frame's own top ink and body height are the only numbers that follow the
+ * art, so the face is found from them. */
+function frameInk(sprite, frameIndex, frameCanvas) {
+  sprite.inkCache ??= new Map();
+  if (sprite.inkCache.has(frameIndex)) return sprite.inkCache.get(frameIndex);
+  let info = null;
+  try {
+    const g = frameCanvas.getContext('2d', { willReadFrequently: true });
+    const w = frameCanvas.width, h = frameCanvas.height;
+    const d = g.getImageData(0, 0, w, h).data;
+    const ink = (x, y) => d[(y * w + x) * 4 + 3] > 40;
+    let top = -1, bot = -1;
+    for (let y = 0; y < h && top < 0; y++) for (let x = 0; x < w; x++) if (ink(x, y)) { top = y; break; }
+    for (let y = h - 1; y >= 0 && bot < 0; y--) for (let x = 0; x < w; x++) if (ink(x, y)) { bot = y; break; }
+    if (top >= 0 && bot > top) {
+      const bodyH = bot - top;
+      /* 8% of the body, not 18%: on a fighting sheet the raised fist sits at FACE
+       * height, and a wider band mixed it into the centroid — measured 88 px adrift
+       * on a Ginger's walk frame, which is most of a head. At 8% it is the crown of
+       * the hat and nothing else. */
+      const band = Math.min(bot, top + Math.max(4, Math.round(bodyH * 0.08)));
+      let sx = 0, n = 0;
+      for (let y = top; y <= band; y++) for (let x = 0; x < w; x++) if (ink(x, y)) { sx += x; n++; }
+      info = { cx: n ? sx / n : w / 2, top, bodyH };
+    }
+  } catch { /* unreadable canvas: the caller falls back */ }
+  sprite.inkCache.set(frameIndex, info);
+  return info;
+}
+
+/* WHERE A MAN'S FACE AND CHEST ARE — one geometry for the spray and the wounds
+ * (request 560). The height is measured off the FRAME's ink, because the sheet's
+ * union box is taller than the man; the horizontal stays on `e.x`, the line the body
+ * box and every hit test in the game are built on, so blood leaves the body the
+ * player actually struck. Fractions are of the man's height, and deliberately few:
+ * tune them here, never at a call site.
+ *
+ *   noseY 0.80 of his height   chestY 0.66   forward 0.055 of it
+ */
+const FACE = { noseY: 0.80, chestY: 0.66, bodyOffset: 0.30, forward: 0.02, chestForward: 0.01 };
+function enemyFacePoints(e) {
+  const { sprite: es, spec } = enemyAnim(e);
+  const frameIndex = es.frames[e.frame] ? e.frame : spec.frames[0];
+  const ink = frameInk(es, frameIndex, es.frames[frameIndex]);
+  const es2 = (e.boss ? tune.bossScale : tune.enemyScale) * (e.entryScale ?? 1);
+  const h = (ink ? ink.bodyH : es.drawH) * es2;
+  const feet = e.y + (e.jumpY || 0) + (e.boss ? tune.bossOffY : 0);
+  const dir = e.facing >= 0 ? 1 : -1;
+  /* THE MAN IS NOT CENTRED ON e.x. His sprite is registered on its lowest ink
+   * (the planted foot) and then mirrored, so the drawn body sits on the side
+   * OPPOSITE his facing: measured on screen, a left-facing Ginger's head is
+   * ~0.30 of his height to the +x side of e.x. `body` is that offset. */
+  const body = -dir * h * FACE.bodyOffset;
+  return {
+    nose: { x: e.x + body + dir * h * FACE.forward, y: feet - h * FACE.noseY },
+    chest: { x: e.x + body + dir * h * FACE.chestForward, y: feet - h * FACE.chestY },
+    h,
+  };
+}
+
+
 // `fromHurt` marks rage earned by SUFFERING a hit. It still fills the bar, but
 // (by default) it can never be the thing that sets the burst off â€” the bar just
 // sits full until Darki's next connected hit fires it, so a burst is always
@@ -12309,13 +12583,55 @@ function addRage(n, fromHurt = false) {
   if (player.rage >= RAGE_MAX && (RAGE_BURST.fromHurt || !fromHurt)) activateRage();
 }
 
+/* THE RAGE IGNITION (request 564). No recording was supplied for this, so it is
+ * SYNTHESIZED on the game's own SFX bus: a sub boom, a rising low-passed saw and a
+ * breath of heat noise. Counted like every cue, so "once per activation" is a
+ * testable claim with no audio device attached. */
+function rageIgniteSfx() {
+  cueFired.rageIgnite = (cueFired.rageIgnite ?? 0) + 1;
+  sfxCues++;
+  if (!audioCtx || audioMuted || !sfxGain) return;
+  const t = audioCtx.currentTime;
+  try {
+    const boom = audioCtx.createOscillator(), bg = audioCtx.createGain();
+    boom.type = 'sine';
+    boom.frequency.setValueAtTime(130, t);
+    boom.frequency.exponentialRampToValueAtTime(40, t + 0.34);
+    bg.gain.setValueAtTime(0.0001, t);
+    bg.gain.exponentialRampToValueAtTime(0.55, t + 0.02);
+    bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.46);
+    boom.connect(bg); bg.connect(sfxGain); boom.start(t); boom.stop(t + 0.5);
+
+    const sweep = audioCtx.createOscillator(), sg = audioCtx.createGain(), lp = audioCtx.createBiquadFilter();
+    sweep.type = 'sawtooth';
+    sweep.frequency.setValueAtTime(150, t);
+    sweep.frequency.exponentialRampToValueAtTime(900, t + 0.26);
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(1100, t);
+    lp.frequency.exponentialRampToValueAtTime(4200, t + 0.26);
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(0.20, t + 0.05);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+    sweep.connect(lp); lp.connect(sg); sg.connect(sfxGain); sweep.start(t); sweep.stop(t + 0.36);
+
+    const len = Math.floor(audioCtx.sampleRate * 0.3);
+    const nb = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < len; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
+    const src = audioCtx.createBufferSource(), ng = audioCtx.createGain(), hp = audioCtx.createBiquadFilter();
+    src.buffer = nb; hp.type = 'highpass'; hp.frequency.value = 900; ng.gain.value = 0.12;
+    src.connect(hp); hp.connect(ng); ng.connect(sfxGain); src.start(t);
+  } catch { /* no audio device: the counter above still records the call */ }
+}
+
 function activateRage() {
   player.rageActive = true;
   player.rageTimer = RAGE_DUR;
   player.rage = RAGE_MAX;
-  triggerFlash('255,96,28', 0.32);               // a fire-red screen wash (request 552: no gold bubbles)
+  // no gold screen wash and no ember burst any more (request 560): the shockwave
+  // shoves the street and announces itself with a sound (request 564).
+  rageIgniteSfx();
   triggerHitFx(player.x, player.y - 110, 0.12, 16, true);
-  rageFlare = 0.45;                               // the flame outline flares up as it ignites
   // shockwave: shove and chip everyone nearby â€” in FRONT of Darki only, so
   // nobody at his back falls over from a hit he never aimed at them.
   const face = player.facing >= 0 ? 1 : -1;
@@ -12561,7 +12877,11 @@ function hitEnemy(e, win, src = player) {
   if (src === player) streetLearn(e, ko, !!win.launch);   // the street watches (request 403)
   const impactX = (src.x + e.x) / 2;
   triggerHitFx(impactX, e.y - 110, win.hitstop, win.shake, !!win.big);
-  if (dmg > 0) spawnBlood(impactX, e.y - 110, e.y, dir, !!win.big || ko);   // the reference blood (request 552)
+  // the impact sprite where the fist / foot / weapon met him — Darki's blows only (request 563)
+  if (src === player) strikeImpact(e, win, src, strikeKind(win), !!win.big || ko);
+  // …but the BLOOD leaves his nose, not his sternum (request 560)
+  const nose = enemyFacePoints(e).nose;
+  if (dmg > 0) spawnBlood(nose.x, nose.y, e.y, dir, !!win.big || ko);
   if (src === player) noteFoe(e);            // the HUD shows the man he is hitting (request 552)
   // A window may name its OWN impact clip (the combo's opening two fists carry
   // the two bursts of 2hits_punch1). It replaces the generic bag rather than
@@ -12811,8 +13131,20 @@ function resolveAttackHits() {
   const win = move?.windows[player.attackStep];
   if (!win) return;
   const abox = attackBox(win);
+  /* THE FLYING KICK JUGGLES (request 560). A man knocked off his feet is in state
+   * 'hit', which every other attack refuses — by design, so a grounded string cannot
+   * turn a launched body into a punching bag. The air kick is the exception: it is
+   * the one move that can MEET him up there, and the timing is the whole difficulty
+   * — the kick's own window against his arc. Both boxes already carry their heights
+   * (attackBox adds player.jumpY, enemyBodyBox adds e.jumpY), so "timed well" is
+   * simply whether the boot and the body overlap; this gate only stops a grounded
+   * man from being juggled by a standing kick. */
+  const airKick = player.attack === 'airKick';
+  const airborneTarget = (e) => airKick && e.state === 'hit' && e.hp > 0
+    && !e.dying && !e.offstage && !e.execVictim && !e.grabbed && !e.carried
+    && (e.jumpY || 0) < -6;
   for (const e of enemies) {
-    if (!isEnemyHittable(e)) continue;
+    if (!isEnemyHittable(e) && !airborneTarget(e)) continue;
     if (Math.abs(e.y - player.y) > 48) continue;   // must share the lane
     if (vehicleBetween(player, e)) continue;        // …with no parked body in between
     const key = e.id + '@' + win.group;
@@ -12924,7 +13256,9 @@ function applyGrabHit(e, h) {
   e.grabHitT = e.kind === 'senior' ? GRAB.seniorRecoil : GRAB.hitRecoil;
   e.animTime = 0;                    // replay that recoil from its first frame
   triggerHitFx((player.x + e.x) / 2, e.y - 110, h.hitstop, h.shake, !!h.big);
-  spawnBlood((player.x + e.x) / 2, e.y - 110, e.y, player.facing >= 0 ? 1 : -1, !!h.big);   // request 552
+  strikeImpact(e, null, player, 'face', !!h.big);                 // his fist on the held man's face (request 563)
+  const nose = enemyFacePoints(e).nose;                                // …from his face (request 560)
+  spawnBlood(nose.x, nose.y, e.y, player.facing >= 0 ? 1 : -1, !!h.big);
   noteFoe(e);
   playHit(h);
   if (isHeavyHit(h)) triggerFlash('255,255,255', 0.14);
@@ -13195,6 +13529,12 @@ function feedManualCombo() {
     // cancel it would cancel it on every single frame and the circle would never
     // reach the uppercut.
   } else if (player.mcArmed == null) {
+    /* ONE PUNCH, THE QUICK ONE; TWO, THE LONG ONE (request 563). A single punch into the grab
+     * leaves the beat-down as it is (six strikes, then the uppercut). The SECOND punch arms
+     * the takeover: the punch circle, then the same strikes and the same uppercut, for far
+     * more damage. The punch that opened a GRAB+PUNCH chord counts as the first. */
+    player.grabPunches = (player.grabPunches ?? 0) + 1;
+    if (player.grabPunches < GRAB_CHORD.longAt) return;
     player.mcArmed = fist;                      // arms the takeover at `takeoverAt`
     player.mcRepeat = 1;                        // tap 1 of a possible mash streak
   } else {
@@ -13231,7 +13571,9 @@ function releaseGrab(opts = {}) {
     registerHit(damage);
     addRage(r.rage);
     triggerHitFx((player.x + e.x) / 2, e.y - 110, r.hitstop, r.shake, true);
-    spawnBlood((player.x + e.x) / 2, e.y - 110, e.y, dir, true);   // request 552
+    if (!opts.lethal) strikeImpact(e, null, player, 'face', true);     // the uppercut's fist under his chin (request 563)
+    const nose = enemyFacePoints(e).nose;                              // …from his face (request 560)
+    spawnBlood(nose.x, nose.y, e.y, dir, true);
     noteFoe(e);
     playHit(r);
     if (isHeavyHit(r)) triggerFlash('255,255,255', 0.14);
@@ -13566,7 +13908,7 @@ function dropCarry(opts = {}) {
     // The heave itself: a cone of sparks thrown the way the man is going, plus a
     // ring of dust off the foot he plants to do it. Both scale, so a snap
     // release is a puff and a wound-up one is an event.
-    spawnEmbers(hx, hy, Math.round(8 + 26 * p), '#ffcf5a', 90 + 120 * p);
+    spawnBloodTrail(hx, hy, Math.round(8 + 26 * p), p, 90 + 120 * p);
     spawnEmbers(player.x + dir * 14, player.y - 6, Math.round(5 + 16 * p), '#c9b79a', 70 + 90 * p);
     triggerFlash('255,255,255', 0.10 + 0.14 * p);
     // He keeps the height he was carried at, so the throw starts from Darki's
@@ -13614,7 +13956,7 @@ function updateThrownBody(e, dt) {
       e.throwLanded = true;
       const q = e.throwPower ?? 0;
       spawnEmbers(e.x, e.y - 8, Math.round(10 + 24 * q), '#c9b79a', 100 + 130 * q);
-      spawnEmbers(e.x, e.y - 18, Math.round(4 + 12 * q), '#ffcf5a', 70 + 80 * q);
+      spawnBloodTrail(e.x, e.y - 18, Math.round(4 + 12 * q), q, 70 + 80 * q);
       // The release is the first impact; the street is the second. A short,
       // charge-scaled landing stop gives the arc a brutal full stop without
       // extending the release freeze itself.
@@ -13631,7 +13973,8 @@ function updateThrownBody(e, dt) {
   carryTrailDebt += (8 + 26 * q + Math.min(12, Math.abs(e.vx) / 70)) * dt;
   while (carryTrailDebt >= 1) {
     carryTrailDebt -= 1;
-    spawnEmbers(e.x, e.y + (e.jumpY || 0) - 40, 1, q > 0.7 ? '#ffcf5a' : '#b9a68c', 40);
+    // BLOOD since request 561: same cadence and spread, droplets instead of gold energy
+    spawnBloodTrail(e.x, e.y + (e.jumpY || 0) - 40, 1, q);
   }
 
   const imp = CARRY.impact;
@@ -13670,7 +14013,7 @@ function updateThrownBody(e, dt) {
     playHit(iHit);
     triggerFlash('255,255,255', 0.12 + 0.16 * q);
     // Two bodies meeting at speed: sparks both ways, not a tidy little puff.
-    spawnEmbers(mx, my, Math.round(12 + 30 * q), '#ffcf5a', 110 + 130 * q);
+    spawnBloodTrail(mx, my, Math.round(12 + 30 * q), q, 110 + 130 * q);
     spawnEmbers(mx, o.y - 10, Math.round(6 + 14 * q), '#c9b79a', 90 + 90 * q);
     /* WHAT IT DOES TO HIM DEPENDS ON HOW HARD HE WAS HIT.
      *
@@ -14410,8 +14753,8 @@ function drawRushFx() {
   for (const d of rushFx.dust) {
     if (!d.live) continue;
     const p = d.age / d.life;
-    ctx.globalAlpha = 0.30 * (1 - p) * (1 - p);
-    ctx.fillStyle = '#cbb99a';
+    ctx.globalAlpha = 0.42 * (1 - p) * (1 - p);
+    ctx.fillStyle = '#7d4a26';                  // chocolate brown (request 563)
     ctx.beginPath();
     ctx.ellipse(d.x - cameraX, d.y, d.r, d.r * 0.42, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -14508,9 +14851,10 @@ const RAM_DUST = {
   cap: 260, scuffCap: 6,
   density: 2.2, energy: 1.35, size: 0.75,
   perPx: 1 / 15 * 2.2,    // glide puffs per px travelled at full speed (x density)
-  // cloud grey on both floors (request 512): neutral on the street, a touch cooler in the facility
-  street: { puff: [192, 192, 194], grit: [132, 132, 134], scuff: 'rgba(30,30,32,', a: 0.62 },
-  wet:    { puff: [186, 190, 196], grit: [124, 128, 134], scuff: 'rgba(8,12,18,', a: 0.55 },
+  // CHOCOLATE BROWN on both floors (request 563; was cloud grey, request 512): a milk-chocolate
+  // puff over darker cocoa grit, a shade deeper and cooler on the facility's wet floor
+  street: { puff: [138, 88, 52], grit: [92, 54, 28], scuff: 'rgba(44,24,10,', a: 0.66 },
+  wet:    { puff: [124, 80, 50], grit: [82, 50, 30], scuff: 'rgba(30,16,8,', a: 0.6 },
 };
 const ramDust = {
   p: makePool(RAM_DUST.cap, { kind: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 0, grow: 0, age: 0, life: 0 }),
@@ -14831,6 +15175,7 @@ function updateRushWindow(dt) {
 // standing one; it still draws from `highKickSprite`.
 function fireRushFollowUp(which) {
   endRush();
+  if (which === 'box') player.grabPunchSeed = 1;   // the punch that called the grab counts (request 563)
   startAttack(which === 'box' ? 'grab' : which === 'kick' ? 'rushKick' : 'combo5');
   return true;
 }
@@ -14992,6 +15337,10 @@ function startAttack(name) {
     else name = 'grabFail';
     player.mcArmed = null;            // fresh takeover arming for this attempt
     player.mcRepeat = 0;              // ...and a fresh mash streak
+    // the punches already thrown into this grab (the GRAB+PUNCH chord, request 563)
+    player.grabPunches = name === 'grab' ? (player.grabPunchSeed ?? 0) : 0;
+    if (player.grabPunches >= GRAB_CHORD.longAt) { player.mcArmed = 0; player.mcRepeat = 1; }   // two taps: the long combo
+    player.grabPunchSeed = 0;
     grabState = name === 'grab' ? GRAB_STATE.STARTUP : GRAB_STATE.FAIL;
   }
   player.attack = name;
@@ -15300,6 +15649,13 @@ function consumeAttackInput(dt) {
     return;
   }
 
+  // GRAB at the floating bat takes the bat (request 563)
+  if (input.grabPressed && batPickupReachable()) {
+    input.grabPressed = false;
+    player.bufferedAttack = null;
+    collectBatPickup();
+    return;
+  }
   if (input.executePressed) {
     input.executePressed = false;
     // Through execManualPick, the same resolver the on-screen prompt used, so the
@@ -15313,8 +15669,30 @@ function consumeAttackInput(dt) {
     // obeys the same legality rules (grounded, not mid-lock, not hurt).
     // ARMED, the same button lets go of what is in his hands: one weapon at a
     // time, so "pick up" and "throw" can never both be on offer.
-    player.bufferedAttack = player.weapon ? WEAPONS[player.weapon].moves.throw : 'pickup';
-    player.attackBufferT = 0.18;
+    // UNARMED, WITH A MAN IN REACH, the pickup waits a beat: a PUNCH inside it makes the press
+    // a GRAB+PUNCH chord instead — the beat-down, no rush needed (request 563).
+    if (!player.weapon && grabTarget()) player.grabChordT = GRAB_CHORD.window;
+    else {
+      player.bufferedAttack = player.weapon ? WEAPONS[player.weapon].moves.throw : 'pickup';
+      player.attackBufferT = 0.18;
+    }
+  }
+  if (player.grabChordT > 0) {
+    if (input.leftJabPressed || input.comboPressed) {
+      // GRAB, then PUNCH: the grab beat-down. A double tap already in is the long combo.
+      player.grabPunchSeed = input.comboPressed ? 2 : 1;
+      input.leftJabPressed = input.comboPressed = false;
+      player.grabChordT = 0;
+      player.bufferedAttack = 'grab';
+      player.attackBufferT = 0.18;
+      player.grabChords = (player.grabChords ?? 0) + 1;
+    } else if (input.kickPressed || input.upperPressed || input.grabPressed) {
+      player.grabChordT = 0;                       // another move was asked for: the pickup is dropped
+    } else if ((player.grabChordT -= dt) <= 0) {
+      player.grabChordT = 0;                       // no punch came: the press was the pickup
+      player.bufferedAttack = 'pickup';
+      player.attackBufferT = 0.18;
+    }
   }
   // The held weapon decides what the HIT button and the double are (WEAPONS).
   const W = player.weapon ? WEAPONS[player.weapon] : null;
@@ -15705,16 +16083,76 @@ function bounceHop(t, table) {
  * lined up that finely, and a van or a pillar has real depth. depthBack/depthFront are
  * the ground footprint a body strikes, behind and in front of the wheel row. */
 // request 543: a livelier rebound — more of the speed kept, and a lift that sends him back on an arc
+/* HOW A SOLID ANSWERS A BODY (request 563).
+ *
+ * A man flung into the parked line used to rebound off a face that never moved:
+ * correct physics, dead scenery. Every solid now carries a spring at the point he
+ * struck — the object is pushed along the blow and tips about that contact, then
+ * rings back to rest. `push` is in screen px, `tilt` in radians, `freq`/`decay`
+ * shape the ring-down.
+ *
+ * The WEIGHTS are why this reads: the bus is 308 px of vehicle and barely shrugs
+ * (3 px, ~0.6°), the danfo is a van and rocks, the keke is a three-wheeler and
+ * rings like a bell (11 px, 2.3°). A pillar is masonry — a shiver, not a wobble —
+ * and the workstation is a desk on legs. The body's own weight multiplies in, so
+ * the boss hits harder than an Agbero, and the speed of arrival scales it again. */
+const SOLID_REACT = {
+  bus: { push: 22, tilt: 0.032, freq: 14, decay: 5 },
+  danfo: { push: 24, tilt: 0.048, freq: 16, decay: 5.5 },
+  keke: { push: 26, tilt: 0.075, freq: 22, decay: 5.5 },
+  pillar: { push: 5, tilt: 0.010, freq: 30, decay: 12 },
+  desk: { push: 7, tilt: 0.014, freq: 24, decay: 10 },
+};
+const solidKind = (v) => (v.pillar ? 'pillar' : v === L2_DESK ? 'desk'
+  : /bus/i.test(v.id) ? 'bus' : /danfo|van/i.test(v.id) ? 'danfo' : 'keke');
+const solidHit = new Map();              // id -> { t, dir, amp, x, y }
+function solidReaction(v, x, y, dir, power) {
+  if (!v || !v.id) return;
+  const cfg = SOLID_REACT[solidKind(v)];
+  const prev = solidHit.get(v.id);
+  // a second body in the same breath adds to the ring, never restarts it smaller
+  const amp = Math.max(prev?.amp ?? 0, cfg.push * Math.max(0, Math.min(1.4, power)));
+  solidHit.set(v.id, { t: 0, dir, amp, x, y });
+}
+function solidReactUpdate(dt) {
+  for (const [id, h] of solidHit) { h.t += dt; if (h.t > 1.6) solidHit.delete(id); }
+}
+/* The live displacement of one solid, or null at rest. */
+function solidReactionOf(v) {
+  const h = solidHit.get(v.id);
+  if (!h) return null;
+  const cfg = SOLID_REACT[solidKind(v)];
+  const env = Math.exp(-cfg.decay * h.t) * Math.sin(h.t * cfg.freq);
+  return { dx: h.amp * env * h.dir, tilt: cfg.tilt * env * h.dir, x: h.x, y: h.y };
+}
+/* Run a solid's draw with its reaction applied: tip about the point that was struck,
+ * then shove along the blow. Nothing else in the scene knows it moved. */
+function withSolidReaction(v, draw) {
+  const r = solidReactionOf(v);
+  if (!r) { draw(); return; }
+  ctx.save();
+  const px = r.x - cameraX, py = r.y;
+  ctx.translate(px, py);
+  ctx.rotate(r.tilt);
+  ctx.translate(-px, -py);
+  ctx.translate(r.dx, 0);
+  draw();
+  ctx.restore();
+}
 const SOLID_HIT = { restitution: 0.66, lift: 640, liftMin: 220, minSpeed: 90, fastSpeed: 900, damage: 10, slideKeep: 0.55, cooldown: 0.12, depthBack: 46, depthFront: 16 };
 const solidStruck = (v, x, y) => y > v.y - Math.max(solidBackGap(v), SOLID_HIT.depthBack) && y < v.y + SOLID_HIT.depthFront
   && x > v.x - 22 && x < v.x + v.w + 22;
 /* THE REBOUND ITSELF, shared by every solid a body can meet (request 542/543): the body is
  * stopped at the face, sent back with SOLID_HIT.restitution of its speed (a skid keeps
  * slideKeep), popped up on an arc for a hard hit, and the impact is heard and felt. */
-function bodyRebound(e, vx, stopX, faceX, sliding) {
+function bodyRebound(e, vx, stopX, faceX, sliding, solid = null) {
   e.x = stopX;
   const speed = Math.abs(vx);
   const kk = Math.min(1, speed / SOLID_HIT.fastSpeed);
+  const hy = e.y - 110 + (e.jumpY || 0) * 0.6;
+  // THE SCENERY ANSWERS (request 563): heavier body = harder ring, and the object's
+  // own weight decides how much of it shows (see SOLID_REACT).
+  if (solid) solidReaction(solid, faceX, hy, Math.sign(vx) || 1, kk * (e.boss ? 1.5 : 1));
   if (sliding) e.slideVx = -vx * SOLID_HIT.slideKeep;
   else {
     e.vx = -vx * SOLID_HIT.restitution;
@@ -15743,7 +16181,7 @@ function bodyMeetsSolids(e, x0, sliding = false) {
     // only a body that ARRIVED this frame: one already inside the strip is left alone
     if (x0 > left && x0 < right) continue;
     const fromLeft = x0 <= left;
-    return bodyRebound(e, vx, fromLeft ? left - 1 : right + 1, fromLeft ? left + 8 : right - 8, sliding);
+    return bodyRebound(e, vx, fromLeft ? left - 1 : right + 1, fromLeft ? left + 8 : right - 8, sliding, v);
   }
   return bodyMeetsDoor(e, x0, vx, sliding);
 }
@@ -18433,7 +18871,7 @@ const REACH_OLODO_SUBS = [
 ];
 // The bar's type: two lines fit the 92 px bar — the one being said, the one before.
 // Scroll/lead/fade timing is the shared SUB_SCROLL (frontend.js).
-const SUBS = { font: 22, lineH: 30, maskPad: 4 };
+const SUBS = { font: 22, lineH: 34, maskPad: 4 };   // lineH for the ~26 px really drawn (request 563)
 /* Seconds into the line. The AUDIO clock while the voice is really playing, so
  * a dropped or stalled frame cannot pull the text off the voice; the scene's own
  * accumulated dt otherwise (audio context suspended, or a headless test). */
@@ -21127,34 +21565,9 @@ function drawCopyOnLaptop() {
 
 function drawL2MissionHud() {
   if (waveState !== 'l2defense' && waveState !== 'l2ending') return;
-  const w = 380, x = (VIEW_W - w) / 2, y = 14;
-  ctx.save();
-  ctx.textBaseline = 'alphabetic';
-  /* THE SYSTEM HP INDICATOR (the WORKSTATION row) is drawn exactly where and as it
-   * always was — same label, value, bar, colours and pixels. Request 489 only took
-   * the old "EVIDENCE TRANSFER" row out of the panel it shared (the copy now has
-   * its own reference-style bar, below), so the panel wraps the HP row alone. */
-  ctx.fillStyle = 'rgba(6,9,16,0.72)';
-  ctx.fillRect(x - 12, y + 26, w + 24, 34);
-  ctx.fillStyle = '#ff5442';
-  ctx.fillRect(x - 12, y + 26, w + 24, 2);
-  const bar = (label, val, frac, by, col, flash) => {
-    ctx.font = uiFont(800, 11);
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#cfd8ea';
-    ctx.fillText(label, x, by);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#ffe45e';
-    ctx.fillText(val, x + w, by);
-    ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    ctx.fillRect(x, by + 5, w, 8);
-    ctx.fillStyle = flash ? '#ffffff' : col;
-    ctx.fillRect(x, by + 5, w * Math.max(0, Math.min(1, frac)), 8);
-  };
-  const hf = l2m.compShown / L2_DEFENSE.computerHp;
-  bar('WORKSTATION', `${Math.ceil(l2m.compHp)} / ${L2_DEFENSE.computerHp}`, hf, y + 42,
-    hf > 0.35 ? '#7be0a4' : '#ff4d4d', l2m.compFlash > 0.2);
-  ctx.restore();
+  /* THE SYSTEM HP PANEL IS GONE (request 562). The workstation's health now lives in
+   * Darki's own HUD, under his HP bar (drawPixelHud) — one shape for every pool. What
+   * is left here is the copy progress, which belongs ON THE LAPTOP, not on the HUD. */
   drawCopyOnLaptop();                      // the copy, on the laptop itself (request 495)
 }
 
@@ -21225,7 +21638,7 @@ function update(dt) {
   if (player.rageActive) {
     player.rageTimer -= dt;
     player.rage = RAGE_MAX * Math.max(0, player.rageTimer / RAGE_DUR);
-    // (the trailing gold ember bubbles are gone — the flame outline is the rage now, request 552)
+    // (no trailing embers and no body glow — request 560/565)
     if (player.rageTimer <= 0) { player.rageActive = false; player.rage = 0; }
   }
   player.hpShown += (player.hp - player.hpShown) * Math.min(1, dt * 8);
@@ -22013,7 +22426,12 @@ const GRADE_PRESETS = {
     /* Distance: the sky and the residential street behind the wall. Harder,
      * because it is furthest from the fight and carries the most competing
      * detail — signage, windows, the mural. */
-    far: { desaturate: 0.17, tint: '#b4bb94', tintStrength: 0.15, vignette: 0.05 },
+    /* EXPOSURE (request 563): "my main characters are almost competing with my background".
+     * Every tier now also comes DOWN in value — `exposure` is the brightness the environment
+     * keeps (a neutral multiply), and each tier takes a little more colour out. The fighters,
+     * the blood and the HUD are drawn after the grade, so they keep their full exposure and
+     * become the brightest, most saturated things in the frame. */
+    far: { desaturate: 0.24, tint: '#b4bb94', tintStrength: 0.15, vignette: 0.06, exposure: 0.88 },   // x the near pass = 0.72 overall
     /* The gameplay plane: the shop row, the pavement and the road. It was the
      * lightest pass (desaturate 0.15) on the reading that the plane had to stay
      * crisp; played, the first row of shops still competed with the fighters
@@ -22021,13 +22439,13 @@ const GRADE_PRESETS = {
      * 0.49). Detail is untouched — this takes COLOUR and a little VALUE, which
      * is what separates figure from ground — so the art stays sharp and the
      * fighters are now the most saturated, brightest things in the frame. */
-    near: { desaturate: 0.29, tint: '#b4b8a2', tintStrength: 0.14, vignette: 0.045 },
+    near: { desaturate: 0.36, tint: '#b4b8a2', tintStrength: 0.14, vignette: 0.055, exposure: 0.82 },
     /* LEVEL 02's plate (GPB) and, pre-graded at load, its pillars (request 408).
      * The facility art is far more saturated than the street — measured 0.62
      * against the fighters' 0.49, i.e. the background out-coloured the people —
      * so it takes the heaviest pass. A cool neutral multiply rather than the
      * street's olive, so the police facility keeps its own blue-orange cast. */
-    l2: { desaturate: 0.37, tint: '#b2b7c1', tintStrength: 0.12, vignette: 0.055 },
+    l2: { desaturate: 0.44, tint: '#b2b7c1', tintStrength: 0.12, vignette: 0.065, exposure: 0.8 },
   },
   strong: {
     far: { desaturate: 0.26, tint: '#a7af86', tintStrength: 0.22, vignette: 0.08 },
@@ -22089,6 +22507,13 @@ function drawEnvGrade(tier) {
     ctx.globalCompositeOperation = 'multiply';
     ctx.globalAlpha = g.tintStrength;
     ctx.fillStyle = g.tint;
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (g.exposure != null && g.exposure < 1) {          // the environment's exposure (request 563)
+    const v = Math.round(255 * g.exposure);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
     ctx.fillRect(0, 0, W, H);
   }
   if (g.vignette > 0) {
@@ -22348,7 +22773,8 @@ function drawLevel2Pillar(p) {
   if (!l2Art.mp) return;
   const x = snapWorldX(-cameraX) + p.drawX;
   if (x > viewW() + 40 || x + l2X(L2.mp.w) < -40) return;
-  ctx.drawImage(gradedArt(l2Art.mp, 'l2'), x, snapWorldY(L2.artY) + (p.drawY - L2.artY), l2X(L2.mp.w), l2X(L2.mp.h));
+  withSolidReaction(p, () =>
+    ctx.drawImage(gradedArt(l2Art.mp, 'l2'), x, snapWorldY(L2.artY) + (p.drawY - L2.artY), l2X(L2.mp.w), l2X(L2.mp.h)));
 }
 /* One Obscure-mask cover (request 479): the plate's own crate pixels, laid back
  * over the actors exactly where the plate has them (same snapped origin, same
@@ -22928,82 +23354,7 @@ function tintedFrame(frame, color, alpha) {
   return sBuf;
 }
 
-/* RAGE, BY FIRE (request 552). The gold glow, gold tint and trailing ember "bubbles" are gone.
- * While the rage burns his skin runs a little more saturated (a filter on his own draw), and a
- * SHORT, BRIGHT FLAME OUTLINE burns round his body: his silhouette dilated into a rim (white-gold
- * near the body, orange, then red at the edge), plus the same rim cut into tongues by a scrolling
- * flame mask and stretched upward, so it licks off his outline instead of floating around him.
- * Built per frame in two small scratch canvases at screen resolution (no per-frame caches: Darki
- * has hundreds of frames). Drawn UNDER his sprite, which stays at full opacity (project rule). */
-const RAGE_FX = { rim: 3.2, flare: 1.3, lick: 7, scroll: 95, skin: 'saturate(1.45) contrast(1.05)' };
-let rageFlare = 0;                       // the ignition flare, decays in advanceFx
-let rfBuf = null, rfCtx = null, rfTmp = null, rfTmpCtx = null, rfNoise = null;
-function rageFlameMask() {
-  if (rfNoise) return rfNoise;
-  const c = makeCanvas(48, 96), g = c.getContext('2d');
-  const rnd = mulberry32(5520);
-  g.fillStyle = '#fff';
-  for (let i = 0; i < 9; i++) {
-    const x = rnd() * 48, w = 4 + rnd() * 7, tip = 8 + rnd() * 50;
-    for (const dx of [0, -48, 48]) {                      // tile seamlessly across x
-      g.beginPath();
-      g.moveTo(x + dx - w, 96);
-      g.quadraticCurveTo(x + dx - w * 0.9, tip + (96 - tip) * 0.45, x + dx + (rnd() - 0.5) * 3, tip);
-      g.quadraticCurveTo(x + dx + w * 0.9, tip + (96 - tip) * 0.45, x + dx + w, 96);
-      g.closePath(); g.fill();
-    }
-  }
-  rfNoise = c;
-  return c;
-}
-function drawRageFlames(frame, x, y, ps) {
-  const k = Math.max(0.05, Math.abs(ps));                // sprite px -> screen px
-  const R = RAGE_FX.rim * (1 + rageFlare * RAGE_FX.flare);
-  const pad = Math.ceil(R * 2 + RAGE_FX.lick + 4);
-  const fw = frame.width * k, fh = frame.height * k;
-  const W = Math.ceil(fw) + pad * 2, H = Math.ceil(fh) + pad * 2;
-  if (!rfBuf) { rfBuf = makeCanvas(W, H); rfCtx = rfBuf.getContext('2d'); rfTmp = makeCanvas(W, H); rfTmpCtx = rfTmp.getContext('2d'); }
-  if (rfBuf.width < W || rfBuf.height < H) {
-    rfBuf.width = rfTmp.width = Math.max(rfBuf.width, W);
-    rfBuf.height = rfTmp.height = Math.max(rfBuf.height, H);
-  }
-  const g = rfCtx;
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
-  g.clearRect(0, 0, rfBuf.width, rfBuf.height);
-  // the silhouette, dilated — a little more upward than down, as flame rises
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    g.drawImage(frame, pad + Math.cos(a) * R, pad + Math.sin(a) * R - R * 0.45, fw, fh);
-  }
-  g.globalCompositeOperation = 'source-in';
-  const grad = g.createLinearGradient(0, pad, 0, pad + fh);
-  grad.addColorStop(0, '#fff2b0'); grad.addColorStop(0.35, '#ffb52a'); grad.addColorStop(0.75, '#ff6a18'); grad.addColorStop(1, '#ff3810');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, W, H);
-  // the tongues: the rim cut by a scrolling flame mask
-  const t = rfTmpCtx;
-  t.setTransform(1, 0, 0, 1, 0, 0);
-  t.globalCompositeOperation = 'source-over'; t.globalAlpha = 1;
-  t.clearRect(0, 0, rfTmp.width, rfTmp.height);
-  t.drawImage(rfBuf, 0, 0);
-  t.globalCompositeOperation = 'destination-in';
-  const off = (mobClock * RAGE_FX.scroll) % 96;
-  t.translate(0, -off);
-  t.fillStyle = t.createPattern(rageFlameMask(), 'repeat');
-  t.fillRect(0, 0, W, H + 96);
-  t.setTransform(1, 0, 0, 1, 0, 0);
-  // onto the frame, in his own (scaled) space
-  const flick = 0.82 + 0.18 * Math.sin(mobClock * 23) * Math.sin(mobClock * 7.3);
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = Math.min(1, (0.7 + rageFlare) * flick);
-  ctx.drawImage(rfBuf, 0, 0, W, H, x - pad / k, y - pad / k, W / k, H / k);
-  ctx.globalAlpha = 0.95;
-  const lift = (RAGE_FX.lick + 4 * flick) / k;           // the tongues reach up past the rim
-  ctx.drawImage(rfTmp, 0, 0, W, H, x - pad / k, y - pad / k - lift, W / k, H / k + lift);
-  ctx.restore();
-}
+/* RAGE (request 558) — the old golden indicator is back: pulsing glow + gold tint + trailing embers (pre-552). The request-552 flame outline and skin saturation are removed. */
 
 const healthColor = (f) => (f > 0.5 ? '#5dd45d' : f > 0.25 ? '#ffd23f' : '#ff5442');
 
@@ -23108,8 +23459,8 @@ function drawPlayer() {
     0, 0, Math.PI * 2);
   ctx.fill();
 
-  // rage aura â€” pulsing golden glow behind Darki + ground ring
-  // (the golden glow is retired: the rage is the flame outline drawn with his sprite — request 552)
+  // (the request-558 golden aura and ground ring stay retired; so does the necklace/eye
+  //  glow — request 565 removed it. Nothing glows around him.)
 
   /* THE SPEED TRAIL, in his own depth slot and UNDER his own sprite. Drawn here
    * rather than as a separate actor in the sort list for two reasons: the echoes
@@ -23120,11 +23471,10 @@ function drawPlayer() {
   drawRushFx();
   }
 
-  // flash/tint: hit â†’ red, else rage â†’ gold
+  // flash: hit → red. RAGE NO LONGER TINTS HIM GOLD (request 560) — only the barely-there
+  // saturate filter below; the necklace glow was removed in request 565.
   let img = frame, tint = null;
   if (player.hpFlash > 0) tint = ['#ff3040', Math.min(0.7, player.hpFlash / 0.3 * 0.7)];
-  // RAGE (request 552): no gold tint — his skin runs a little more saturated, and a short
-  // bright flame outline burns round his body (drawn just under the sprite, below)
   if (tint) img = tintedFrame(frame, tint[0], tint[1]);
 
   /* DARKI IS ALWAYS DRAWN AT FULL OPACITY (request 349). There used to be an
@@ -23168,11 +23518,19 @@ function drawPlayer() {
     ctx.translate(0, -pivotY);
   }
   // lifts: see feetOnGround; sink: see groundRow (both 0 on a sheet that sets neither)
-  const bodyY = -drawH + (animationSprite.lifts?.[player.frame] ?? 0) + (animationSprite.sink || 0);
-  if (player.rageActive && !reflecting) drawRageFlames(frame, -anchor, bodyY, ps);   // under the body (request 552)
-  if (player.rageActive) ctx.filter = RAGE_FX.skin;   // a little more saturation in his skin while raging (request 552)
-  ctx.drawImage(img, -anchor, bodyY);
-  if (player.rageActive) ctx.filter = 'none';
+  /* VERY VERY SLIGHT SATURATION, NOT A TINT (request 560). The old gold wash is
+   * gone; rage reads on the body as a touch more colour and nothing else — the
+   * necklace/eye glow was removed in request 565. 1.1 is deliberately almost
+   * subliminal: enough that he looks lit from inside, not enough to recolour him. */
+  /* RAGE (request 563): he is SLIGHTLY saturated (1.1 -> 1.25: visibly more colour, still his own
+   * colours, never a tint) and his wrist and ankle BEADS glow brightly — see beadGlow. Full
+   * opacity throughout (project rule): the glow is added light on top of him, never a fade. */
+  const rageLight = player.rageActive && !reflecting;
+  if (rageLight) ctx.filter = `saturate(${BEAD_GLOW.saturate})`;
+  const imgY = -drawH + (animationSprite.lifts?.[player.frame] ?? 0) + (animationSprite.sink || 0);
+  ctx.drawImage(img, -anchor, imgY);
+  ctx.filter = 'none';
+  if (rageLight) drawBeadGlow(animationSprite, frames[player.frame] ? player.frame : 0, frame.width, frame.height, -anchor, imgY);
   ctx.restore();
   ctx.globalAlpha = 1;
   if (!reflecting) drawRamDust(true);   // …and the dust on the camera's side of his feet
@@ -23187,6 +23545,81 @@ function drawPlayer() {
       ctx.strokeRect(b.x - cameraX, b.y, b.w, b.h);
     }
   }
+}
+
+/* ============================================== THE RAGE BEADS (request 563)
+ *
+ * "When Darki rages, make his hand beads and leg beads glow brightly." There is no bead layer in
+ * the art, so the beads are FOUND — offline, on the full-resolution sheets, by deploy/gen-beads.js:
+ * the coral beads are a pure red the rest of him never is (green under a fifth of red; his skin,
+ * beret and wrap all run warmer), plus their gold highlights where they touch a bead, dense
+ * clusters only, nothing in the head third, and a frame whose test still lights his body is left
+ * dark. It writes sprites/beads/<sheet>.png, the sheet's grid at the 480-px WORKING size that
+ * prepSpriteFrames keys and crops at.
+ *
+ * At runtime, the first time a sheet is drawn raging its mask sheet is fetched (small: mostly
+ * empty), and each frame's mask is cut with THAT sheet's own crop box (sprite.crop) — the same
+ * rectangle its picture was cut with — so the beads land exactly on the beads. Two layers are
+ * ADDED ('lighter') over his sprite, pulsing: a wide soft halo (the mask taken down and back up)
+ * and the beads themselves, burning hot. Nothing of him goes transparent (project rule). */
+const BEAD_GLOW = { saturate: 1.25, haloRes: 1 / 7, core: 1, halo: 1, haloPasses: 3, spread: 1.06, pulseHz: 2.2 };
+function beadFrameFor(spr, fi) {
+  if (!spr?.crop || !spr.src) return null;
+  const base = spr.src.split('/').pop().replace(/-mobile(?=\.png$)/, '');
+  if (!/^darki-/.test(base)) return null;
+  let B = spr.beads;
+  if (!B) {
+    B = spr.beads = { frames: [], img: new Image(), ok: false };
+    B.img.onload = () => { B.ok = true; };
+    B.img.onerror = () => { B.failed = true; };
+    B.img.src = 'sprites/beads/' + base;
+  }
+  if (!B.ok) return null;
+  if (B.frames[fi] !== undefined) return B.frames[fi];
+  let m = null;
+  try {
+    const { minX, minY, bw, bh, workH, cols, rows } = spr.crop;
+    const cw = B.img.width / cols, ch = B.img.height / rows, k = ch / workH;
+    const W = spr.drawW, H = spr.drawH;
+    const core = makeCanvas(W, H), g = core.getContext('2d', { willReadFrequently: true });
+    g.imageSmoothingEnabled = true;
+    g.drawImage(B.img, (fi % cols) * cw + minX * k, Math.floor(fi / cols) * ch + minY * k, bw * k, bh * k, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data;
+    let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++;
+    if (n >= 3) {
+      // the beads read as LIT, not merely tinted: brighten the core once more on itself
+      g.globalCompositeOperation = 'lighter';
+      g.drawImage(core, 0, 0);
+      const hw = Math.max(2, Math.round(W * BEAD_GLOW.haloRes)), hh = Math.max(2, Math.round(H * BEAD_GLOW.haloRes));
+      const halo = makeCanvas(hw, hh), hg = halo.getContext('2d');
+      hg.imageSmoothingEnabled = true;
+      hg.globalCompositeOperation = 'lighter';
+      for (let q = 0; q < BEAD_GLOW.haloPasses; q++) hg.drawImage(core, 0, 0, hw, hh);
+      m = { core, halo, n };
+    }
+  } catch { m = null; }
+  B.frames[fi] = m;
+  return m;
+}
+let beadGlowDrawn = 0;
+function drawBeadGlow(spr, fi, w, h, x, y) {
+  const m = beadFrameFor(spr, fi);
+  if (!m) return;
+  const pulse = 0.72 + 0.28 * Math.sin(performance.now() / 1000 * Math.PI * 2 * BEAD_GLOW.pulseHz);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingEnabled = true;
+  // the halo: soft light spilling past the beads, once tight and once a little wider
+  ctx.globalAlpha = BEAD_GLOW.halo * pulse;
+  ctx.drawImage(m.halo, x, y, w, h);
+  const s = BEAD_GLOW.spread;
+  ctx.drawImage(m.halo, x - w * (s - 1) / 2, y - h * (s - 1) / 2, w * s, h * s);
+  // …and the beads themselves, burning
+  ctx.globalAlpha = BEAD_GLOW.core * (0.8 + 0.2 * pulse);
+  ctx.drawImage(m.core, x, y, w, h);
+  ctx.restore();
+  beadGlowDrawn++;
 }
 
 // Is this body being drawn from AgbeoFall? Everything the old draw code did to
@@ -23400,7 +23833,8 @@ function actorList() {
           ctx.ellipse(sx + v.w * 0.5, v.y + 5, v.w * 0.46, 9, 0, 0, Math.PI * 2);
           ctx.fill();
         }
-        ctx.drawImage(bg.vehicles, v.sx, v.sy, v.w, v.h, Math.round(sx), Math.round(v.y - v.h), v.w, v.h);
+        withSolidReaction(v, () =>
+          ctx.drawImage(bg.vehicles, v.sx, v.sy, v.w, v.h, Math.round(sx), Math.round(v.y - v.h), v.w, v.h));
       },
       mirror: { x: v.x + v.w * 0.5, y: v.y, h: v.h, w: v.w },
     });
@@ -23901,6 +24335,9 @@ function drawPixelHud() {
   const ox = P.side + kick, oy = P.top;
   drawPortrait(darkiPortrait(), ox, oy, P.port);
   const bx = ox + P.port + P.gap + 4;
+  const yHp = oy + 6 + P.thinH + 14;                  // the thick HP bar's row
+  const serverRow = waveState === 'l2defense' || waveState === 'l2ending' || window.__rorShowServer;
+  const ySrv = yHp + P.barH + 10;                     // the server's, directly under it
   // rage: fills toward full, pulses when full, burns down in fire colours while active
   const rf = Math.max(0, Math.min(1, player.rage / RAGE_MAX));
   const rageShow = player.rageActive ? Math.max(0, player.rageTimer / RAGE_DUR) : rf;
@@ -23917,15 +24354,38 @@ function drawPixelHud() {
   // health: the reference's thick yellow bar over dark red, the ghost chip and the flash
   const J = hpJuice, hpF = Math.max(0, Math.min(1, J.fill));
   const low = hpF <= 0.25 && Math.sin(now * 14) > 0;
-  pixBar(bx, oy + 6 + P.thinH + 14, P.barW, P.barH, hpF, J.ghost, low ? P.low : P.hp, low ? '#ffc07a' : P.hpHi, P.hpLo, P.back);
+  pixBar(bx, yHp, P.barW, P.barH, hpF, J.ghost, low ? P.low : P.hp, low ? '#ffc07a' : P.hpHi, P.hpLo, P.back);
   const fl = hpFlashAmt();
-  if (fl > 0) { ctx.globalAlpha = fl * 0.85; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(bx), Math.round(oy + 6 + P.thinH + 14), Math.round(P.barW * Math.max(hpF, 0.02)), P.barH); ctx.globalAlpha = 1; }
+  if (fl > 0) { ctx.globalAlpha = fl * 0.85; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(bx), Math.round(yHp), Math.round(P.barW * Math.max(hpF, 0.02)), P.barH); ctx.globalAlpha = 1; }
   // out of the fight and healing
   if (run.regen) {
     ctx.font = pixelFont(400, 15);
     ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now * 5);
-    pixText('+ RECOVERING', bx, oy + 6 + P.thinH + 14 + P.barH + 18, '#7dffa0');
+    pixText('+ RECOVERING', bx, (serverRow ? ySrv + P.barH : yHp + P.barH) + 18, '#7dffa0');
     ctx.globalAlpha = 1;
+  }
+
+  /* ---- THE SERVER, directly under Darki's health (request 562).
+   *
+   * The strong room's workstation used to have its own top-centre panel with a thin
+   * 8 px bar and a red rule. That panel is gone: the machine's health is now a SECOND
+   * DARKI ROW — same pixBar, same width, height, bevel, back and highlight — sitting
+   * under his HP, with its name to the right where DARKI sits and the live value
+   * inside the bar. One shape for every pool in the game, and one place to read it. */
+  if (serverRow) {
+    const y2 = ySrv;
+    const sf = Math.max(0, Math.min(1, l2m.compHp / L2_DEFENSE.computerHp));
+    const sg = Math.max(sf, Math.min(1, l2m.compShown / L2_DEFENSE.computerHp));
+    const sLow = sf <= 0.25 && Math.sin(now * 14) > 0;
+    const sHit = l2m.compFlash > 0.2;
+    pixBar(bx, y2, P.barW, P.barH, sf, sg, sHit ? '#ffffff' : sLow ? P.low : P.hp,
+      sLow ? '#ffc07a' : P.hpHi, P.hpLo, P.back);
+    ctx.textAlign = 'left';
+    ctx.font = pixelFont(400, 16);
+    pixText('SERVER', bx + P.barW + 14, y2 + P.barH / 2 + 1, '#f4f1ea');
+    ctx.textAlign = 'right';
+    ctx.font = pixelFont(400, 13);
+    pixText(String(Math.ceil(l2m.compHp)), bx + P.barW - 8, y2 + P.barH / 2 + 1, 'rgba(24,12,4,0.9)', 'rgba(255,255,255,0.35)', 1);
   }
 
   /* ---- THE SCORE, top centre: counts up to the live figure */
@@ -23933,10 +24393,11 @@ function drawPixelHud() {
   hudScoreShown += (target - hudScoreShown) * Math.min(1, dt * 7);
   if (Math.abs(target - hudScoreShown) < 1) hudScoreShown = target;
   ctx.textAlign = 'center';
-  ctx.font = pixelFont(400, 17);
+  // the bold pixel face for both lines of the score (request 563)
+  ctx.font = pixelFont(900, 19);
   pixText('SCORE', VIEW_W / 2, oy + 10, '#f4f1ea');
-  ctx.font = pixelFont(400, 26);
-  pixText(String(Math.round(hudScoreShown)).padStart(7, '0'), VIEW_W / 2, oy + 36, P.hp);
+  ctx.font = pixelFont(900, 34);
+  pixText(String(Math.round(hudScoreShown)).padStart(7, '0'), VIEW_W / 2, oy + 38, P.hp);
 
   /* ---- THE OTHER END: the boss on Darki's row, the man under it */
   const RX = VIEW_W - P.side;                      // the right edge everything hangs from
@@ -24095,35 +24556,10 @@ function drawHud() {
     ctx.restore();
   }
 
-  // controls hint (bottom-left)
-  ctx.textAlign = 'left';
-  ctx.fillStyle = 'rgba(207,216,234,0.85)';
-  // L2 says both things it does, in the order it tries them: the finisher gets
-  // first refusal and the pickup takes the press when there is no boss to finish.
-  // Two lines now: the sprint is a command rather than a button, so it has to be
-  // spelled out or nobody discovers it â€” a mechanic gated behind a double-tap is
-  // invisible to a player who has never been told the double-tap exists.
-  //
-  // Both go through fitText: line 1 lists every binding in the game and is the
-  // string most likely to be appended to. See fitText for the nine pixels of
-  // headroom it used to have.
-  const cribW = VIEW_W - px * 2;
-  /* While an authoring overlay is open its own crib takes this strip — the
-   * bindings behind the tool are noise the tool has already replaced. */
-  /* REQUEST 513: the crib is a KEYBOARD AND MOUSE card, so it is not drawn on a
-   * touch screen at all (the buttons there carry their own icons), and it names
-   * only real keys: Jump is Space, J is the jab too, the pad's R2/L1/L2 are gone
-   * (they belong to the CONTROLS screen, not to a keyboard line), and RamRage —
-   * a real command — is listed. */
-  if (!RE.on && !AM.on && !isTouchUI()) {
-    fitText('WASD Move · Space Jump · LMB / J Jab · RMB High-Kick · back+RMB Back-Kick · LMBx2 5-Hit Combo · hold RMB+LMB / K Uppercut · G / MMB Grab · hold L / Shift Block · E Execute / Pick up / Throw · P Pause · M Mute',
-      px, VIEW_H - 42, cribW);
-    ctx.fillStyle = 'rgba(255,210,122,0.85)';
-    // Armed, the second line is that weapon's own moves (WEAPONS[type].crib).
-    fitText(player.weapon ? WEAPONS[player.weapon].crib
-      : 'fwd,fwd Sprint (hold to keep running) · out of a sprint: RMB Dash Kick · LMB Running Grab · LMBx2 Running Combo · full gauge: back,fwd RamRage',
-      px, VIEW_H - 24, cribW);
-  }
+  /* NO CONTROLS CRIB ON THE PLAY SCREEN (request 566). The two bottom lines —
+   * every binding, then the sprint/weapon commands — are gone: the game teaches them
+   * in the CONTROLS screen and the pause menu, and down here they sat over the street
+   * for the whole fight. */
 
   drawWaveHud();
 }
@@ -24406,7 +24842,7 @@ function drawOutro() {
     ctx.fillStyle = F.rank === 'S' ? C.gold : F.rank === 'A' ? C.orange : C.paper;
     ctx.fillText(F.rank, status.x + status.w - 46, status.y + 108);
     ctx.textAlign = 'left';
-    ui.setFont(700, 9, 2.2);
+    ui.setFont(700, 9, 0.8);                 // tighter: the lifted type ran into SCORE (request 563)
     ctx.fillStyle = F.isBest ? C.green : C.muted;
     ctx.fillText(F.isBest ? 'NEW PERSONAL BEST' : `BEST  ${(F.best?.score ?? 0).toLocaleString('en-US')}`, status.x + 24, status.y + 82);
     const rows = [
@@ -24433,6 +24869,11 @@ function drawOutro() {
     }
 
     ui.setFont(700, 8.5, 2.1);
+    // the case number and the place share one line: tighten until they clear each other (request 563)
+    for (const [px, tr] of [[8.5, 1.2], [7.5, 0.4], [6.5, 0]]) {
+      ui.setFont(700, px, tr);
+      if (ctx.measureText(OC.no).width + ctx.measureText(OC.where).width + 16 <= status.w - 48) break;
+    }
     ctx.fillStyle = C.dim;
     ctx.fillText(OC.no, status.x + 24, status.y + status.h - 22);
     ctx.textAlign = 'right';
@@ -26003,6 +26444,23 @@ window.__ror = {
   get hitStop() { return hitStopTimer; },
   get shake() { return shakeTimer; },
   get sparkCount() { return sparks.length; },
+  // the hit impact sprite (request 563): how many, the last one's spot, and the live ones
+  get impactCount() { return impactCount; },
+  get beadGlow() { return { drawn: beadGlowDrawn }; },
+  grabDebug() {
+    const t = grabTarget();
+    return { target: t ? Math.round(t.x) : null, px: Math.round(player.x), py: Math.round(player.y), facing: player.facing,
+      foes: enemies.filter((e) => !e.benched).map((e) => ({ x: Math.round(e.x), y: Math.round(e.y), g: isGrabbable(e), hit: isEnemyHittable(e), st: e.state, mode: e.mode })) };
+  },
+  beadProbe() {
+    const spr = spriteFor(player.anim);
+    const m = beadFrameFor(spr, player.frame);
+    return { anim: player.anim, frame: player.frame, src: spr?.src, crop: !!spr?.crop, loaded: !!spr?.beads?.ok, px: m?.n ?? 0 };
+  },
+  get lastImpact() { return lastImpact; },
+  get impacts() { return sparks.map((s) => ({ x: Math.round(s.x), y: Math.round(s.y), kind: s.kind, big: !!s.big })); },
+  get impactSheetReady() { return !!impactSheet(); },
+  get grabChord() { return { t: player.grabChordT ?? 0, chords: player.grabChords ?? 0, punches: player.grabPunches ?? 0, armed: player.mcArmed, attack: player.attack, mcLaps: player.mcLaps ?? 0 }; },
   get flash() { return flashTimer; },
   get sfxHits() { return sfxHits; },        // # of hit-SFX triggers (wiring check)
   get sfxThuds() { return sfxThuds; },      // # of body-landing thuds (the enemy fall sound; request 516)
@@ -26287,6 +26745,10 @@ window.__ror = {
   get muted() { return audioMuted; },
   get musicReady() { return !!musicEl; },
   get musicOn() { return musicStarted; },
+  get l2Music() { return { on: l2MusicOn(), ready: !!l2Music.buf, playing: !!l2Music.src, released: l2Music.released, ended: l2Music.ended,
+    pos: l2Music.src && audioCtx ? +l2MusicPos().toFixed(3) : null, gain: l2Music.gain ? +l2Music.gain.gain.value.toFixed(3) : null,
+    duck: +l2Music.duck.toFixed(3), cuts: l2Music.cuts, cutAt: l2Music.cutAt ?? null, cutFrom: l2Music.cutFrom ?? null, cfg: L2_MUSIC }; },
+  releaseL2Music() { releaseL2Music(); },
   get musicVol() { return musicVol; },
   kickMusic() { startMusic(); },                 // test: begin the loop
   tickMusic(dt) { updateMusic(dt); },            // test: advance the fade
@@ -27092,6 +27554,26 @@ window.__ror = {
   stepOrder(n) { const out = []; for (let i = 0; i < n; i++) out.push(nextStep()); return out; },
   burstRage() { activateRage(); },              // test: fire the shockwave directly
   goreProbe() { return { drops: goreDrops.length, splats: goreSplats.length, stains: goreStains.length }; },   // request 552 tests
+  /* Where the blood leaves a man and where his wounds sit (request 560) — the measured
+   * face/chest in world space, plus the ink box they came off. A harness that cannot
+   * see this has to guess from pixels, which is how the first pass put them on his hip. */
+  /* How far a solid is displaced from its rest pose right now (request 563). A harness
+   * that cannot see this has to diff pixels to know the scenery reacted at all. */
+  solidKick(id, power = 1, dir = 1, t = 0) {
+    const v = solidBodies().find((b) => b.id === id);
+    if (!v) return null;
+    solidReaction(v, v.x + v.w / 2, v.y - v.h * 0.5, dir, power);
+    const h = solidHit.get(v.id); if (h) h.t = t;
+    return this.solidReact(id);
+  },
+  solidReact(id) {
+    const v = solidBodies().find((b) => b.id === id);
+    if (!v) return null;
+    const r = solidReactionOf(v);
+    return { id, active: !!r, dx: r ? +r.dx.toFixed(2) : 0, tilt: r ? +r.tilt.toFixed(4) : 0 };
+  },
+  enemyFace(e) { if (!e) return null; const p = enemyFacePoints(e); return { nose: p.nose, chest: p.chest, h: p.h,
+    hp: e.hp, max: e.maxHp, state: e.state, frame: e.frame, facing: e.facing }; },
   emberCount(col = '#ffcf5a') { return embers.filter((m) => m.color === col).length; },   // the old rage gold
   get hudFoe() { return hudFoe.e ? { kind: hudFoe.e.kind, name: FOE_NAMES[hudFoe.e.kind], t: +hudFoe.t.toFixed(2) } : null; },
   noteFoe(e) { noteFoe(e); },
