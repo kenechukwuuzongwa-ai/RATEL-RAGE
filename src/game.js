@@ -12628,6 +12628,7 @@ function activateRage() {
   player.rageActive = true;
   player.rageTimer = RAGE_DUR;
   player.rage = RAGE_MAX;
+  preloadBeadMasks();               // every move's bead light ready for the first swing (request 564)
   // no gold screen wash and no ember burst any more (request 560): the shockwave
   // shoves the street and announces itself with a sound (request 564).
   rageIgniteSfx();
@@ -23562,7 +23563,17 @@ function drawPlayer() {
  * rectangle its picture was cut with — so the beads land exactly on the beads. Two layers are
  * ADDED ('lighter') over his sprite, pulsing: a wide soft halo (the mask taken down and back up)
  * and the beads themselves, burning hot. Nothing of him goes transparent (project rule). */
-const BEAD_GLOW = { saturate: 1.25, haloRes: 1 / 7, core: 1, halo: 1, haloPasses: 3, spread: 1.06, pulseHz: 2.2 };
+/* BRIGHTER, WITH TRAILS (request 564). The beads now burn white-hot at their centres (`hot`), the
+ * halo is denser, and a wide soft BLOOM sits under it. While he rages each bead also leaves a
+ * MOTION TRAIL: the last `trailLife` seconds of where the beads were, drawn as fading light in
+ * world space (the camera's move since each sample is taken back out), so a punch or a kick
+ * draws a streak of fire behind the wrist or ankle that threw it. Light only — added on top. */
+const BEAD_GLOW = {
+  saturate: 1.25, haloRes: 1 / 7, bloomRes: 1 / 16, core: 1, hot: 0.85, halo: 1, haloPasses: 4, bloom: 0.9, bloomSpread: 1.18,
+  spread: 1.08, pulseHz: 2.2,
+  trailLife: 0.22, trailMax: 18, trailCore: 0.7, trailHalo: 0.75, trailMinMove: 1.5,
+};
+const beadTrail = [];
 function beadFrameFor(spr, fi) {
   if (!spr?.crop || !spr.src) return null;
   const base = spr.src.split('/').pop().replace(/-mobile(?=\.png$)/, '');
@@ -23596,28 +23607,88 @@ function beadFrameFor(spr, fi) {
       hg.imageSmoothingEnabled = true;
       hg.globalCompositeOperation = 'lighter';
       for (let q = 0; q < BEAD_GLOW.haloPasses; q++) hg.drawImage(core, 0, 0, hw, hh);
-      m = { core, halo, n };
+      // a wide, soft bloom: the mask taken right down and drawn back up
+      const bw2 = Math.max(2, Math.round(W * BEAD_GLOW.bloomRes)), bh2 = Math.max(2, Math.round(H * BEAD_GLOW.bloomRes));
+      const bloom = makeCanvas(bw2, bh2), bg = bloom.getContext('2d');
+      bg.imageSmoothingEnabled = true;
+      bg.globalCompositeOperation = 'lighter';
+      for (let q = 0; q < 3; q++) bg.drawImage(core, 0, 0, bw2, bh2);
+      // the white-hot centre of each bead
+      const hot = makeCanvas(W, H), tg = hot.getContext('2d');
+      tg.drawImage(core, 0, 0);
+      tg.globalCompositeOperation = 'source-atop';
+      tg.fillStyle = 'rgba(255,246,214,0.85)';
+      tg.fillRect(0, 0, W, H);
+      m = { core, halo, bloom, hot, n };
     }
   } catch { m = null; }
   B.frames[fi] = m;
   return m;
 }
 let beadGlowDrawn = 0;
+/* Fetch the bead mask of every sheet he can be drawn from, the moment rage ignites, so the first
+ * swing of each move already burns (the masks load lazily otherwise and missed a few frames). */
+function preloadBeadMasks() {
+  const anims = new Set(['idle', 'combatidle', 'walk', 'combatWalk', 'jump', 'rush']);
+  for (const k of Object.keys(ATTACKS)) anims.add(ATTACKS[k].anim ?? k);
+  for (const a of anims) { try { beadFrameFor(spriteFor(a), 0); } catch {} }
+}
+let beadTrailDrawn = 0;
 function drawBeadGlow(spr, fi, w, h, x, y) {
   const m = beadFrameFor(spr, fi);
+  const now = performance.now() / 1000;
+  const zoomPx = tune.zoom * baseScale();
+  // ---- the trail: earlier samples, oldest first, in world space ----
+  while (beadTrail.length && now - beadTrail[0].t > BEAD_GLOW.trailLife) beadTrail.shift();
+  const here = ctx.getTransform();
+  const B = BEAD_GLOW;
+  if (beadTrail.length) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.imageSmoothingEnabled = true;
+    for (const e of beadTrail) {
+      const dx = (e.camX - cameraX) * zoomPx, dy = (e.camY - cameraY) * zoomPx;
+      const T = e.M, ex = T.e + dx, ey = T.f + dy;
+      // a sample sitting where the beads are now adds no streak, only glare: skip it
+      // (a limb moves INSIDE the frame, so only the same frame at the same spot is a repeat)
+      if (e.m === m && Math.hypot(ex - here.e, ey - here.f) < B.trailMinMove * baseScale() && T.a === here.a) continue;
+      const age = (now - e.t) / B.trailLife, k = (1 - age) * (1 - age);
+      ctx.setTransform(T.a, T.b, T.c, T.d, ex, ey);
+      ctx.globalAlpha = B.trailHalo * k;
+      ctx.drawImage(e.m.halo, e.x, e.y, e.w, e.h);
+      ctx.globalAlpha = B.trailCore * k;
+      ctx.drawImage(e.m.core, e.x, e.y, e.w, e.h);
+      beadTrailDrawn++;
+    }
+    ctx.restore();
+  }
   if (!m) return;
-  const pulse = 0.72 + 0.28 * Math.sin(performance.now() / 1000 * Math.PI * 2 * BEAD_GLOW.pulseHz);
+  // this frame joins the trail
+  const last = beadTrail[beadTrail.length - 1];
+  if (!last || now - last.t > 1 / 120) {
+    beadTrail.push({ m, w, h, x, y, M: here, camX: cameraX, camY: cameraY, t: now });
+    if (beadTrail.length > B.trailMax) beadTrail.shift();
+  }
+  const pulse = 0.78 + 0.22 * Math.sin(now * Math.PI * 2 * B.pulseHz);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.imageSmoothingEnabled = true;
-  // the halo: soft light spilling past the beads, once tight and once a little wider
-  ctx.globalAlpha = BEAD_GLOW.halo * pulse;
+  // the bloom: a wide, soft spill of light round each bead
+  ctx.globalAlpha = B.bloom * pulse;
+  const bs = B.bloomSpread;
+  ctx.drawImage(m.bloom, x - w * (bs - 1) / 2, y - h * (bs - 1) / 2, w * bs, h * bs);
+  // the halo: tight, then a little wider
+  ctx.globalAlpha = B.halo * pulse;
   ctx.drawImage(m.halo, x, y, w, h);
-  const s = BEAD_GLOW.spread;
+  const s = B.spread;
   ctx.drawImage(m.halo, x - w * (s - 1) / 2, y - h * (s - 1) / 2, w * s, h * s);
-  // …and the beads themselves, burning
-  ctx.globalAlpha = BEAD_GLOW.core * (0.8 + 0.2 * pulse);
+  // …the beads themselves, burning (twice: they read as lit, not tinted)…
+  ctx.globalAlpha = B.core;
   ctx.drawImage(m.core, x, y, w, h);
+  ctx.drawImage(m.core, x, y, w, h);
+  // …and white-hot at their centres
+  ctx.globalAlpha = B.hot * (0.75 + 0.25 * pulse);
+  ctx.drawImage(m.hot, x, y, w, h);
   ctx.restore();
   beadGlowDrawn++;
 }
@@ -26446,7 +26517,7 @@ window.__ror = {
   get sparkCount() { return sparks.length; },
   // the hit impact sprite (request 563): how many, the last one's spot, and the live ones
   get impactCount() { return impactCount; },
-  get beadGlow() { return { drawn: beadGlowDrawn }; },
+  get beadGlow() { return { drawn: beadGlowDrawn, trail: beadTrailDrawn, samples: beadTrail.length }; },
   grabDebug() {
     const t = grabTarget();
     return { target: t ? Math.round(t.x) : null, px: Math.round(player.x), py: Math.round(player.y), facing: player.facing,
