@@ -429,12 +429,16 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * ONE evidence-analysis circle that every recovered item feeds, and the next target. The items
    * themselves are paged in the left panel as before. `items` stays an array (every entry is the
    * same circle) so the pager's focus ring and the cue schedule keep their shape. */
-  const ANALYSIS = { x: 832, y: 340, r: 42 };
+  /* EVEN SPACING CLEAR OF THE PANEL (request 571). The defeated boss sat at 516, so his
+   * "LEVEL 01 · DEFEATED" caption ran into the NEXT TARGET panel (right edge 428), while the
+   * target's name hugged the screen edge. The three now stand 272 apart, centred in the room
+   * between the panel and the right margin. */
+  const ANALYSIS = { x: 838, y: 340, r: 42 };
   const BOARD = {
-    source: { x: 516, y: 340, r: 46 },
+    source: { x: 566, y: 340, r: 46 },
     analysis: ANALYSIS,
     items: [ANALYSIS, ANALYSIS, ANALYSIS],
-    target: { x: 1148, y: 340, r: 50 },
+    target: { x: 1110, y: 340, r: 50 },
   };
 
   /* HOW LONG EACH THING TAKES. Named because they are now read TWICE — once by
@@ -1027,7 +1031,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     /* THE FILE'S STATE, SAID PLAINLY. "No evidence recovered" is the whole
      * reason Masood Jibril cannot be opened, and a player who is not told that
      * reads an unresponsive button instead. */
-    ui.setFont(500, 11.5, 0.15);
+    ui.setFont(500, 16, 0.12);
     ctx.fillStyle = open ? C.text : C.dim;
     const note = open
       ? `${c.file.evidence.length} items recovered.`
@@ -1405,20 +1409,20 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const tone = node.tone === 'alert' ? C.red : node.tone === 'green' ? C.green
       : node.tone === 'red' ? C.red : C.dim;
 
-    ui.setFont(700, 10.5, 2.8);
+    ui.setFont(700, 13, 3.0);
     ctx.fillStyle = C.gold;
-    ctx.fillText(node.key ? 'NETWORK · SELECTED' : 'NETWORK · UNRESOLVED', box.x + 26, box.y + 33);
+    ctx.fillText(node.key ? 'NETWORK · SELECTED' : 'NETWORK · UNRESOLVED', box.x + 30, box.y + 40);
     ctx.fillStyle = 'rgba(255,255,255,0.09)';
-    ctx.fillRect(box.x + 24, box.y + 49, box.w - 48, 1);
+    ctx.fillRect(box.x + 28, box.y + 60, box.w - 56, 1);
 
-    ui.setDisplay(700, 24, 0.9);
+    ui.fitFont(700, 30, 0.9, id ? id.shortName : 'UNIDENTIFIED', box.w - 60, true);
     ctx.fillStyle = node.tone === 'dim' ? C.muted : C.paper;
     const shownName = id ? id.shortName : 'UNIDENTIFIED';
     ctx.fillText(assertPlayerSafe(shownName, 'chain.name'),
-      box.x + 26, box.y + 86);
-    ui.setFont(700, 8.6, 1.8);
+      box.x + 30, box.y + 106);
+    ui.setFont(700, 11, 1.9);
     ctx.fillStyle = tone;
-    if (node.bottom !== shownName) ctx.fillText(assertPlayerSafe(node.bottom, 'chain.status'), box.x + 26, box.y + 106);
+    if (node.bottom !== shownName) ctx.fillText(assertPlayerSafe(node.bottom, 'chain.status'), box.x + 30, box.y + 132);
 
     /* What this rung offers, said as a fact rather than as a button. The hint
      * bar names the button; this says whether pressing it will do anything. */
@@ -1437,8 +1441,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         : id && c ? 'No evidence yet.'
           : id ? 'No case file. The trail runs out.'
             : 'No name, no face, no file. The chain runs past the evidence.';
-    let y = box.y + 134;
-    for (const l of ui.wrapLines(line, box.w - 52)) { ctx.fillText(l, box.x + 26, y); y += 17; }
+    let y = box.y + 172;
+    for (const l of ui.wrapLines(line, box.w - 60)) { ctx.fillText(l, box.x + 30, y); y += 25; }
   }
 
   function drawCabalScreen(ui) {
@@ -1529,7 +1533,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     /* The read, on the left. Sized to the copy — three wrapped lines and the
      * heading — rather than to the column, so the plate under it is not sitting
      * at the bottom of an empty pane. */
-    const box = { x: 56, y: 186, w: 470, h: 176 };
+    // bigger, with bigger type, into the room the IDENTITY UNKNOWN plate left (request 571)
+    const box = { x: 56, y: 186, w: 540, h: 300 };
     const bu = ease(clamp((stateT - 0.2) / 0.5, 0, 1));
     ctx.save();
     ctx.globalAlpha *= bu;
@@ -1545,37 +1550,20 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * nothing leaves the screen exactly as it always was. */
     if (chainPinned) drawChainDossier(ui, box, K.chain[chainSel]);
     else {
-      ui.setFont(700, 10.5, 2.8);
+      ui.setFont(700, 13, 3.0);
       ctx.fillStyle = C.red;
-      ctx.fillText('ASSESSMENT', box.x + 26, box.y + 33);
+      ctx.fillText('ASSESSMENT', box.x + 30, box.y + 40);
       ctx.fillStyle = 'rgba(255,255,255,0.09)';
-      ctx.fillRect(box.x + 24, box.y + 49, box.w - 48, 1);
-      ui.setFont(500, 14, 0.1);
+      ctx.fillRect(box.x + 28, box.y + 60, box.w - 56, 1);
+      ui.setFont(500, 19, 0.1);
       ctx.fillStyle = C.paper;
-      type.cabal.draw(ctx, K.narration, box.x + 26, box.y + 84, box.w - 52, 23,
+      type.cabal.draw(ctx, K.narration, box.x + 30, box.y + 104, box.w - 60, 31,
         clamp(cabalT / (K.fallbackDur * 0.72), 0, 1));
     }
     ctx.restore();
 
-    /* IDENTITY UNKNOWN — the line the whole sequence exists to land. */
-    const fu = ease(clamp((cabalT - 2.6) / 0.9, 0, 1));
-    ctx.save();
-    ctx.globalAlpha *= fu;
-    ui.roundRectPath(ctx, box.x, box.y + box.h + 22, box.w, 74, 8);
-    ctx.fillStyle = 'rgba(224,67,44,0.10)';
-    ctx.fill();
-    ctx.strokeStyle = `rgba(224,67,44,${0.30 + 0.14 * Math.sin(ui.clock * 2.4)})`;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.textAlign = 'left';
-    ui.setDisplay(700, 26, 2.2);
-    ctx.fillStyle = C.red;
-    ctx.fillText(assertPlayerSafe(resolveIdentity('cabal').displayName.toUpperCase(), 'cabal.name'),
-      box.x + 26, box.y + box.h + 60);
-    ui.setFont(700, 10, 2.6);
-    ctx.fillStyle = C.muted;
-    ctx.fillText('IDENTITY UNKNOWN', box.x + 26, box.y + box.h + 80);
-    ctx.restore();
+    /* (The THE CABAL / IDENTITY UNKNOWN plate that sat under the card is gone, request 571: the
+     * chain's own last rung already says it, in red, beside its node.) */
   }
 
   /* ==================================================== LevelSelectController */

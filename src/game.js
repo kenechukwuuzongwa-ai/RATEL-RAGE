@@ -1,5 +1,5 @@
 import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v126';
-import { createAftermath } from './aftermath.js?v=ratelrage-board570-v1';
+import { createAftermath } from './aftermath.js?v=ratelrage-board571-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -4776,7 +4776,7 @@ function stepWeaponRecovery(enemy, dt) {
  * the point never becomes unusable. */
 const BAT_PICKUP = {
   x: 2760, y: 655,             // its spawn point: just past gate 1, clear of keke-a (2416-2671)
-  reachX: 52, reachY: 32,      // walk into it
+  reachX: 72, reachY: 46,      // GRAB within this of it takes it (request 571: a little more forgiving)
   hover: 48, bob: 10, bobHz: 0.55,  // floats this high, bobbing this much
   spinFps: 18,                 // 24-frame turn = 1.33 s per revolution
   respawn: 8,                  // seconds after the last bat leaves the world
@@ -6688,12 +6688,12 @@ function shakeOffset() {
  * is the struck man's NEAR SURFACE (the side facing Darki) at the height the blow arrives:
  * the face for fists, the chest/torso for kicks, kept inside the attack's own reach box so
  * it can never land behind him. strikeImpact() computes it; nothing else pushes one. */
-const IMPACT = { fps: 26, frames: 5, cell: 341, cols: 3, scale: 0.44, bigScale: 0.6, surface: 0.11, max: 24 };
+const IMPACT = { fps: 26, frames: 3, cell: 341, cols: 3, scale: 0.44, bigScale: 0.6, surface: 0.11, max: 24 };
 let impactImg = null;
 function impactSheet() {
   if (impactImg) return impactImg.complete && impactImg.naturalWidth ? impactImg : null;
   impactImg = new Image();
-  impactImg.src = 'sprites/hit-impact.png?v=567ev15';   // +1.5 EV exposure (request 567)
+  impactImg.src = 'sprites/hit-impact.png?v=571f3';   // +1.5 EV exposure (request 567)
   return null;
 }
 impactSheet();                                   // start the load now: the first blow must not miss it
@@ -6721,7 +6721,7 @@ function strikeImpact(e, win, src = player, kind = 'fist', big = false) {
   if (!e || src !== player) return null;
   const c = strikeContact(e, win, src, kind);
   if (sparks.length >= IMPACT.max) sparks.shift();
-  sparks.push({ x: c.x, y: c.y, age: 0, dur: IMPACT.frames / IMPACT.fps, big, dir: c.dir, kind, rot: (fxRng() - 0.5) * 0.5 });
+  sparks.push({ x: c.x, y: c.y, age: 0, dur: IMPACT.frames / IMPACT.fps, big, dir: c.dir, kind, rot: (fxRng() - 0.5) * 0.5, depth: e.y });
   impactCount++;
   lastImpact = { x: Math.round(c.x), y: Math.round(c.y), kind, attack: player.attack, ex: Math.round(e.x), ey: Math.round(e.y), px: Math.round(player.x), py: Math.round(player.y) };
   return c;
@@ -6730,9 +6730,9 @@ function strikeImpact(e, win, src = player, kind = 'fist', big = false) {
  * solid (a vehicle, a pillar, the desk, the shut door) gets the same splash, at that contact:
  * the struck man's near surface at chest height, or the face of the solid at the body's
  * height. Still never on Darki and never on a fall to the deck. */
-function reboundImpact(x, y, dir, big = false, what = 'body') {
+function reboundImpact(x, y, dir, big = false, what = 'body', depth = null) {
   if (sparks.length >= IMPACT.max) sparks.shift();
-  sparks.push({ x, y, age: 0, dur: IMPACT.frames / IMPACT.fps, big, dir: dir < 0 ? -1 : 1, kind: 'rebound', rot: (fxRng() - 0.5) * 0.5 });
+  sparks.push({ x, y, age: 0, dur: IMPACT.frames / IMPACT.fps, big, dir: dir < 0 ? -1 : 1, kind: 'rebound', rot: (fxRng() - 0.5) * 0.5, depth });
   reboundImpacts++;            // counted apart: impactCount stays Darki's own blows
   lastRebound = { x: Math.round(x), y: Math.round(y), kind: 'rebound', what };
 }
@@ -6764,8 +6764,9 @@ function drawHitSplash(s) {
 }
 
 function drawSparks() {
-  // the impact sprite at each limb's contact point (request 563); blood and embers are separate
-  for (const s of sparks) drawHitSplash(s);
+  // the impact sprite at each limb's contact point (request 563); blood and embers are separate.
+  // A splash with a depth is drawn in the depth-sorted pass instead (actorList, request 571).
+  for (const s of sparks) if (s.depth == null) drawHitSplash(s);
   for (const e of embers) {
     const p = e.age / e.dur;
     if (e.blood) {
@@ -13979,7 +13980,7 @@ function updateThrownBody(e, dt) {
     addRage(chargeScale(imp.rage, c.rageMul, q));
     const mx = (o.x + e.x) / 2, my = o.y - 110;
     triggerHitFx(mx, my, iHit.hitstop, iHit.shake, true);
-    { const bc = bodyContact(o, e); reboundImpact(bc.x, bc.y, bc.dir, q > 0.35, 'enemy'); }   // request 567
+    { const bc = bodyContact(o, e); reboundImpact(bc.x, bc.y, bc.dir, q > 0.35, 'enemy', o.y); }   // request 567
     playHit(iHit);
     triggerFlash('255,255,255', 0.12 + 0.16 * q);
     // Two bodies meeting at speed: sparks both ways, not a tidy little puff.
@@ -14899,6 +14900,26 @@ function ramDustImpact(x, y, dir, s) {
     ramDustEmit(1, x, y, dir * (120 + fxRng() * 260) * (0.4 + s) + (fxRng() - 0.5) * 120, (fxRng() - 0.5) * 80,
       -(140 + fxRng() * 200) * (0.5 + s), 1.3 + fxRng() * 1.8, 0.55 + fxRng() * 0.3);
 }
+/* A BODY HITS THE DECK (request 571): "add ground dust on enemy's fall as well as my fall."
+ * The same chocolate dust as the charge, laid along the length of the body as it lands — a low
+ * skirt of puffs pushed out sideways from under it, rolling on a little the way he was going,
+ * and a spit of grit. `w` ~0.4 (a bounce) .. 1.4 (a hard throw). Counted for the tests. */
+let fallDustCount = 0;
+function fallDust(x, y, dir, w = 1) {
+  const k = Math.max(0.25, Math.min(1.5, w)), d = dir < 0 ? -1 : dir > 0 ? 1 : 0;
+  const len = 120 * Math.min(1, 0.55 + 0.45 * k);                    // where his body lies
+  const n = ramDustN(5 + 9 * k);
+  for (let i = 0; i < n; i++) {
+    const u = fxRng() - 0.35, side = fxRng() < 0.5 ? -1 : 1;
+    ramDustEmit(0, x + (d || side) * u * len, y + (fxRng() - 0.5) * 8,
+      side * (50 + fxRng() * 110) * k + d * 70 * k, (fxRng() - 0.5) * 40,
+      -(10 + fxRng() * 34) * k, 7 + fxRng() * 8 * k, 0.5 + fxRng() * 0.45);
+  }
+  for (let i = 0; i < ramDustN(2 + 5 * k); i++)
+    ramDustEmit(1, x + (fxRng() - 0.5) * len * 0.8, y, (fxRng() - 0.5) * 220 * k + d * 60, (fxRng() - 0.5) * 60,
+      -(80 + fxRng() * 120) * k, 1.1 + fxRng() * 1.4, 0.45 + fxRng() * 0.3);
+  fallDustCount++;
+}
 // stopped dead against something solid: it rebounds off the obstruction
 function ramDustWall(dir, s) {
   const x = player.x + dir * 44;
@@ -15619,9 +15640,11 @@ function consumeAttackInput(dt) {
     return;
   }
 
-  // GRAB at the floating bat takes the bat (request 563)
-  if (input.grabPressed && batPickupReachable()) {
-    input.grabPressed = false;
+  /* GRAB at the floating bat takes the bat (request 563). The HUD's GRAB button (and E / L2) is
+   * the EXECUTE input — the pickup — not the G grab, so the bat answered only to G and the
+   * GRAB button walked straight past it (request 571): either press takes it now. */
+  if ((input.grabPressed || input.executePressed) && batPickupReachable()) {
+    input.grabPressed = false; input.executePressed = false;
     player.bufferedAttack = null;
     collectBatPickup();
     return;
@@ -16137,7 +16160,7 @@ function bodyRebound(e, vx, stopX, faceX, sliding, solid = null) {
     const hy = e.y - 110 + (e.jumpY || 0) * 0.6;
     triggerHitFx(faceX, hy, 0.02 + 0.05 * kk, Math.round(4 + 10 * kk), kk > 0.6);
     // the splash on the solid's face where he struck it, oriented along his flight like a blow (request 567)
-    reboundImpact(faceX, hy, Math.sign(vx) || 1, kk > 0.6, solid ? solidKind(solid) : 'door');
+    reboundImpact(faceX, hy, Math.sign(vx) || 1, kk > 0.6, solid ? solidKind(solid) : 'door', e.y);
     playThud(e.x, 0.55 + 0.45 * kk);
     if (!e.dead && e.hp > 1) { e.hp = Math.max(1, e.hp - SOLID_HIT.damage * kk); e.hpFlash = 0.25; }
   }
@@ -16189,6 +16212,7 @@ function stepEnemyBounce(e, dt) {
      * ordinary fall sound (played where he first hits the deck); the bounce keeps
      * its floor shake only. */
     groundSlam(e.x, e.y, w);
+    if (hop >= 0) fallDust(e.x, e.y, Math.sign(e.slideVx || e.vx), w * 0.8);
     e.bounceHop = hop;
   }
 }
@@ -16313,6 +16337,7 @@ function advanceReaction(dt) {
       if (!r.landed) {
         r.landed = true;
         playThud(player.x, 1);
+        fallDust(player.x, player.y, r.dir, 1);   // his fall lifts the deck's dust too (request 571)
         // Grit and a small camera jolt â€” but NO hit-stop. A freeze here reads as
         // a hitch rather than as weight, because it lands three frames into the
         // bounce and pins him mid-hop: measured as five identical frames at 2px
@@ -22155,6 +22180,7 @@ function update(dt) {
           : 0.75;
         playThud(enemy.x, thrownWeight * (0.85 + 0.35 * enemy.bounceScale));
         groundSlam(enemy.x, enemy.y, enemy.bounceScale);
+        fallDust(enemy.x, enemy.y, Math.sign(enemy.vx), enemy.bounceScale);   // ground dust (request 571)
         if (enemy.dead) {
           enemy.state = 'ko';
           // A corpse now lies there for the whole death performance BEFORE the
@@ -23502,7 +23528,11 @@ function drawPlayer() {
   const imgY = -drawH + (animationSprite.lifts?.[player.frame] ?? 0) + (animationSprite.sink || 0);
   ctx.drawImage(img, -anchor, imgY);
   ctx.filter = 'none';
-  if (rageLight) drawBeadGlow(animationSprite, frames[player.frame] ? player.frame : 0, frame.width, frame.height, -anchor, imgY);
+  if (rageLight) {
+    const fi = frames[player.frame] ? player.frame : 0;
+    drawBeadGlow(animationSprite, fi, frame.width, frame.height, -anchor, imgY);
+    drawNeckGlow(animationSprite, fi, frame.width, frame.height, -anchor, imgY);
+  } else if (!player.rageActive) neckSparks.length = 0;   // (not on the reflection pass: that would reset them every frame)
   ctx.restore();
   ctx.globalAlpha = 1;
   if (!reflecting) drawRamDust(true);   // …and the dust on the camera's side of his feet
@@ -23542,7 +23572,8 @@ function drawPlayer() {
 const BEAD_GLOW = {
   saturate: 1.25, haloRes: 1 / 7, bloomRes: 1 / 16, core: 1, hot: 0.85, halo: 1, haloPasses: 4, bloom: 0.9, bloomSpread: 1.18,
   spread: 1.08, pulseHz: 2.2,
-  trailLife: 0.22, trailMax: 18, trailCore: 0.7, trailHalo: 0.75, trailMinMove: 1.5,
+  // longer trails (request 571): 0.22 -> 0.42 s of streak behind the wrists and ankles
+  trailLife: 0.42, trailMax: 48, trailCore: 0.7, trailHalo: 0.75, trailMinMove: 1.5,
 };
 const beadTrail = [];
 function beadFrameFor(spr, fi) {
@@ -23602,7 +23633,7 @@ let beadGlowDrawn = 0;
 function preloadBeadMasks() {
   const anims = new Set(['idle', 'combatidle', 'walk', 'combatWalk', 'jump', 'rush']);
   for (const k of Object.keys(ATTACKS)) anims.add(ATTACKS[k].anim ?? k);
-  for (const a of anims) { try { beadFrameFor(spriteFor(a), 0); } catch {} }
+  for (const a of anims) { try { beadFrameFor(spriteFor(a), 0); neckFrameFor(spriteFor(a), 0); } catch {} }
 }
 let beadTrailDrawn = 0;
 function drawBeadGlow(spr, fi, w, h, x, y) {
@@ -23662,6 +23693,91 @@ function drawBeadGlow(spr, fi, w, h, x, y) {
   ctx.drawImage(m.hot, x, y, w, h);
   ctx.restore();
   beadGlowDrawn++;
+}
+
+/* ============================================== THE PENDANT AND THE NECKLACE (request 571)
+ * "Make his pendant glow too, with a very small radius, not distracting, perfectly tracked to the
+ * pendant — and maybe 3 tiny sparks on his necklace beads." The pendant (the gold tusks) and the
+ * necklace's white beads are FOUND offline per frame by deploy/gen-neck.js into
+ * sprites/neck/<sheet>.json (working-size cell coords); each point goes through the sheet's own
+ * crop box, under his own transform (facing, tilt), so the light sits on the pendant in every frame
+ * of every move and swings with it. A frame where the pendant is hidden (his back, an arm across
+ * it) has no entry and draws nothing. Light only, added on top of him (project rule). */
+const NECK_GLOW = {
+  radius: 1.9,      // the glow, in pendant-sizes (the pendant ~ 2.2 % of his height): small
+  alpha: 0.62, core: 0.55, pulseHz: 1.6,
+  sparks: 3, sparkLife: [0.16, 0.34], sparkGap: [0.12, 0.55], sparkPx: [2.2, 3.6],   // screen px
+};
+const neckSparks = [];
+let neckGlowDrawn = 0, neckSparkDrawn = 0;
+function neckFrameFor(spr, fi) {
+  if (!spr?.crop || !spr.src) return null;
+  const base = spr.src.split('/').pop().replace(/-mobile(?=.png$)/, '');
+  if (!/^darki-/.test(base)) return null;
+  let N = spr.neck;
+  if (!N) {
+    N = spr.neck = { ok: false, data: null };
+    fetch('sprites/neck/' + base.replace(/.png$/, '.json')).then((r) => (r.ok ? r.json() : null))
+      .then((j) => { N.data = j; N.ok = !!j; }).catch(() => { N.failed = true; });
+  }
+  return N.ok ? N.data.frames[fi] ?? null : null;
+}
+function drawNeckGlow(spr, fi, w, h, x, y) {
+  const f = neckFrameFor(spr, fi);
+  if (!f) { neckSparks.length = 0; return; }
+  const { minX, minY, bw, bh } = spr.crop;
+  const map = (q) => [x + (q[0] - minX) / bw * w, y + (q[1] - minY) / bh * h];
+  const [px, py] = map(f.p);
+  const T = ctx.getTransform(), screen = Math.hypot(T.a, T.b) || 1;   // drawn px -> screen px
+  const pr = f.r / bh * h;                                            // the pendant's size, drawn px
+  const now = performance.now() / 1000, G = NECK_GLOW;
+  const pulse = 0.8 + 0.2 * Math.sin(now * Math.PI * 2 * G.pulseHz);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // the glow: a small warm halo round the tusks…
+  const R = pr * G.radius;
+  const g = ctx.createRadialGradient(px, py, 0, px, py, R);
+  g.addColorStop(0, `rgba(255,214,120,${G.alpha * pulse})`);
+  g.addColorStop(0.45, `rgba(255,170,60,${G.alpha * 0.45 * pulse})`);
+  g.addColorStop(1, 'rgba(255,140,40,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2); ctx.fill();
+  // …and a hot little centre
+  const c = ctx.createRadialGradient(px, py, 0, px, py, pr * 0.55);
+  c.addColorStop(0, `rgba(255,246,214,${G.core * pulse})`);
+  c.addColorStop(1, 'rgba(255,220,150,0)');
+  ctx.fillStyle = c;
+  ctx.beginPath(); ctx.arc(px, py, pr * 0.55, 0, Math.PI * 2); ctx.fill();
+  neckGlowDrawn++;
+  // the sparks: up to three tiny glints, each on a bead, riding with the pendant while they live
+  if (f.b?.length) {
+    while (neckSparks.length < G.sparks) neckSparks.push({ t0: now + Math.random() * G.sparkGap[1], life: 0, dx: 0, dy: 0, seated: false });
+    for (const sp of neckSparks) {
+      if (now < sp.t0) continue;
+      if (!sp.seated) {
+        const q = map(f.b[(Math.random() * f.b.length) | 0]);
+        sp.dx = q[0] - px; sp.dy = q[1] - py; sp.seated = true;
+        sp.life = G.sparkLife[0] + Math.random() * (G.sparkLife[1] - G.sparkLife[0]);
+        sp.size = G.sparkPx[0] + Math.random() * (G.sparkPx[1] - G.sparkPx[0]);
+        sp.rot = Math.random() * Math.PI;
+      }
+      const u = (now - sp.t0) / sp.life;
+      if (u >= 1) { sp.seated = false; sp.t0 = now + G.sparkGap[0] + Math.random() * (G.sparkGap[1] - G.sparkGap[0]); continue; }
+      const k = Math.sin(u * Math.PI);                    // twinkle: up and back down
+      const sx = px + sp.dx, sy = py + sp.dy, L = sp.size * k / screen;
+      ctx.save();
+      ctx.translate(sx, sy); ctx.rotate(sp.rot);
+      ctx.globalAlpha = 0.9 * k;
+      ctx.strokeStyle = 'rgba(255,240,200,1)'; ctx.lineWidth = Math.max(0.6, 1.1 / screen); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-L, 0); ctx.lineTo(L, 0); ctx.moveTo(0, -L); ctx.lineTo(0, L); ctx.stroke();
+      const d = ctx.createRadialGradient(0, 0, 0, 0, 0, L * 0.9);
+      d.addColorStop(0, 'rgba(255,250,230,0.95)'); d.addColorStop(1, 'rgba(255,200,110,0)');
+      ctx.fillStyle = d; ctx.beginPath(); ctx.arc(0, 0, L * 0.9, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      neckSparkDrawn++;
+    }
+  }
+  ctx.restore();
 }
 
 // Is this body being drawn from AgbeoFall? Everything the old draw code did to
@@ -23843,9 +23959,9 @@ function actorList() {
    * their foot row: a man standing nearer draws in front, one behind draws
    * behind the shaft. */
   if (activeLevel === 2) {
-    for (const p of L2_PILLARS) actors.push({ depth: p.y, tie: -50, draw: () => drawLevel2Pillar(p) });
+    for (const p of L2_PILLARS) actors.push({ depth: p.y, tie: -50, draw: () => drawLevel2Pillar(p), solid: true });
     // the Obscure mask's crates, at their base row: anyone behind one is covered by it
-    L2.cover.forEach((c, i) => actors.push({ depth: l2Y(c.top + c.h), tie: -48, draw: () => drawLevel2Cover(i) }));
+    L2.cover.forEach((c, i) => actors.push({ depth: l2Y(c.top + c.h), tie: -48, draw: () => drawLevel2Cover(i), solid: true }));
     // the strong room's weapon racks, at their base row (request 489)
     // At the inside switch (the ending) he stands at the jamb, between the west
     // stands and the wall, with the bats' blades at his chest: those racks draw
@@ -23854,12 +23970,12 @@ function actorList() {
       && ['toSwitch', 'switch', 'doorOpen', 'exit1'].includes(l2m.ePhase) && player.x < l2X(12560);
     L2.racks.forEach((rk, ri) => {
       const base = l2Y(rk.top + rk.h);
-      actors.push({ depth: atJamb && rk.left < 13000 ? Math.min(base, player.y - 0.01) : base, tie: -47, draw: () => drawLevel2Rack(ri) });
+      actors.push({ depth: atJamb && rk.left < 13000 ? Math.min(base, player.y - 0.01) : base, tie: -47, draw: () => drawLevel2Rack(ri), solid: true });
     });
     if (l2Art.desk) {
       // at the desk's left end (the key pose, request 485): the whole workstation behind him
       if (l2BesideDesk()) actors.push({ depth: player.y - 0.01, tie: -49, draw: () => drawLevel2Desk() });
-      else actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk() });   // the workstation (request 454)
+      else actors.push({ depth: L2_DESK.y, tie: -49, draw: () => drawLevel2Desk(), solid: true });   // the workstation (request 454)
     }
   }
   for (const v of activeLevel === 2 ? [] : VEHICLE_ART) {
@@ -23879,6 +23995,7 @@ function actorList() {
           ctx.drawImage(bg.vehicles, v.sx, v.sy, v.w, v.h, Math.round(sx), Math.round(v.y - v.h), v.w, v.h));
       },
       mirror: { x: v.x + v.w * 0.5, y: v.y, h: v.h, w: v.w },
+      solid: { x0: v.x, x1: v.x + v.w, top: v.y - v.h },
     });
   }
   /* A DROPPED MACHETE SORTS LIKE ANYTHING ELSE ON THE ROAD — same list, same
@@ -23900,6 +24017,22 @@ function actorList() {
   // in Darki's hand â€” then it is forced just in FRONT of him so the pickup reads.
   if (evidence.active && !evidence.gone)
     actors.push({ depth: evidence.held ? player.y + 0.001 : evidence.y, tie: 101, draw: drawEvidence });
+  /* THE HIT SPLASH SORTS INTO THE SCENE (request 571). Drawn over everything, a splash on a man
+   * fighting behind a parked keke showed THROUGH the keke. A splash now sits in front of the man
+   * it landed on (and in front of Darki, so his own fist never hides it) — unless a solid stands
+   * between: a vehicle, pillar, crate, rack or desk nearer than the man and across the splash.
+   * Then it drops to just in front of the man, and the solid covers it as it covers him. */
+  if (!reflecting) {
+    const solids = actors.filter((a) => a.solid);
+    for (const sp of sparks) {
+      if (sp.depth == null) continue;
+      const front = Math.max(sp.depth, player.y) + 0.002;
+      const r = IMPACT.cell * (sp.big ? IMPACT.bigScale : IMPACT.scale) * 0.5;
+      const hidden = solids.some((a) => a.depth > sp.depth && a.depth < front + 1
+        && (a.solid === true || (sp.x + r > a.solid.x0 && sp.x - r < a.solid.x1 && sp.y + r > a.solid.top)));
+      actors.push({ depth: hidden ? sp.depth + 0.0005 : front, tie: hidden ? 99 : 102, draw: () => drawHitSplash(sp), splash: hidden ? 'behind' : 'front' });
+    }
+  }
   actors.sort((a, b) => (a.depth - b.depth) || (a.tie - b.tie));
   return actors;
 }
@@ -26490,7 +26623,16 @@ window.__ror = {
   get impactCount() { return impactCount; },
   get reboundImpacts() { return reboundImpacts; },
   get lastRebound() { return lastRebound; },
+  get fallDust() { return fallDustCount; },
+  testSplash(x, y, depth) { sparks.push({ x, y, age: 0, dur: IMPACT.frames / IMPACT.fps, big: false, dir: 1, kind: "test", rot: 0, depth }); },
+  get impactFrames() { return IMPACT.frames; },
+  actorOrder() { return actorList().map((a) => (a.splash ? "splash:" + a.splash : a.solid ? "solid" : a.draw === drawPlayer ? "player" : "other")); },
   get beadGlow() { return { drawn: beadGlowDrawn, trail: beadTrailDrawn, samples: beadTrail.length }; },
+  get neckGlow() { return { glow: neckGlowDrawn, sparks: neckSparkDrawn, live: neckSparks.filter((q) => q.seated).length }; },
+  neckProbe() {
+    const spr = spriteFor(player.anim);
+    return { anim: player.anim, frame: player.frame, loaded: !!spr?.neck?.ok, f: neckFrameFor(spr, player.frame) };
+  },
   grabDebug() {
     const t = grabTarget();
     return { target: t ? Math.round(t.x) : null, px: Math.round(player.x), py: Math.round(player.y), facing: player.facing,
