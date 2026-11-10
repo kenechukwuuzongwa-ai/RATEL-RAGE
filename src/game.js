@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v125';
-import { createAftermath } from './aftermath.js?v=ratelrage-copy567-v1';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v126';
+import { createAftermath } from './aftermath.js?v=ratelrage-board570-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -6526,6 +6526,44 @@ function startMusic() {
   musicEl.volume = musicVol;
   const pr = musicEl.play();
   if (pr?.catch) pr.catch(() => {});   // retried by updateMusic (request 347)
+}
+/* RAGE CRACKLE (request 570). While Darki is raging, small electric sparks crackle round him:
+ * sounds/rage-sparks.mp3 (Sorceress take, sparse dry zaps) looped on the SFX bus from the moment
+ * rage ignites to the moment it runs out. The loop skips the take's first 0.2 s and stops at
+ * 3.85 s, before the single loud snap it ends on. Paused, muted, game over or back in the menus:
+ * it fades out, and it fades back in if the fight resumes still raging. */
+const RAGE_SPARKS = { src: 'sounds/rage-sparks.mp3', gain: 1.8, loopStart: 0.2, loopEnd: 3.85, fadeIn: 0.15, fadeOut: 0.25 };
+const rageSparks = { buf: null, loading: false, node: null, g: null, on: false, starts: 0 };
+function updateRageSparks() {
+  if (!audioCtx || !sfxGain) return;
+  const want = !!player.rageActive && !paused && !gameOver.active && !frontEnd?.active && !audioMuted;
+  if (want && !rageSparks.buf) {
+    if (!rageSparks.loading) { rageSparks.loading = true; loadSound(RAGE_SPARKS.src).then((b) => { rageSparks.buf = b; }); }
+    return;
+  }
+  if (want === rageSparks.on) return;
+  rageSparks.on = want;
+  const now = audioCtx.currentTime;
+  if (want) {
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(RAGE_SPARKS.gain, now + RAGE_SPARKS.fadeIn);
+    g.connect(sfxGain);
+    const n = audioCtx.createBufferSource();
+    n.buffer = rageSparks.buf;
+    n.loop = true; n.loopStart = RAGE_SPARKS.loopStart; n.loopEnd = RAGE_SPARKS.loopEnd;
+    n.connect(g);
+    n.start(now, RAGE_SPARKS.loopStart);
+    rageSparks.node = n; rageSparks.g = g; rageSparks.starts++;
+  } else if (rageSparks.node) {
+    const { node: n, g } = rageSparks;
+    g.gain.cancelScheduledValues(now);
+    g.gain.setValueAtTime(g.gain.value, now);
+    g.gain.linearRampToValueAtTime(0, now + RAGE_SPARKS.fadeOut);
+    try { n.stop(now + RAGE_SPARKS.fadeOut + 0.02); } catch {}
+    n.onended = () => { try { g.disconnect(); } catch {} };
+    rageSparks.node = null; rageSparks.g = null;
+  }
 }
 function updateMusic(dt) {
   if (!musicEl || !musicStarted) return;
@@ -26754,6 +26792,8 @@ window.__ror = {
   get l2Music() { return { on: activeLevel === 2, src: musicEl?.src ?? null, playing: !!musicEl && !musicEl.paused, pos: musicEl ? +musicEl.currentTime.toFixed(3) : null, loop: !!musicEl?.loop }; },
   releaseL2Music() { releaseL2Music(); },
   get musicVol() { return musicVol; },
+  get rageSparks() { return { on: rageSparks.on, playing: !!rageSparks.node, ready: !!rageSparks.buf, starts: rageSparks.starts }; },
+  tickRageSparks() { updateRageSparks(); },
   kickMusic() { startMusic(); },                 // test: begin the loop
   resetMusicPlaylist() { resetMusicPlaylist(); },   // test: as the main menu does (request 567)
   tickMusic(dt) { updateMusic(dt); },            // test: advance the fade
@@ -28090,6 +28130,7 @@ function loop(ts) {
   keepAudioContextAlive(dt);           // menus and fight alike (request 348)
   keepAwake('entry', levelEntry.active);   // no dimming under the narrated entry (request 349)
   if (frontEnd && !frontEnd.active) keepAwake('video', false);   // the front end's reason ends with it
+  updateRageSparks();                  // request 570: the crackle follows rage (and stops in menus)
   if (frontEnd?.active) {
     frontEnd.pollGamepad();
     frontEnd.update(dt);

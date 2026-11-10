@@ -3634,6 +3634,16 @@ export function createFrontEnd({
     // every headline is the bold pixel face (request 553)
     setFont(weight, +(impactSize * DISPLAY_FIT.size).toFixed(2), impactTrack * DISPLAY_FIT.track, FONT_BOLD);
   }
+  /* TEXT NEVER LEAVES ITS BOX (request 570). Sets the font as setFont/setDisplay would, then
+   * steps the size down half a point at a time until the text is no wider than maxW.
+   * Returns the size it settled on. Same faces, same tracking: only the size gives. */
+  function fitFont(weight, size, spacing, text, maxW, display = false) {
+    const set = display ? setDisplay : setFont;
+    let k = size;
+    set(weight, k, spacing);
+    while (k > 6 && ctx.measureText(text).width > maxW) { k -= 0.5; set(weight, k, spacing); }
+    return k;
+  }
 
   /* Rolling section timings — cheap enough to leave in, and the only way to
    * tell a slow blur from a slow sprite without guessing. */
@@ -3963,10 +3973,11 @@ export function createFrontEnd({
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    setFont(hero ? 700 : 600, hero ? 19 : 15.5, hero ? 2.2 : 1.5);
+    const labelX = x + padX + (o.icon ? (hero ? 30 : 26) : 0);
+    // the label fits the button, clear of its value or chevron (request 570)
+    fitFont(hero ? 700 : 600, hero ? 19 : 15.5, hero ? 2.2 : 1.5, label, x + w - 34 - labelX - (o.value ? 90 : 0));   // 34: the focus chevron sits at w-20
     ctx.fillStyle = tint;
     ctx.globalAlpha = disabled ? 0.55 : 1;
-    const labelX = x + padX + (o.icon ? (hero ? 30 : 26) : 0);
     ctx.fillText(label, labelX, y + h / 2 + 0.5);
     const labelEnd = labelX + ctx.measureText(label).width;     // the note must clear it (request 563)
     ctx.globalAlpha = 1;
@@ -5580,10 +5591,10 @@ export function createFrontEnd({
 
     glass(56, 178, 396, 300, 10);
     ctx.textAlign = 'left';
-    setFont(700, 17, 1.6);
+    fitFont(700, 17, 1.6, 'GROUNDED. TOUGH. DETERMINED.', 396 - 48);   // inside the card (request 570)
     ctx.fillStyle = C.paper;
     ctx.fillText('GROUNDED. TOUGH. DETERMINED.', 80, 214);
-    setFont(500, 12.5, 0.2);
+    fitFont(500, 12.5, 0.2, 'Won’t pay to stand his ground.', 396 - 48);
     ctx.fillStyle = C.muted;
     ctx.fillText('Won’t pay to stand his ground.', 80, 244);
     statBar('POWER', 4, 80, 316);
@@ -5616,7 +5627,7 @@ export function createFrontEnd({
       } else {
         icon('lock', x + w / 2, y + h / 2 - 6, 22, C.dim, 0.7);
         ctx.textAlign = 'center';
-        setFont(700, 9.5, 1.8);
+        fitFont(700, 9.5, 1.8, 'LOCKED', w - 12);
         ctx.fillStyle = C.dim;
         ctx.fillText('LOCKED', x + w / 2, y + h - 9);
       }
@@ -7951,7 +7962,7 @@ export function createFrontEnd({
    * gameplay owns the frame, and the focus eases would otherwise freeze. */
   const ui = {
     C, W, H, MENU_HINTS, HOLD_DELAY, HOLD_RATE,
-    setFont, setDisplay, glass, button, icon, roundRectPath, networkGraph,
+    setFont, setDisplay, fitFont, glass, button, icon, roundRectPath, networkGraph,
     /* Measured against the CURRENT ctx font, so a caller must `setFont` before
      * asking. Shared rather than re-written over in aftermath.js: both files
      * draw on the same canvas with the same fonts, and two wrap routines drift. */

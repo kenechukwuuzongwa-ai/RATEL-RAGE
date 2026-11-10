@@ -424,13 +424,16 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
    * bottom row at 472 puts its last caption on 544 — twelve pixels of air. Move
    * either number and check that sum, or evidence 03's status disappears behind
    * the strip exactly the way it did the first time. */
+  /* ONE ANALYSIS CIRCLE (request 570). The three evidence circles fanned out on elbows read as
+   * busy and misaligned; the board is now a single straight line on one row — the defeated boss,
+   * ONE evidence-analysis circle that every recovered item feeds, and the next target. The items
+   * themselves are paged in the left panel as before. `items` stays an array (every entry is the
+   * same circle) so the pager's focus ring and the cue schedule keep their shape. */
+  const ANALYSIS = { x: 832, y: 340, r: 42 };
   const BOARD = {
     source: { x: 516, y: 340, r: 46 },
-    items: [
-      { x: 838, y: 208, r: 33 },
-      { x: 838, y: 340, r: 33 },
-      { x: 838, y: 472, r: 33 },
-    ],
+    analysis: ANALYSIS,
+    items: [ANALYSIS, ANALYSIS, ANALYSIS],
     target: { x: 1148, y: 340, r: 50 },
   };
 
@@ -482,6 +485,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     file().evidence.forEach((ev, i) => {
       const inLand = ev.draw + TRACE.line;
       const outAt = ev.draw + TRACE.outLag;
+      // the circle receives each item; the two lines are drawn once, by the first (request 570)
+      if (i > 0) { out.push({ id: `node${i}`, at: ev.at, cue: 'traceNode' }); return; }
       out.push(
         // the circle itself
         { id: `node${i}`, at: ev.at, cue: 'traceNode' },
@@ -668,6 +673,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ctx.textBaseline = 'alphabetic';
     } else if (opt.icon) {
       ui.icon(opt.icon, 0, 0, n.r * 0.86, tone, 0.9, 1.6);
+    } else if (opt.art) {
+      opt.art(n.r, tone);
     }
 
     // the ring, swept round as it lands
@@ -685,12 +692,12 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ctx.globalAlpha *= e;
       ctx.textAlign = 'center';
       if (opt.top) {
-        ui.setFont(700, opt.labelSize ?? 10.5, 1.9);
+        ui.fitFont(700, opt.labelSize ?? 10.5, 1.9, opt.top, opt.labelW ?? 200);
         ctx.fillStyle = opt.tone === 'dim' ? C.muted : C.paper;
         ctx.fillText(assertPlayerSafe(opt.top, 'node.top'), n.x, n.y + n.r + 24);
       }
       if (opt.bottom) {
-        ui.setFont(700, 8.6, 1.7);
+        ui.fitFont(700, 8.6, 1.7, opt.bottom, opt.labelW ?? 200);
         ctx.fillStyle = tone;
         ctx.fillText(assertPlayerSafe(opt.bottom, 'node.bottom'), n.x, n.y + n.r + 39);
       }
@@ -861,7 +868,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ui.setFont(700, 9, 2.2);
       ctx.fillStyle = C.orange;
       ctx.fillText(item.no, panel.x + 26, panel.y + 82);
-      ui.setDisplay(700, 17, 0.7);
+      ui.fitFont(700, 17, 0.7, item.title, panel.w - 52, true);   // inside the panel (request 570)
       ctx.fillStyle = C.paper;
       ctx.fillText(item.title, panel.x + 26, panel.y + 108);
 
@@ -874,7 +881,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         ui.setFont(700, 8.6, 1.8);
         ctx.fillStyle = C.muted;
         ctx.fillText(label, panel.x + 26, y);
-        ui.setFont(650, 11, 0.4);
+        ui.fitFont(650, 11, 0.4, value, panel.w - 52);
         ctx.fillStyle = label === 'STATUS' ? C.gold : C.text;
         ctx.fillText(assertPlayerSafe(value, 'evidence.row'), panel.x + 26, y + 18);
         y += 42;
@@ -1151,29 +1158,49 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const S = A.source ?? { character: 'olodo', bottom: 'LEVEL 01 · DEFEATED' };
     const srcWho = resolveIdentity(S.character);
 
-    // connections first, so a circle always covers the line's end
-    A.evidence.forEach((ev, i) => {
-      const node = BOARD.items[i];
-      const inU = clamp((t - ev.draw) / TRACE.line, 0, 1);
-      if (inU > 0) trimPath(elbow(src, node, 0.52), inU, { color: 'rgba(233,182,84,0.72)', width: 1.7, glow: true });
-      const outU = clamp((t - ev.draw - TRACE.outLag) / TRACE.line, 0, 1);
-      if (outU > 0) trimPath(elbow(node, BOARD.target, 0.5), outU,
+    // connections first, so a circle always covers the line's end: ONE straight run each way,
+    // traced on the first item's clock (request 570)
+    const ev0 = A.evidence[0];
+    const hub = BOARD.analysis;
+    if (ev0) {
+      const inU = clamp((t - ev0.draw) / TRACE.line, 0, 1);
+      if (inU > 0) trimPath(elbow(src, hub), inU, { color: 'rgba(233,182,84,0.72)', width: 1.7, glow: true });
+      const outU = clamp((t - ev0.draw - TRACE.outLag) / TRACE.line, 0, 1);
+      if (outU > 0) trimPath(elbow(hub, BOARD.target), outU,
         { color: 'rgba(224,67,44,0.62)', width: 1.7, dash: [7, 5], glow: true });
-    });
+    }
 
     drawNode(ui, src, srcU, {
       tone: 'green', heavy: true, img: portrait(S.character),
       top: srcWho.shortName, bottom: S.bottom,
     });
 
-    A.evidence.forEach((ev, i) => {
-      const u = clamp((t - ev.at) / TRACE.node, 0, 1);
-      drawNode(ui, BOARD.items[i], u, {
-        tone: 'gold',
-        icon: ev.icon ?? (ev.id === 'phone' ? 'bell' : ev.id === 'witness' ? 'users' : 'map'),
-        top: ev.no, bottom: ev.nodeStatus ?? ev.status, labelSize: 9.4,
+    /* The analysis circle: lands with the first item, counts the items in as they arrive, and
+     * flashes its ring once for each. */
+    if (ev0) {
+      const landed = A.evidence.filter((ev) => t >= ev.at).length;
+      const total = A.evidence.length;
+      const last = A.evidence[Math.max(0, landed - 1)];
+      const flash = landed && last ? clamp(1 - (t - last.at) / 0.45, 0, 1) : 0;
+      drawNode(ui, hub, clamp((t - ev0.at) / TRACE.node, 0, 1), {
+        tone: 'gold', heavy: landed >= total, pulse: landed >= total,
+        art: (r, tone) => {
+          // a magnifier: the case under analysis
+          ctx.strokeStyle = tone; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.arc(-r * 0.1, -r * 0.1, r * 0.3, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(r * 0.12, r * 0.12); ctx.lineTo(r * 0.36, r * 0.36); ctx.stroke();
+        },
+        top: 'EVIDENCE ANALYSIS', bottom: `${landed} / ${total} ITEMS`, labelSize: 9.4, labelW: 230,
       });
-    });
+      if (flash > 0) {
+        ctx.save();
+        ctx.globalAlpha *= flash;
+        ctx.beginPath(); ctx.arc(hub.x, hub.y, hub.r + 6 + 10 * (1 - flash), 0, Math.PI * 2);
+        ctx.strokeStyle = C.gold; ctx.lineWidth = 1.6; ctx.shadowColor = C.gold; ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
 
     /* WHICH ITEM THE PANEL IS ON, said on the board as well as in the panel.
      * Paging a detail pane while the diagram beside it stays inert makes the
@@ -1308,7 +1335,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ui.setFont(700, 9, 2.2);
       ctx.fillStyle = C.red;
       ctx.fillText(file().target.tag, n.x, n.y + n.r + 26);
-      ui.setDisplay(700, 20, 0.8);
+      ui.fitFont(700, 20, 0.8, jibril.shortName, 2 * (1280 - 24 - n.x), true);   // never off the right edge
       ctx.fillStyle = C.paper;
       const full = assertPlayerSafe(jibril.shortName, 'target.name');
       ctx.fillText(full.slice(0, Math.round(full.length * B.name)), n.x, n.y + n.r + 52);
@@ -1343,7 +1370,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ui.setFont(700, 12, 2.4);
     ctx.fillStyle = C.muted;
     ctx.fillText(assertPlayerSafe(jibril.rank, 'target.rank'), box.x + 26, box.y + 74);
-    ui.setDisplay(700, 33, 1.2);
+    ui.fitFont(700, 33, 1.2, jibril.shortName, box.w - 52, true);
     ctx.fillStyle = C.paper;
     ctx.fillText(assertPlayerSafe(jibril.shortName, 'target.plate'), box.x + 26, box.y + 112);
     ctx.fillStyle = 'rgba(255,255,255,0.09)';
@@ -1935,16 +1962,16 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ctx.fillStyle = on ? C.gold : C.dim;
       ctx.fillText(String(card.level).padStart(2, '0'), box.x + 34, box.y + 88);
 
-      ui.setFont(700, 10, 3.0);
+      ui.fitFont(700, 10, 3.0, card.id === 'next' ? (lvl.playable ? 'NEXT TARGET' : 'NEXT TARGET · IN PREPARATION') : (lvl.closedTag ?? 'DEFEATED'), textW);
       ctx.fillStyle = card.id === 'next' ? C.red : C.green;
       ctx.fillText(card.id === 'next' ? (lvl.playable ? 'NEXT TARGET' : 'NEXT TARGET · IN PREPARATION')
         : (lvl.closedTag ?? 'DEFEATED'), box.x + 34, box.y + 116);
 
-      ui.setDisplay(700, 27, 1.1);
+      ui.fitFont(700, 27, 1.1, who.shortName, textW, true);     // the column, clear of the photo (request 570)
       ctx.fillStyle = C.paper;
       ctx.fillText(assertPlayerSafe(who.shortName, 'select.boss'), box.x + 34, box.y + 156);
 
-      ui.setFont(700, 10.5, 2.4);
+      ui.fitFont(700, 10.5, 2.4, lvl.title, textW);
       ctx.fillStyle = C.muted;
       ctx.fillText(lvl.title, box.x + 34, box.y + 180);
 
@@ -1964,7 +1991,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
         .forEach((line, n) => ctx.fillText(line, box.x + 34, box.y + 224 + n * 17));
 
       // the action line
-      ui.setFont(700, 11, 2.6);
+      ui.fitFont(700, 11, 2.6, cardAction(card), textW);
       ctx.fillStyle = on ? C.orange : C.dim;
       ctx.fillText(cardAction(card), box.x + 34, box.y + ch - 34);
       // (the press glyph that sat beside the action line is gone — request 544: a card is tapped, not labelled)
