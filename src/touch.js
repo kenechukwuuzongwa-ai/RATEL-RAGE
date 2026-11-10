@@ -906,7 +906,7 @@
       liveEdit();
     });
     panel.querySelector('#ror-hud-reset').addEventListener('click', () => {
-      if (!window.confirm('Reset the control layout to its defaults?')) return;
+      if (!window.confirm('Reset controls to default?')) return;
       sfx('back');
       pushUndo();                                  // a reset can be undone too
       HUDS = HUD_DEFAULTS();

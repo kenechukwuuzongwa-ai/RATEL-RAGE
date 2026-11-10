@@ -171,11 +171,11 @@
       if (pend && pend.email) S.pendingEmail = pend.email;
     } else if (code === 'otp_expired' || /expired|invalid/i.test(desc)) {
       S.view = 'home';
-      S.message = { bad: true, text: 'That link has expired or was already used. Nothing was changed. You can send a new one.' };
+      S.message = { bad: true, text: 'Link expired or used. Send a new one.' };
     } else if (ret.error === 'access_denied' && !code) {
-      S.message = { bad: true, text: 'Sign-in was cancelled. Nothing was changed.' };
+      S.message = { bad: true, text: 'Sign-in cancelled.' };
     } else {
-      S.message = { bad: true, text: 'Sign-in did not finish' + (desc ? ': ' + desc : '') + '. Nothing was changed.' };
+      S.message = { bad: true, text: 'Sign-in failed' + (desc ? ': ' + desc : '') + '.' };
     }
     jdel(ls, PENDING);
     S.autoOpen = true;
@@ -228,11 +228,11 @@
     if (prev && prev.uid === user.id && prev.anon && !anon) {
       var method = (user.app_metadata && user.app_metadata.provider) || 'email';
       track('account_linked', { method: method });
-      S.message = { text: 'Account saved. Your progress now goes with you to any device.' };
+      S.message = { text: 'Account saved. Progress now syncs to any device.' };
       jdel(ls, NUDGE);
     } else if (pend && pend.kind === 'signin' && pend.from !== user.id && !anon) {
       track('account_signed_in', { method: pend.method || 'email', merged: !!mergeFrom });
-      S.message = { text: mergeFrom ? 'Signed in. This device\'s guest progress was added to your account.' : 'Signed in.' };
+      S.message = { text: mergeFrom ? 'Signed in. Guest progress added.' : 'Signed in.' };
     }
     if (pend && (pend.from !== user.id || !anon)) jdel(ls, PENDING);
     jset(ls, WHO, { uid: user.id, anon: anon });
@@ -399,16 +399,16 @@
   }
   function friendly(e) {
     var c = (e && e.code) || '', m = (e && e.message) || '';
-    if (e && (e.name === 'AbortError' || /fetch|network|Failed to/i.test(m))) return 'No connection. Your progress is safe on this device; try again when you are online.';
+    if (e && (e.name === 'AbortError' || /fetch|network|Failed to/i.test(m))) return 'No connection. Progress is safe here; try again online.';
     if (c === 'email_exists' || c === 'user_already_exists') return 'That email already has an account.';
     if (c === 'invalid_credentials') return 'Wrong email or password.';
-    if (c === 'email_not_confirmed') return 'Confirm your email first: open the link we sent you.';
-    if (c === 'weak_password') return 'Choose a stronger password (at least 8 characters).';
-    if (c === 'over_email_send_rate_limit' || c === 'over_request_rate_limit') return 'Too many tries. Wait a minute and try again.';
-    if (c === 'manual_linking_disabled') return 'Linking accounts is switched off for this game right now.';
-    if (c === 'reauthentication_needed') return 'For your security, sign in again before changing the password.';
-    if (c === 'validation_failed' || /invalid.*email/i.test(m)) return 'That email address does not look right.';
-    return m ? m.slice(0, 160) : 'Something went wrong. Nothing was changed.';
+    if (c === 'email_not_confirmed') return 'Confirm your email first (see our link).';
+    if (c === 'weak_password') return 'Password too weak (8+ characters).';
+    if (c === 'over_email_send_rate_limit' || c === 'over_request_rate_limit') return 'Too many tries. Wait a minute.';
+    if (c === 'manual_linking_disabled') return 'Account linking is off right now.';
+    if (c === 'reauthentication_needed') return 'Sign in again to change password.';
+    if (c === 'validation_failed' || /invalid.*email/i.test(m)) return 'Invalid email.';
+    return m ? m.slice(0, 160) : 'Something went wrong.';
   }
   var guestHasProgress = function () { return !P.same(P.get(), P.blank()); };
 
@@ -451,16 +451,16 @@
     var r = await call(sb.auth.updateUser({ password: pw, data: { rr_pw: true } }));
     if (r.error) throw r.error;
     S.hasPassword = true; S.view = 'home';
-    S.message = { text: 'Password set. Sign in with your email on any device.' };
+    S.message = { text: 'Password set.' };
   });
   var forgot = act(async function (email) {
     var r = await call(sb.auth.resetPasswordForEmail(String(email || '').trim(), { redirectTo: redirectTo }));
     if (r.error) throw r.error;
-    S.message = { text: 'If that email has an account, a reset link is on its way.' };
+    S.message = { text: 'If that email has an account, a reset link is coming.' };
   });
   var rename = act(async function (name) {
     name = String(name || '').trim();
-    if (!/^[A-Za-z0-9 _-]{3,20}$/.test(name)) throw { message: 'Names are 3–20 letters, numbers, spaces, - or _.' };
+    if (!/^[A-Za-z0-9 _-]{3,20}$/.test(name)) throw { message: '3–20 letters, numbers, spaces, - or _.' };
     var r = await call(sb.from('profiles').update({ display_name: name }).eq('id', S.uid));
     if (r.error) throw r.error;
     S.name = name; S.message = { text: 'Name saved.' };
@@ -474,7 +474,7 @@
     P.setOwner('device');            // anything played before the new guest exists stays with it
     await call(sb.auth.signOut({ scope: 'local' }));
     S.view = 'home';
-    S.message = { text: 'Signed out. Your account\'s progress is in the cloud; this device is a new guest now.' };
+    S.message = { text: 'Signed out. Progress stays in your account; this device is now a guest.' };
   });
   var retry = act(async function () {
     if (!sb) await boot();
@@ -588,13 +588,13 @@
   }
 
   function syncLine() {
-    if (S.status === 'offline') return 'Offline: progress is kept on this device and backs up when you are online.';
-    if (S.status === 'unavailable') return 'Cloud saves are not available right now. Progress is kept on this device.';
+    if (S.status === 'offline') return 'Offline: saved here, backs up when online.';
+    if (S.status === 'unavailable') return 'Cloud saves unavailable. Saved on this device.';
     if (S.status === 'connecting') return 'Connecting…';
     if (S.sync === 'saving') return 'Cloud save: saving…';
     if (S.sync === 'saved') return 'Cloud save: up to date.';
-    if (S.sync === 'offline') return 'Cloud save: waiting for a connection. Nothing is lost.';
-    if (S.sync === 'error') return 'Cloud save: could not reach the server. Progress is safe on this device.';
+    if (S.sync === 'offline') return 'Cloud save: waiting for connection.';
+    if (S.sync === 'error') return 'Cloud save failed. Saved on this device.';
     return 'Cloud save: ready.';
   }
 
@@ -613,34 +613,34 @@
     var h = '<button class="x" data-a="close" aria-label="Close">✕</button>';
     var msg = S.message ? '<div class="msg' + (S.message.bad ? ' bad' : '') + '">' + esc(S.message.text) + '</div>' : '';
     var mergeBox = S.anon && guestHasProgress()
-      ? '<label class="chk"><input type="checkbox" name="merge" checked> <span>Add this device\'s guest progress to that account. Untick to keep them separate. Nothing is deleted either way.</span></label>' : '';
+      ? '<label class="chk"><input type="checkbox" name="merge" checked> <span>Add guest progress to that account. Nothing is deleted either way.</span></label>' : '';
     var v = S.view;
     if (v === 'home') {
       if (S.status === 'registered') {
         h += '<h2>YOUR ACCOUNT</h2>' + msg + '<p>Signed in' + (S.email ? ' as <b>' + esc(S.email) + '</b>' : S.provider ? ' with ' + esc(S.provider) : '') + '.</p>'
           + '<p class="muted">' + esc(syncLine()) + '</p>'
-          + '<form data-a="rename"><label class="muted">Name on the leaderboard</label><div class="row"><input type="text" name="name" maxlength="20" value="' + esc(S.name || '') + '">'
+          + '<form data-a="rename"><label class="muted">Leaderboard name</label><div class="row"><input type="text" name="name" maxlength="20" value="' + esc(S.name || '') + '">'
           + '<button class="btn ghost" style="flex:0 0 auto;width:auto;margin:.25em 0 .6em" data-a="rename" type="button"' + dis + '>SAVE</button></div></form>'
-          + (S.email && !S.hasPassword ? '<button class="btn" data-a="view:password"' + dis + '>SET A PASSWORD</button>' : '')
+          + (S.email && !S.hasPassword ? '<button class="btn" data-a="view:password"' + dis + '>SET PASSWORD</button>' : '')
           + '<button class="btn ghost" data-a="signout"' + dis + '>SIGN OUT</button>';
       } else {
         h += '<h2>SAVE YOUR PROGRESS</h2>' + msg
-          + '<p>You are playing as a guest' + (S.name ? ' (<b>' + esc(S.name) + '</b>)' : '') + '. Create an account to keep your progress on any device and get on the leaderboard. Optional, and the game never waits for it.</p>'
+          + '<p>Playing as guest' + (S.name ? ' (<b>' + esc(S.name) + '</b>)' : '') + '. An account syncs progress across devices and joins the leaderboard. Optional.</p>'
           + '<p class="muted">' + esc(syncLine()) + '</p>'
-          + (S.pendingEmail ? '<p class="muted">Waiting for you to confirm <b>' + esc(S.pendingEmail) + '</b>.</p>' : '')
+          + (S.pendingEmail ? '<p class="muted">Confirm <b>' + esc(S.pendingEmail) + '</b>.</p>' : '')
           + (googleOn ? '<button class="btn primary" data-a="google-link"' + dis + '>CONTINUE WITH GOOGLE</button>' : '')
           + '<button class="btn' + (googleOn ? '' : ' primary') + '" data-a="view:email"' + dis + '>SAVE WITH EMAIL</button>'
           + (on ? '' : '<button class="btn ghost" data-a="retry"' + (busy ? ' disabled' : '') + '>TRY AGAIN</button>')
-          + '<p style="margin-top:1em">Already have an account? <button class="link" data-a="view:signin">SIGN IN</button></p>';
+          + '<p style="margin-top:1em">Have an account? <button class="link" data-a="view:signin">SIGN IN</button></p>';
       }
     } else if (v === 'email') {
-      h += '<h2>SAVE WITH EMAIL</h2>' + msg + '<p>We will email you a link. Open it to confirm, then choose a password. You keep everything you have played as a guest.</p>'
+      h += '<h2>SAVE WITH EMAIL</h2>' + msg + '<p>Open the link we email you, then set a password. Guest progress is kept.</p>'
         + '<form data-a="email-save"><input type="email" name="email" autocomplete="email" placeholder="you@example.com" value="' + esc(S.pendingEmail || '') + '">'
         + '<button class="btn primary" type="submit"' + dis + '>SEND LINK</button></form>'
         + '<button class="btn ghost" data-a="view:home">BACK</button>';
     } else if (v === 'sent') {
-      h += '<h2>CHECK YOUR EMAIL</h2>' + msg + '<p>We sent a link to <b>' + esc(S.pendingEmail) + '</b>. Open it to confirm your account. You can keep playing in the meantime.</p>'
-        + '<p class="muted">No email? Check spam, or send it again.</p>'
+      h += '<h2>CHECK YOUR EMAIL</h2>' + msg + '<p>Link sent to <b>' + esc(S.pendingEmail) + '</b>. Open it to confirm. Keep playing meanwhile.</p>'
+        + '<p class="muted">Nothing? Check spam.</p>'
         + '<button class="btn" data-a="view:email">SEND AGAIN</button><button class="btn ghost" data-a="close">KEEP PLAYING</button>';
     } else if (v === 'signin') {
       h += '<h2>SIGN IN</h2>' + msg + mergeBox
@@ -652,18 +652,18 @@
         + '<button class="btn ghost" data-a="view:home">BACK</button>';
     } else if (v === 'forgot') {
       h += '<h2>RESET PASSWORD</h2>' + msg + '<form data-a="forgot-send"><input type="email" name="email" autocomplete="email" placeholder="Email" value="' + esc(S.pendingEmail || '') + '">'
-        + '<button class="btn primary" type="submit"' + dis + '>SEND RESET LINK</button></form><button class="btn ghost" data-a="view:signin">BACK</button>';
+        + '<button class="btn primary" type="submit"' + dis + '>SEND LINK</button></form><button class="btn ghost" data-a="view:signin">BACK</button>';
     } else if (v === 'password') {
-      h += '<h2>CHOOSE A PASSWORD</h2>' + msg + '<p>So you can sign in with ' + esc(S.email || 'your email') + ' on any device.</p>'
-        + '<form data-a="password"><input type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters">'
+      h += '<h2>CHOOSE A PASSWORD</h2>' + msg + '<p>To sign in with ' + esc(S.email || 'your email') + ' anywhere.</p>'
+        + '<form data-a="password"><input type="password" name="password" autocomplete="new-password" placeholder="8+ characters">'
         + '<button class="btn primary" type="submit"' + dis + '>SAVE PASSWORD</button></form><button class="btn ghost" data-a="view:home">LATER</button>';
     } else if (v === 'conflict-google' || v === 'conflict-email') {
       var what = v === 'conflict-google' ? 'That Google account' : '<b>' + esc(S.pendingEmail || 'That email') + '</b>';
-      h += '<h2>ACCOUNT ALREADY EXISTS</h2>' + msg + '<p>' + what + ' already belongs to a Ratel Rage account. <b>Nothing was changed</b>: you are still the same guest, with the same progress.</p>'
-        + '<p>Sign in to that account instead?</p>' + mergeBox
+      h += '<h2>ACCOUNT ALREADY EXISTS</h2>' + msg + '<p>' + what + ' already has an account. <b>Nothing changed</b>: your guest progress is intact.</p>'
+        + '<p>Sign in to it instead?</p>' + mergeBox
         + (v === 'conflict-google' && googleOn ? '<button class="btn primary" data-a="google-signin"' + dis + '>SIGN IN WITH GOOGLE</button>'
           : '<button class="btn primary" data-a="view:signin"' + dis + '>SIGN IN WITH EMAIL</button>')
-        + '<button class="btn ghost" data-a="view:home">KEEP PLAYING AS GUEST</button>';
+        + '<button class="btn ghost" data-a="view:home">STAY GUEST</button>';
     }
     // A background update (sync status, token refresh) re-renders the panel:
     // whatever the player is typing, and where, must survive it.
@@ -802,7 +802,7 @@
     if (S.autoOpen) { S.autoOpen = false; openPanel(); return; }
     if (S.status === 'guest' && jget(ls, NUDGE) && !toastShown && !open) {
       toastShown = true;
-      toast.innerHTML = 'Level cleared! Create a free account to keep your progress on any device.'
+      toast.innerHTML = 'Level cleared! Free account = progress on any device.'
         + '<button data-t="open">SAVE</button><button data-t="x" aria-label="Dismiss">✕</button>';
       toast.onclick = function (e) {
         var t = e.target.getAttribute('data-t');

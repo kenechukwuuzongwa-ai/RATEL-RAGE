@@ -58,7 +58,7 @@ const CHARACTERS = {
     /* NOT "the head of The Cabal". The whole point of this beat is that nobody
      * — including the player — knows how high he sits. Any copy that settles
      * that question is a copy bug, not a wording preference. */
-    role: 'Senior police official · position in the network unconfirmed',
+    role: 'Senior police official · network role unconfirmed',
     level: 2,
   },
   /* THE SPONSOR (request 495). The name the cloned police server leads to: a
@@ -69,7 +69,7 @@ const CHARACTERS = {
     displayName: 'Minister Kiwe',
     shortName: 'MINISTER KIWE',
     rank: 'FEDERAL CABINET · SERVING',
-    role: 'Serving federal minister · named as the sponsor behind Jimoh’s network',
+    role: 'Federal minister · sponsor of Jimoh’s network',
     level: 3,
   },
   cabal: {
@@ -117,7 +117,7 @@ const LEVELS = {
     caseNo: 'CASE FILE 002',
     playable: true,
     closedTag: 'EXPOSED',
-    replayBlurb: 'Case closed. Raid the evidence wing again.',
+    replayBlurb: 'Raid the evidence wing again.',
   },
   /* The lead Level 02 ends on (request 495). Not built yet: the aftermath shows
    * it as the next target and its card cannot be started. */
@@ -134,7 +134,7 @@ const LEVELS = {
   },
 };
 LEVELS[1].closedTag = 'DEFEATED';
-LEVELS[1].replayBlurb = 'Case closed. Run the street again.';
+LEVELS[1].replayBlurb = 'Run the street again.';
 
 /* ------------------------------------------------- the Level 01 aftermath ---
  * The post-mission sequence's script. Times are on the NARRATION CLOCK — the
@@ -156,7 +156,7 @@ const AFTERMATH = {
   /* The heading over analysisBG. NOT "connection to The Cabal" — that reveal is
    * two screens away and naming it here throws the whole beat. */
   heading: 'CONNECTION TO NEXT TARGET',
-  subhead: 'Recovered from MC Olodo. Analysis in progress.',
+  subhead: 'Recovered from MC Olodo.',
   /* Whose circle the board starts from (the man the evidence was taken off). */
   source: { character: 'olodo', bottom: 'LEVEL 01 · DEFEATED' },
 
@@ -194,9 +194,8 @@ const AFTERMATH = {
       tone: 'gold',
       icon: 'bell',
       body: [
-        'A recording recovered from the handset suggests Olodo was',
-        'in contact with an unknown intermediary about the handling',
-        'of a sensitive criminal case.',
+        'Olodo discussing a sensitive criminal case',
+        'with an unknown intermediary.',
       ],
       at: 0.70, draw: 1.30,
     },
@@ -210,9 +209,8 @@ const AFTERMATH = {
       tone: 'gold',
       icon: 'users',
       body: [
-        'Multiple sources describe contact between Olodo’s network',
-        'and a senior police official. Accounts are consistent with',
-        'one another but remain uncorroborated.',
+        'Sources tie Olodo’s network to a senior',
+        'police official. Their accounts agree.',
       ],
       at: 5.20, draw: 5.80,
     },
@@ -226,9 +224,8 @@ const AFTERMATH = {
       tone: 'gold',
       icon: 'map',
       body: [
-        'Timelines, statements and case movements do not fully match.',
-        'The handling of the investigation raises questions that have',
-        'not been answered.',
+        'Timelines, statements and case movements',
+        'do not match.',
       ],
       at: 8.60, draw: 9.20,
     },
@@ -251,7 +248,7 @@ const AFTERMATH = {
     level: 'LEVEL 02',
     /* Deliberately hedged. He is the next name on the board and nothing more
      * has been established. */
-    note: 'Named across all three recovered items. Position in the network unconfirmed.',
+    note: 'Named in all three items. Network role unconfirmed.',
   },
 
   /* ---- the second screen: what sits above him ---------------------------- */
@@ -299,7 +296,7 @@ const AFTERMATH_L2 = {
   typewriterSpeed: 0.035,
 
   heading: 'CONNECTION TO NEXT TARGET',
-  subhead: 'Cloned from the NPF evidence server. Analysis in progress.',
+  subhead: 'Cloned from the NPF evidence server.',
   source: { character: 'jibril', bottom: 'LEVEL 02 · EXPOSED' },
 
   narration:
@@ -323,14 +320,13 @@ const AFTERMATH_L2 = {
       no: 'EVIDENCE 01',
       title: 'ALTERED CASE RECORDS',
       source: 'NPF SERVER · DRIVE CLONE',
-      status: 'VERIFIED AGAINST THE ORIGINALS',
+      status: 'VERIFIED AGAINST ORIGINALS',
       nodeStatus: 'VERIFIED',
       tone: 'gold',
       icon: 'map',
       body: [
-        'Hundreds of closed cases were edited after the fact —',
-        'charges dropped, exhibits re-logged as destroyed —',
-        'every change made under Jimoh’s own login.',
+        'Hundreds of closed cases edited: charges dropped,',
+        'exhibits logged as destroyed. All under Jimoh’s login.',
       ],
       at: 0.70, draw: 1.30,
     },
@@ -344,9 +340,8 @@ const AFTERMATH_L2 = {
       tone: 'gold',
       icon: 'users',
       body: [
-        'Seized cash and vehicles left the wing on paper and',
-        'resurfaced in private accounts and front companies',
-        'run by Jimoh’s people — protection, paid in exhibits.',
+        'Seized cash and vehicles resurfaced in front',
+        'companies run by Jimoh’s people. Protection, paid in exhibits.',
       ],
       at: 3.20, draw: 3.80,
     },
@@ -360,9 +355,8 @@ const AFTERMATH_L2 = {
       tone: 'gold',
       icon: 'bell',
       body: [
-        'Every transfer and every promotion waits on one sign-off,',
-        'routed through the office of a serving federal minister.',
-        'The same title appears on all of them.',
+        'Every transfer and promotion needs one sign-off:',
+        'the office of a serving federal minister.',
       ],
       at: 6.70, draw: 7.30,
     },
@@ -381,13 +375,13 @@ const AFTERMATH_L2 = {
     character: 'kiwe',
     tag: 'NEXT TARGET',
     level: 'LEVEL 03',
-    note: 'Serving federal minister. Every file on the drive leads back to his office. Jimoh answered to him.',
+    note: 'The drive leads to his office. Jimoh answered to him.',
   },
 
   /* ---- the network, one rung higher than Level 01 left it ---------------- */
   cabal: {
     heading: 'CONNECTION TO THE CABAL',
-    subhead: 'The chain runs from the street into government.',
+    subhead: 'From the street into government.',
     narration:
       'Olodo collected on the street. Jimoh buried the cases. Minister Kiwe paid for both. '
       + 'Whoever the minister answers to sits higher still — and the trail now runs into government.',

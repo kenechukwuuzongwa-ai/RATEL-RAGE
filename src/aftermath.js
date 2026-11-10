@@ -26,7 +26,7 @@
  * or the camera. It starts when the fight is already over.
  */
 
-import { resolveIdentity, assertPlayerSafe, LEVELS, AFTERMATH, CASES, caseFor, caseIsOpen as caseHasFile } from './story.js?v=ratelrage-kiwe-v1';
+import { resolveIdentity, assertPlayerSafe, LEVELS, AFTERMATH, CASES, caseFor, caseIsOpen as caseHasFile } from './story.js?v=ratelrage-copy567-v1';
 
 /* The machine. Written out in order because the order IS the design — reading
  * this list top to bottom is reading the player's experience.
@@ -1023,8 +1023,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ui.setFont(500, 11.5, 0.15);
     ctx.fillStyle = open ? C.text : C.dim;
     const note = open
-      ? `${c.file.evidence.length} items recovered. File open.`
-      : 'No evidence recovered. File not open.';
+      ? `${c.file.evidence.length} items recovered.`
+      : 'No evidence recovered.';
     /* ANCHORED TO THE BOTTOM, not to the block above it.
      *
      * Flowing it off `y` looked right and was not: MC Olodo's location wraps to
@@ -1258,7 +1258,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       /* Before the reveal it is a question, not a person. */
       drawNode(ui, n, clamp((narration.t - 0.4) / 0.6, 0, 1), {
         tone: 'dim', glyph: '?', glyphColor: C.dim,
-        top: 'UNKNOWN', bottom: 'UNIDENTIFIED', pulse: true,
+        top: 'UNKNOWN', pulse: true,
       });
       return;
     }
@@ -1386,11 +1386,12 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
 
     ui.setDisplay(700, 24, 0.9);
     ctx.fillStyle = node.tone === 'dim' ? C.muted : C.paper;
-    ctx.fillText(assertPlayerSafe(id ? id.shortName : 'UNIDENTIFIED', 'chain.name'),
+    const shownName = id ? id.shortName : 'UNIDENTIFIED';
+    ctx.fillText(assertPlayerSafe(shownName, 'chain.name'),
       box.x + 26, box.y + 86);
     ui.setFont(700, 8.6, 1.8);
     ctx.fillStyle = tone;
-    ctx.fillText(assertPlayerSafe(node.bottom, 'chain.status'), box.x + 26, box.y + 106);
+    if (node.bottom !== shownName) ctx.fillText(assertPlayerSafe(node.bottom, 'chain.status'), box.x + 26, box.y + 106);
 
     /* What this rung offers, said as a fact rather than as a button. The hint
      * bar names the button; this says whether pressing it will do anything. */
@@ -1403,12 +1404,12 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * fact (no evidence), because that IS why there is no file to read. */
     const playable = !!(c && LEVELS[c.level]?.playable);
     const line = open
-      ? `File open — ${c.file.evidence.length} items recovered. Open it to read the evidence and the connection.`
+      ? `File open — ${c.file.evidence.length} items recovered.`
       : id && c && playable
-        ? `No evidence recovered yet — nothing to read. ${LEVELS[c.level].code} is where it comes from.`
-        : id && c ? 'No evidence recovered yet. Nothing to open.'
-          : id ? 'No case file. The trail does not reach this far.'
-            : 'No name, no face, no file. The chain runs on past what the evidence can prove.';
+        ? `No evidence yet. Find it in ${LEVELS[c.level].code}.`
+        : id && c ? 'No evidence yet.'
+          : id ? 'No case file. The trail runs out.'
+            : 'No name, no face, no file. The chain runs past the evidence.';
     let y = box.y + 134;
     for (const l of ui.wrapLines(line, box.w - 52)) { ctx.fillText(l, box.x + 26, y); y += 17; }
   }
@@ -1418,7 +1419,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const K = net();
     drawAnalysisBackground(ui);
     header(ui, `${LEVELS[reached].code}  /  ${LEVELS[reached].title}`, K.heading,
-      K.subhead ?? 'The chain runs higher than the street.', clamp(stateT / 0.5, 0, 1));
+      K.subhead ?? 'Higher than the street.', clamp(stateT / 0.5, 0, 1));
 
     /* The chain, bottom of the food chain at the top. Connections first.
      *
@@ -1743,7 +1744,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   const cardAction = (card) => {
     const lvl = LEVELS[card.level];
     if (card.id === 'replay') return `REPLAY ${lvl.code}`;
-    return lvl?.playable ? `PLAY ${lvl.code}` : 'RETURN TO MAIN MENU';
+    return lvl?.playable ? `PLAY ${lvl.code}` : 'RETURN TO MENU';
   };
 
   /* ------------------------------------------------------- the card photograph
@@ -1862,7 +1863,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.textAlign = 'center';
     ui.setFont(700, 9, 2.2);
     ctx.fillStyle = img ? C.muted : C.dim;
-    ctx.fillText(img ? 'CASE PHOTOGRAPH' : 'NO PHOTO ON FILE', x + w / 2, y + h - 16);
+    ctx.fillText(img ? 'CASE PHOTO' : 'NO PHOTO', x + w / 2, y + h - 16);
     ctx.textAlign = 'left';
 
     ui.roundRectPath(ctx, x, y, w, h, 6);
@@ -1876,8 +1877,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const C = ui.C;
     drawAnalysisBackground(ui);
     header(ui, `${LEVELS[reached].caseNo}  ·  CLOSED`, 'SELECT OPERATION',
-      nextPlayable() ? 'The board is set. Choose where the investigation goes next.'
-        : `The trail leads to ${resolveIdentity(LEVELS[reached + 1]?.boss).displayName}. ${LEVELS[reached + 1]?.code ?? 'The next case'} is being prepared.`,
+      nextPlayable() ? 'Choose where the case goes next.'
+        : `The trail leads to ${resolveIdentity(LEVELS[reached + 1]?.boss).displayName}.`,
       clamp(stateT / 0.5, 0, 1));
 
     const L = selLayout();
@@ -1958,7 +1959,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ctx.fillStyle = C.text;
       const blurb = card.id === 'next'
         ? assertPlayerSafe(who.role, 'select.role')
-        : (lvl.replayBlurb ?? 'Case closed. Run the street again.');
+        : (lvl.replayBlurb ?? 'Run the street again.');
       ui.wrapLines(blurb, textW)
         .forEach((line, n) => ctx.fillText(line, box.x + 34, box.y + 224 + n * 17));
 
@@ -2446,7 +2447,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
 
     /* The prompts. Each names the button and what it will do — never a bare
      * "PRESS X". */
-    if (state === 'WAIT_FOR_TARGET_X') prompt(ui, 'PRESS X TO TRACE THE NETWORK');
+    if (state === 'WAIT_FOR_TARGET_X') prompt(ui, 'PRESS X TO TRACE NETWORK');
     else if (state === 'CABAL_NETWORK_REVEAL' && cabalT > 1.4) {
       /* NAMES THE MAN, not the verb alone. "OPEN FILE" under a column of five
        * circles does not say which one, and this screen is the one place the
@@ -2482,7 +2483,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * A shoulder hint over a one-page file is an instruction to press a button
      * that does nothing. */
     if (PAGED_STATES.has(state) && panelPages().length > 1) {
-      hints.push({ icon: 'bumpers', label: 'L1 / R1  BROWSE FILE' });
+      hints.push({ icon: 'bumpers', label: 'L1 / R1  BROWSE' });
       /* …and the action is advertised only on a page that HAS one. A REPLAY
        * legend sitting under an evidence brief is an offer the button will
        * refuse. */

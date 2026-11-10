@@ -1,6 +1,6 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v123';
-import { createAftermath } from './aftermath.js?v=ratelrage-ui563-v1';
-import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-kiwe-v1';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v125';
+import { createAftermath } from './aftermath.js?v=ratelrage-copy567-v1';
+import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
  * the measured play area those answers are built from. Enforced once per frame in
@@ -2430,7 +2430,7 @@ function showLoadFailure(err, stage) {
     const head = document.createElement('div');
     head.textContent = 'THE STREETS DID NOT LOAD';
     const why = document.createElement('small');
-    why.textContent = `${msg}. Check your connection and try again.`;
+    why.textContent = `${msg}. Check your connection.`;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = 'TRY AGAIN';
@@ -6472,103 +6472,19 @@ function applyGameplaySettings(difficulty, settings) {
   if (voiceGain) voiceGain.gain.value = Math.max(0, Math.min(1, master * (settings.voice ?? 1)));
 }
 const LEVEL_MUSIC_SRCS = ['../music/bg1.mp3', '../music/bg2.mp3'];
+/* LEVEL 02's SCORE, PLAYED STRAIGHT (request 567). The supplied track is the whole cue: it
+ * runs start to finish through the same <audio> element, fade and volume as Level 01's
+ * playlist, and starts again from the top when it ends. No loop splices, bar cuts, ending
+ * stitch or ducking under the voice (the request-563 Web Audio mix is gone). */
+const L2_MUSIC_SRCS = ['../music/level2.mp3'];
+const musicSrcs = () => (activeLevel === 2 ? L2_MUSIC_SRCS : LEVEL_MUSIC_SRCS);
 const MUSIC_VOL = 0.5, MUSIC_FADE = 6;
-
-/* ============================================ LEVEL 02's OWN SCORE (request 563)
- *
- * music/level2.mp3 (the supplied level_2.mp3, 87.7 s, ~104.7 BPM) replaces the bg1/bg2 playlist
- * on Level 02, and it is MIXED to the level rather than played and repeated:
- *
- *   INTRO   0 -> 45.45 s plays once from the start of the level (the sparse open and the build);
- *   LOOP    45.45 -> 63.79 s, the full section, loops for as long as the fight lasts. 18.34 s is
- *           the track's own 32-beat phrase (the strongest long-lag periodicity in the section,
- *           _chromakey/req563/l2lag.js), so the wrap lands on the same beat of the same bar;
- *   ENDING  when the level's ending begins (the last body down: the ending leaves 'hold'), the
- *           next BAR LINE of the loop cuts to 72.96 s — 48 beats after the loop's start, so the
- *           bar phase is unchanged — and the track plays out: its drop, its last climax and its
- *           own tail, to its real last note at 87.7 s. Nothing fades it or cuts it short.
- *
- * Web Audio rather than the <audio> element, because a loop and a bar-line cut have to be
- * sample-accurate to be seamless. It rides a gain of its own (never the SFX slider) that
- * follows exactly the same fade and settings as the playlist (musicVol), and it dips under
- * Level 02's spoken lines so the voice always sits on top. */
-const L2_MUSIC = {
-  src: 'music/level2.mp3', loopStart: 45.451, loopEnd: 63.788, ending: 72.958,
-  bar: 4 * 60 / 104.69, xfade: 0.03, duck: 0.55, duckRate: 2.5,
-};
-const l2Music = { buf: null, loading: false, src: null, gain: null, startedAt: 0, released: false, ended: false, duck: 1, pending: false, cuts: 0 };
-const l2MusicOn = () => activeLevel === 2 && !!audioCtx;
-function loadL2Music() {
-  if (l2Music.buf || l2Music.loading || !audioCtx) return;
-  l2Music.loading = true;
-  loadSound(L2_MUSIC.src).then((b) => { l2Music.buf = b; l2Music.loading = false; });
-}
-function stopL2Music() {
-  try { l2Music.src?.stop(); } catch {}
-  l2Music.src = null; l2Music.pending = false; l2Music.released = false; l2Music.ended = false;
-}
-function playL2Music() {
-  if (!l2Music.buf) { l2Music.pending = true; loadL2Music(); return; }
-  stopL2Music();
-  if (!l2Music.gain) { l2Music.gain = audioCtx.createGain(); l2Music.gain.connect(audioCtx.destination); }
-  l2Music.gain.gain.value = musicVol;
-  const s = audioCtx.createBufferSource();
-  s.buffer = l2Music.buf;
-  s.loop = true; s.loopStart = L2_MUSIC.loopStart; s.loopEnd = L2_MUSIC.loopEnd;
-  s.connect(l2Music.gain);
-  s.onended = () => { if (l2Music.src === s) { l2Music.ended = true; l2Music.src = null; } };
-  l2Music.startedAt = audioCtx.currentTime;
-  s.start();
-  l2Music.src = s;
-}
-/* Where the loop's playhead is, in track seconds (for the bar-line cut and the harness). */
-function l2MusicPos(at = audioCtx?.currentTime ?? 0) {
-  const t = at - l2Music.startedAt, { loopStart: a, loopEnd: b } = L2_MUSIC;
-  return t < b ? t : a + ((t - a) % (b - a));
-}
-/* The ending: on the loop's next bar line, hand over to the track's own close. */
-function releaseL2Music() {
-  if (l2Music.released || !l2Music.src || !audioCtx) return;
-  l2Music.released = true;
-  const now = audioCtx.currentTime, pos = l2MusicPos(now);
-  // the next bar line on the track's grid (it runs back through the intro at the same tempo)
-  const into = (((pos - L2_MUSIC.loopStart) % L2_MUSIC.bar) + L2_MUSIC.bar) % L2_MUSIC.bar;
-  let wait = L2_MUSIC.bar - into;
-  if (wait < 0.12) wait += L2_MUSIC.bar;                                // never a cut we cannot schedule cleanly
-  const at = now + wait, x = L2_MUSIC.xfade;
-  const old = l2Music.src;
-  const og = audioCtx.createGain(); og.gain.value = 1;
-  try { old.disconnect(); } catch {}
-  old.connect(og); og.connect(l2Music.gain);
-  og.gain.setValueAtTime(1, at - x); og.gain.linearRampToValueAtTime(0, at);
-  try { old.stop(at + 0.01); } catch {}
-  const s = audioCtx.createBufferSource();
-  s.buffer = l2Music.buf;
-  const ng = audioCtx.createGain();
-  ng.gain.setValueAtTime(0, at - x); ng.gain.linearRampToValueAtTime(1, at);
-  s.connect(ng); ng.connect(l2Music.gain);
-  s.onended = () => { if (l2Music.src === s) { l2Music.ended = true; l2Music.src = null; } };
-  s.start(at - x, L2_MUSIC.ending - x);
-  l2Music.src = s;
-  l2Music.cuts++;
-  l2Music.cutAt = +at.toFixed(3); l2Music.cutFrom = +l2MusicPos(at).toFixed(3);
-}
-function updateL2Music(dt) {
-  if (!l2MusicOn()) return;
-  if (l2Music.pending && l2Music.buf) { l2Music.pending = false; playL2Music(); }
-  // the ending begins when the last man is down and the scene takes over
-  if (waveState === 'l2ending' && l2m.ePhase !== 'hold') releaseL2Music();
-  // under a spoken line the score steps back
-  const talking = !!l2m.vo || levelEntry.active;
-  const want = talking ? L2_MUSIC.duck : 1;
-  l2Music.duck += Math.sign(want - l2Music.duck) * Math.min(Math.abs(want - l2Music.duck), L2_MUSIC.duckRate * dt);
-  if (l2Music.gain) l2Music.gain.gain.value = Math.max(0, Math.min(1, musicVol * l2Music.duck));
-}
 
 function setMusicTrack(index, playNow = false) {
   if (!musicEl) return;
-  musicTrack = (index + LEVEL_MUSIC_SRCS.length) % LEVEL_MUSIC_SRCS.length;
-  musicEl.src = new URL(LEVEL_MUSIC_SRCS[musicTrack], import.meta.url);
+  const srcs = musicSrcs();
+  musicTrack = (index + srcs.length) % srcs.length;
+  musicEl.src = new URL(srcs[musicTrack], import.meta.url);
   musicEl.load();
   musicEl.volume = Math.max(0, Math.min(1, musicVol));
   if (playNow) {
@@ -6581,7 +6497,6 @@ function setMusicTrack(index, playNow = false) {
 const musicLife = {};                  // keepMediaAlive's state for the level music
 
 function resetMusicPlaylist() {
-  stopL2Music();                        // Level 02's score too (request 563)
   if (!musicEl) return;
   musicEl.pause();
   musicVol = 0;
@@ -6606,23 +6521,21 @@ function startMusic() {
   if (musicStarted || !musicEl) return;
   musicStarted = true;
   musicVol = 0.03;
-  if (l2MusicOn()) { playL2Music(); return; }   // Level 02 has its own score (request 563)
+  // the level may have changed since the playlist was reset: start on THIS level's file
+  if (!musicEl.src.endsWith(musicSrcs()[0].slice(2))) setMusicTrack(0, false);
   musicEl.volume = musicVol;
   const pr = musicEl.play();
   if (pr?.catch) pr.catch(() => {});   // retried by updateMusic (request 347)
 }
 function updateMusic(dt) {
   if (!musicEl || !musicStarted) return;
-  const l2 = l2MusicOn();
   // Android can pause or stall the element at any moment; put it back (request 347).
-  if (!l2) keepMediaAlive(musicEl, musicLife, dt, true);
-  else if (!musicEl.paused) musicEl.pause();          // never the playlist under Level 02's score
+  keepMediaAlive(musicEl, musicLife, dt, true);
   const target = audioMuted ? 0 : MUSIC_VOL * musicSetting;
   const rate = MUSIC_VOL / MUSIC_FADE;
   if (musicVol < target) musicVol = Math.min(target, musicVol + rate * dt);
   else if (musicVol > target) musicVol = Math.max(target, musicVol - rate * 2 * dt);
   musicEl.volume = Math.max(0, Math.min(1, musicVol));
-  if (l2) updateL2Music(dt);
 }
 // Fire the impact trio at (x,y). `hitStop`/`shake` default to the tuned values;
 // callers scale them per attack weight so a jab and an uppercut feel different.
@@ -6742,7 +6655,7 @@ let impactImg = null;
 function impactSheet() {
   if (impactImg) return impactImg.complete && impactImg.naturalWidth ? impactImg : null;
   impactImg = new Image();
-  impactImg.src = 'sprites/hit-impact.png';
+  impactImg.src = 'sprites/hit-impact.png?v=567ev15';   // +1.5 EV exposure (request 567)
   return null;
 }
 impactSheet();                                   // start the load now: the first blow must not miss it
@@ -6775,7 +6688,25 @@ function strikeImpact(e, win, src = player, kind = 'fist', big = false) {
   lastImpact = { x: Math.round(c.x), y: Math.round(c.y), kind, attack: player.attack, ex: Math.round(e.x), ey: Math.round(e.y), px: Math.round(player.x), py: Math.round(player.y) };
   return c;
 }
-let impactCount = 0, lastImpact = null;
+/* REBOUNDS LAND TOO (request 567). A body Darki sent flying that meets another man or a
+ * solid (a vehicle, a pillar, the desk, the shut door) gets the same splash, at that contact:
+ * the struck man's near surface at chest height, or the face of the solid at the body's
+ * height. Still never on Darki and never on a fall to the deck. */
+function reboundImpact(x, y, dir, big = false, what = 'body') {
+  if (sparks.length >= IMPACT.max) sparks.shift();
+  sparks.push({ x, y, age: 0, dur: IMPACT.frames / IMPACT.fps, big, dir: dir < 0 ? -1 : 1, kind: 'rebound', rot: (fxRng() - 0.5) * 0.5 });
+  reboundImpacts++;            // counted apart: impactCount stays Darki's own blows
+  lastRebound = { x: Math.round(x), y: Math.round(y), kind: 'rebound', what };
+}
+/* Where flying body `from` strikes man `o`: his near side, chest high. */
+function bodyContact(o, from) {
+  const F = enemyFacePoints(o);
+  const edir = o.facing >= 0 ? 1 : -1;
+  const centreX = o.x - edir * F.h * FACE.bodyOffset;
+  const side = Math.sign(centreX - from.x) || (from.vx >= 0 ? 1 : -1);
+  return { x: centreX - side * F.h * IMPACT.surface, y: F.chest.y, dir: side };
+}
+let impactCount = 0, lastImpact = null, reboundImpacts = 0, lastRebound = null;
 /* Fist or foot: a window that swings as a boot (every kick, and the weapons, which strike at
  * body height) lands on the torso; everything else is a fist to the face. */
 const strikeKind = (win) => (win?.swing === 'kick' ? 'kick' : 'fist');
@@ -8243,7 +8174,6 @@ function drawLevelEntry() {
   if (isTouchUI() && levelEntry.active && levelEntry.voiceStarted) {
     const voT = entryVoT();
     const since = entrySkipSince();
-    if (voT >= 0) drawSkipHint(ctx, VIEW_W, voT, 30);
     if (voT >= 0 || since != null) {
       drawTapCue(ctx, VIEW_W, VIEW_H, Math.max(0, levelEntry.t - levelEntry.lead),
         { inset: Math.round(bars) + 22, since });
@@ -14011,6 +13941,7 @@ function updateThrownBody(e, dt) {
     addRage(chargeScale(imp.rage, c.rageMul, q));
     const mx = (o.x + e.x) / 2, my = o.y - 110;
     triggerHitFx(mx, my, iHit.hitstop, iHit.shake, true);
+    { const bc = bodyContact(o, e); reboundImpact(bc.x, bc.y, bc.dir, q > 0.35, 'enemy'); }   // request 567
     playHit(iHit);
     triggerFlash('255,255,255', 0.12 + 0.16 * q);
     // Two bodies meeting at speed: sparks both ways, not a tidy little puff.
@@ -16167,6 +16098,8 @@ function bodyRebound(e, vx, stopX, faceX, sliding, solid = null) {
   if (speed >= SOLID_HIT.minSpeed) {
     const hy = e.y - 110 + (e.jumpY || 0) * 0.6;
     triggerHitFx(faceX, hy, 0.02 + 0.05 * kk, Math.round(4 + 10 * kk), kk > 0.6);
+    // the splash on the solid's face where he struck it, oriented along his flight like a blow (request 567)
+    reboundImpact(faceX, hy, Math.sign(vx) || 1, kk > 0.6, solid ? solidKind(solid) : 'door');
     playThud(e.x, 0.55 + 0.45 * kk);
     if (!e.dead && e.hp > 1) { e.hp = Math.max(1, e.hp - SOLID_HIT.damage * kk); e.hpFlash = 0.25; }
   }
@@ -19231,25 +19164,25 @@ const CASE_FILE = {
 const OUTRO_CARD = {
   1: {
     headline: () => `${resolveIdentity('olodo').shortName} DEFEATED`,
-    line: 'The street-tax route is broken. The ledger points further up the chain.',
+    line: 'Street-tax route broken. The ledger points higher.',
     no: CASE_FILE.no, where: CASE_FILE.where,
     bagTitle: 'EVIDENCE RECOVERED', bagCount: '3 ITEMS  ·  SEALED',
-    bagLine: 'Taken from Olodo’s possessions at the scene. Nothing has been read yet.',
+    bagLine: 'Taken from Olodo at the scene. Unread.',
     items: [
-      ['bell', 'PHONE HANDSET', 'Recording recovered · not yet reviewed'],
-      ['users', 'WITNESS STATEMENTS', 'Taken at the scene · unverified'],
-      ['map', 'CASE DOCUMENTS', 'Sealed · not yet examined'],
+      ['bell', 'PHONE HANDSET', 'Recording inside'],
+      ['users', 'WITNESS STATEMENTS', 'Unverified'],
+      ['map', 'CASE DOCUMENTS', 'Paper files'],
     ],
   },
   2: {
     headline: () => 'EVIDENCE SECURED',
-    line: 'The police server is cloned. Jimoh’s men are down and the strong room is sealed behind you.',
+    line: 'Jimoh’s men down. Strong room sealed behind you.',
     no: 'CASE FILE 002', where: 'LAGOS · NPF EVIDENCE WING',
     bagTitle: 'HARD DRIVE CLONE RECOVERED', bagCount: '1 DRIVE  ·  3 ARCHIVES  ·  SEALED',
-    bagLine: 'Copied off the NPF evidence server in the strong room. Nothing has been read yet.',
+    bagLine: 'Copied off the NPF evidence server. Unread.',
     items: [
-      ['map', 'CASE RECORDS ARCHIVE', 'Every file on the server · edits not yet reviewed'],
-      ['users', 'PROPERTY WING LEDGERS', 'Seized-asset movements · not yet traced'],
+      ['map', 'CASE RECORDS ARCHIVE', 'Every server file · edits unchecked'],
+      ['users', 'PROPERTY WING LEDGERS', 'Seized-asset movements · untraced'],
       ['bell', 'OFFICE MESSAGE ARCHIVE', 'Jimoh’s own account · encrypted'],
     ],
   },
@@ -23200,8 +23133,8 @@ function adDeckCapture(only = adDeckHere()) {
      * book through; with none (the editor, the APK) the vacancy stays off the deck. */
     else if (!booked && slot.qrRect && img && slot.face && ADS.endpoint) {
       const link = AD_LINK(`${ADS.endpoint}/b/${slot.id}`);
-      if (link) found.push({ slot: slot.id, booking: null, vacant: true, title: 'THIS SPACE IS AVAILABLE',
-        desc: 'Put your brand on this street, in front of every player.', img: null, video: null, link, face: slot.face, board: img });
+      if (link) found.push({ slot: slot.id, booking: null, vacant: true, title: 'AD SPACE AVAILABLE',
+        desc: 'Your brand here, seen by every player.', img: null, video: null, link, face: slot.face, board: img });
     }
   }
   return found;
@@ -24728,7 +24661,7 @@ function drawWaveHud() {
     ctx.fillText('AREA CLEARED', VIEW_W / 2, VIEW_H / 2 - 6);
     ctx.font = uiFont(400, 16);
     ctx.fillStyle = '#cfd8ea';
-    ctx.fillText(activeLevel === 2 ? `${LEVELS[2].code}  —  ${LEVELS[2].title}` : 'MC OLODO is down — Lagos Island is yours', VIEW_W / 2, VIEW_H / 2 + 30);
+    ctx.fillText(activeLevel === 2 ? `${LEVELS[2].code}  —  ${LEVELS[2].title}` : 'Lagos Island is yours', VIEW_W / 2, VIEW_H / 2 + 30);
   }
   if (fightBanner > 0) {                 // overlays the live street; never a separate cutscene
     const k = Math.min(1, fightBanner / 0.25);
@@ -25020,7 +24953,7 @@ function drawOutro() {
   ctx.textAlign = 'center';
   ui.setFont(700, 12, 3.4);
   ctx.fillStyle = C.gold;
-  ctx.fillText(isTouchUI() ? 'TAP TO ANALYZE EVIDENCE' : 'PRESS X TO ANALYZE EVIDENCE', VIEW_W / 2, 612);   // request 538
+  ctx.fillText(isTouchUI() ? 'TAP TO ANALYZE' : 'PRESS X TO ANALYZE', VIEW_W / 2, 612);   // request 538
   ctx.restore();
   ctx.textAlign = 'left';
   ui.drawControlBar([{ icon: 'cross', label: 'ANALYZE EVIDENCE' }]);
@@ -25112,7 +25045,7 @@ function drawPauseOverlay() {
   ctx.fillRect(58, 118, 62, 3);
   ui.setFont(500, 13, 0.2);
   ctx.fillStyle = C.muted;
-  ctx.fillText('The fight is holding. Pick up where you left off.', 58, 142);
+  ctx.fillText('Fight on hold.', 58, 142);
   ctx.restore();
 
   ctx.save();
@@ -25599,8 +25532,8 @@ function drawGameOver() {
     : lost ? "JIMOH'S MEN DESTROYED THE WORKSTATION." : 'A RATEL DOES NOT STAY DOWN.', VIEW_W / 2, 312);
   ui.setFont(500, 14, 0.3);
   ctx.fillStyle = 'rgba(214,200,184,0.75)';
-  if (!cl) ctx.fillText(lost ? 'Keep them off the machine until the transfer completes.'
-    : 'Every scar is a lesson. Get up and take the street back.', VIEW_W / 2, 340);
+  if (!cl) ctx.fillText(lost ? 'Guard the machine until the transfer ends.'
+    : 'Get up. Take the street back.', VIEW_W / 2, 340);
   // what this attempt was worth, in the same numbers the summary keeps
   const st = gameOver.stats || {};
   ctx.globalAlpha = fadeIn(0.7);
@@ -26517,6 +26450,8 @@ window.__ror = {
   get sparkCount() { return sparks.length; },
   // the hit impact sprite (request 563): how many, the last one's spot, and the live ones
   get impactCount() { return impactCount; },
+  get reboundImpacts() { return reboundImpacts; },
+  get lastRebound() { return lastRebound; },
   get beadGlow() { return { drawn: beadGlowDrawn, trail: beadTrailDrawn, samples: beadTrail.length }; },
   grabDebug() {
     const t = grabTarget();
@@ -26816,12 +26751,11 @@ window.__ror = {
   get muted() { return audioMuted; },
   get musicReady() { return !!musicEl; },
   get musicOn() { return musicStarted; },
-  get l2Music() { return { on: l2MusicOn(), ready: !!l2Music.buf, playing: !!l2Music.src, released: l2Music.released, ended: l2Music.ended,
-    pos: l2Music.src && audioCtx ? +l2MusicPos().toFixed(3) : null, gain: l2Music.gain ? +l2Music.gain.gain.value.toFixed(3) : null,
-    duck: +l2Music.duck.toFixed(3), cuts: l2Music.cuts, cutAt: l2Music.cutAt ?? null, cutFrom: l2Music.cutFrom ?? null, cfg: L2_MUSIC }; },
+  get l2Music() { return { on: activeLevel === 2, src: musicEl?.src ?? null, playing: !!musicEl && !musicEl.paused, pos: musicEl ? +musicEl.currentTime.toFixed(3) : null, loop: !!musicEl?.loop }; },
   releaseL2Music() { releaseL2Music(); },
   get musicVol() { return musicVol; },
   kickMusic() { startMusic(); },                 // test: begin the loop
+  resetMusicPlaylist() { resetMusicPlaylist(); },   // test: as the main menu does (request 567)
   tickMusic(dt) { updateMusic(dt); },            // test: advance the fade
   get rage() { return player.rage; },
   get rageActive() { return player.rageActive; },

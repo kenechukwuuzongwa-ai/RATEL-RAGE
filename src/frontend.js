@@ -461,7 +461,7 @@ export function keepMediaAlive(el, st, dt, wanted) {
  * saying so appears (it also stops a tap aimed at the screen before from
  * counting). Shared by the studio splash, the story intro and Level 1's
  * opening voice-over. */
-export const SKIP_TAP = { window: 0.65, hintAt: 3.0, fade: 0.6, text: 'Double tap screen to skip.' };
+export const SKIP_TAP = { window: 0.65, hintAt: 3.0, fade: 0.6, text: 'Double tap to skip' };
 export function makeDoubleTap() {
   let last = -Infinity;
   return {
@@ -763,39 +763,33 @@ const DOSSIERS = {
     'Expose the money trail.',
     'Every empire has a first brick.',
   ],
+  /* HALVED (request 567): name, role and threat already sit in the header, so
+   * the cards no longer repeat them. */
   objectives: [
-    'Stop Olodo’s street extortion operations',
-    'Defeat his Agbero enforcers',
-    'Break the flow of illegal tolls',
-    'Bring down MC Olodo',
-    'Expose the connection to The Cabal',
+    'End Olodo’s street tolls',
+    'Beat his Agbero enforcers',
+    'Bring him down. Expose The Cabal',
   ],
   profile: [
-    ['NAME', 'MC Olodo'],
-    ['ALIAS', 'Motorpark Chairman'],
-    ['BUSINESS', 'Transport & Motorpark Operations'],
-    ['TERRITORY', 'Major Lagos Motorparks & Transport Routes'],
-    ['REVENUE', 'Illegal Tolls, Levies, Extortion'],
-    ['ENFORCERS', 'Agbero Network'],
-    ['POLITICS', 'Election Muscle'],
-    ['PROTECTION', 'Government Officials, Political Connections'],
-    ['AFFILIATION', 'The Cabal — unconfirmed'],
-    ['THREAT', 'HIGH', 'alert'],
+    ['RACKET', 'Illegal tolls & levies'],
+    ['TURF', 'Lagos motorparks'],
+    ['MUSCLE', 'Agbero enforcers'],
+    ['COVER', 'Politicians he rigs for'],
+    ['TIES', 'Cabal (unconfirmed)', 'alert'],
   ],
   chainCopy: [
-    'MC Olodo’s ledger ties his collection operation to The Cabal through operators who remain unidentified.',
-    'The chain provides street control, revenue, protection and political cover.',
+    'His ledger feeds The Cabal through operators not yet named.',
   ],
   chainNote: 'Cut the head, the body will follow.',
   chain: [
     { top: 'MC OLODO', bottom: 'LEVEL 01', tone: 'gold', portrait: true },
-    { top: 'UNKNOWN', bottom: 'BOSS', tone: 'dim', unknown: true },
-    { top: 'UNKNOWN', bottom: 'BOSS', tone: 'dim', unknown: true },
-    { top: 'THE CABAL', bottom: 'IDENTITY UNKNOWN', tone: 'alert' },
+    { top: '?', bottom: 'BOSS', tone: 'dim', unknown: true },
+    { top: '?', bottom: 'BOSS', tone: 'dim', unknown: true },
+    { top: 'THE CABAL', bottom: 'UNNAMED', tone: 'alert' },
   ],
   stamp: [
-    'THE FIGHT FOR A BETTER NATION STARTS HERE.',
-    'NO MORE LOOT.  NO MORE CORRUPTION.  NO MORE RIGGING.',
+    'A BETTER NATION STARTS HERE.',
+    'NO LOOT.  NO CORRUPTION.  NO RIGGING.',
   ],
   file: 'DOSSIER FILE:  RR-LV01-OMC',
   },
@@ -820,7 +814,7 @@ const DOSSIERS = {
      * (frontend/jimoh-dossier.jpg). Keyed, so it can never be Level 01's. */
     portrait: 'jimoh',
     target: 'MOSHUN JIMOH',
-    role: 'AIG · SENIOR POLICE OFFICER',
+    role: 'AIG · POLICE',
     threat: { label: 'SEVERE', filled: 7, of: 8 },
     body: [
       "AIG Moshun Jimoh. Senior police officer. Powerful connections. Untouchable reputation.",
@@ -834,35 +828,27 @@ const DOSSIERS = {
       "and someone with considerable influence is determined to make sure the truth never comes out.",
     ],
     objectives: [
-      'Break into the police evidence facility',
+      'Break into the evidence facility',
       'Fight through Jimoh’s men',
-      'Recover the original case file',
-      'Secure the payment records',
-      'Take the evidence linking the Ahmad Akande murder to Jimoh',
+      'Take the Akande file and payment records',
     ],
     profile: [
-      ['NAME', 'Moshun Jimoh'],
-      ['RANK', 'AIG — Senior Police Officer'],
-      ['REPUTATION', 'Untouchable'],
-      ['BACKING', 'Politicians, contractors, street enforcers, criminal networks'],
-      ['OPERATION', 'Protection racket disguised as law enforcement'],
-      ['LINKED TO', 'The Ahmad Akande murder case'],
-      ['EVIDENCE', 'Suspicious payments, compromised evidence'],
-      ['LEAD', 'MC Olodo’s phone'],
-      ['AFFILIATION', 'The Cabal — unconfirmed'],
-      ['THREAT', 'SEVERE', 'alert'],
+      ['RACKET', 'Paid protection'],
+      ['ALLIES', 'Politicians, gangs'],
+      ['CASE', 'Ahmad Akande murder'],
+      ['LEAD', 'Olodo’s phone'],
+      ['TIES', 'Cabal (unconfirmed)', 'alert'],
     ],
     chainCopy: [
-      'Olodo’s phone gave up a name, coded payments and a case reference.',
-      'Beyond Jimoh the trail runs into The Cabal, and stops.',
+      'Olodo’s phone named Jimoh. Past him, the trail stops at The Cabal.',
     ],
     chainNote: 'Every name is a door. Open this one.',
     chain: [
-      { top: 'MC OLODO', bottom: 'DEFEATED', tone: 'dim' },
+      { top: 'OLODO', bottom: 'DEFEATED', tone: 'dim' },
       /* His own photograph, by key — a bare `portrait: true` is MC Olodo's. */
-      { top: 'MOSHUN JIMOH', bottom: 'LEVEL 02', tone: 'gold', portrait: 'jimoh' },
-      { top: 'UNKNOWN', bottom: 'OPERATOR', tone: 'dim', unknown: true },
-      { top: 'THE CABAL', bottom: 'IDENTITY UNKNOWN', tone: 'alert' },
+      { top: 'JIMOH', bottom: 'LEVEL 02', tone: 'gold', portrait: 'jimoh' },
+      { top: '?', bottom: '', tone: 'dim', unknown: true },
+      { top: 'THE CABAL', bottom: 'UNNAMED', tone: 'alert' },
     ],
     stamp: null,
     file: 'DOSSIER FILE:  RR-LV02-AMJ',
@@ -2841,7 +2827,7 @@ export function createFrontEnd({
     if (optionPage) { optionPage = null; adjustRow = -1; selection = 0; navBack(); return; }
     if (phase === 'controls' && controlsPage) { selection = controlsPage === 'howto' ? 0 : 1; controlsPage = null; phaseT = 0; navBack(); return; }
     navBack();
-    if (phase === 'menu') { showMessage('QUIT IS CONTROLLED BY THE GAME HOST'); return; }
+    if (phase === 'menu') { showMessage('HOST CONTROLS QUIT'); return; }
     if (phase === 'difficulty') toMenu();
     else if (phase === 'character') go('difficulty', { selection: 1 });
     else if (phase === 'briefing') go('character');
@@ -2906,7 +2892,7 @@ export function createFrontEnd({
    * that the code does not also believe. */
   let quitArmedT = 0;
   function requestQuit(label = 'QUIT') {
-    if (!HOST.canQuit) { showMessage('QUIT IS CONTROLLED BY THE GAME HOST'); return false; }
+    if (!HOST.canQuit) { showMessage('HOST CONTROLS QUIT'); return false; }
     if (quitArmedT > 0) { quitArmedT = 0; HOST.quit(); return true; }
     quitArmedT = 2.2;
     showMessage(`PRESS ${label} AGAIN TO EXIT`);
@@ -5007,7 +4993,7 @@ export function createFrontEnd({
     hitboxes.push({ x: 0, y: 0, w: W, h: H, index: 0, id: 'splash:skip' });
     // Request 349: taps are answered in onPointerDown as a DOUBLE tap; say so 3 s into the clip.
     if (live && isTouchUI()) {
-      drawSkipHint(ctx, W, splashVideoT(), 34, true);
+      // (no top-right hint since request 567: the cue below says it once)
       drawTapCue(ctx, W, H, splashVideoT(), { inset: 40 });   // request 353: lower-centre
     }
   }
@@ -5545,14 +5531,14 @@ export function createFrontEnd({
   function drawDifficulty() {
     stage({ darken: 0.26, darki: { cx: 1010, feet: 646, alpha: 0.5 } });
     beginScreen();
-    screenHead('NEW GAME', 'SELECT DIFFICULTY', 'Choose how hard the streets hit back.');
+    screenHead('NEW GAME', 'SELECT DIFFICULTY', 'How hard the streets hit back.');
     buttonList(currentItems(), 58, 186, 400, 48, 8, 'diff');
 
     const notes = [
-      'More room to learn the fight.',
-      'The intended RATEL RAGE experience.',
-      'Faster pressure. Less forgiveness.',
-      'One hard road. Classic arcade rules.',
+      'Room to learn.',
+      'As intended.',
+      'Faster. Less forgiving.',
+      'Classic arcade rules.',
     ];
     glass(506, 186, 420, 232, 10);
     ctx.textAlign = 'left';
@@ -5590,7 +5576,7 @@ export function createFrontEnd({
   function drawCharacter() {
     stage({ darken: 0.20, darki: { cx: 852, feet: 636 } });
     beginScreen();
-    screenHead(phase === 'characters' ? 'ROSTER' : 'PLAYER 01 / CHARACTER SELECT', 'DARKI', 'THE STREET FIGHTER');
+    screenHead(phase === 'characters' ? 'ROSTER' : 'CHARACTER SELECT', 'DARKI', 'THE STREET FIGHTER');
 
     glass(56, 178, 396, 300, 10);
     ctx.textAlign = 'left';
@@ -5599,8 +5585,7 @@ export function createFrontEnd({
     ctx.fillText('GROUNDED. TOUGH. DETERMINED.', 80, 214);
     setFont(500, 12.5, 0.2);
     ctx.fillStyle = C.muted;
-    ctx.fillText('A street fighter who refuses to pay for the', 80, 244);
-    ctx.fillText('right to stand his ground.', 80, 264);
+    ctx.fillText('Won’t pay to stand his ground.', 80, 244);
     statBar('POWER', 4, 80, 316);
     statBar('SPEED', 4, 80, 354);
     statBar('DEFENSE', 3, 80, 392);
@@ -5653,7 +5638,7 @@ export function createFrontEnd({
   function drawShop() {
     stage({ darken: 0.42 });
     beginScreen();
-    screenHead('CUSTOMIZATION', 'SHOP', 'A planned home for Darki’s future streetwear.');
+    screenHead('CUSTOMIZATION', 'SHOP', 'Streetwear for Darki.');
     const cats = ['CLOTHING', 'SHOES', 'OUTFITS', 'ACCESSORIES', 'OWNED', 'EQUIPPED'];
     for (let i = 0; i < cats.length; i++) {
       const x = 58 + (i % 3) * 392, y = 186 + Math.floor(i / 3) * 104;
@@ -5671,10 +5656,7 @@ export function createFrontEnd({
     ctx.fillText('LOCKED', 640, 336);
     setDisplay(700, 32, 1.8);
     ctx.fillStyle = C.paper;
-    ctx.fillText('SHOP COMING SOON', 640, 380);
-    setFont(500, 12.5, 0.2);
-    ctx.fillStyle = C.muted;
-    ctx.fillText('Character customization will be available here.', 640, 408);
+    ctx.fillText('COMING SOON', 640, 380);
     endScreen();
     drawControlBar([MENU_HINTS[2]]);
     drawGrain();
@@ -5718,7 +5700,7 @@ export function createFrontEnd({
     stage({ darken: editing ? 0.62 : 0.48 });
     beginScreen();
     screenHead('FIELD MANUAL', editing ? 'CUSTOMIZE CONTROLS' : 'CONTROLS',
-      editing ? 'Drag a button to move it, then tap DONE.' : 'Learn the moves, or set up your own touch layout.');
+      editing ? 'Drag buttons, then tap DONE.' : '');
     if (!editing) buttonList(CONTROL_ITEMS(), 58, 180, 420, 54, 10, 'ctl');
     endScreen();
     drawControlBar([]);
@@ -5732,7 +5714,7 @@ export function createFrontEnd({
     controlsGuideFrame = [];
     stage({ darken: 0.48 });
     beginScreen();
-    screenHead('FIELD MANUAL', 'HOW TO PLAY', 'The same touch controls shown during the fight.');
+    screenHead('FIELD MANUAL', 'HOW TO PLAY', 'As in the fight.');
     glass(56, 172, 556, 424, 10);
     glass(668, 172, 556, 424, 10);
     ctx.fillStyle = C.orange;
@@ -5750,20 +5732,19 @@ export function createFrontEnd({
     setFont(600, 12, 0.4);
     ctx.fillStyle = C.muted;
     ctx.fillText('DRAG TO WALK', 330, 302);
-    ctx.fillText('MOVE THROUGH THE LANE', 330, 327);
-    ctx.fillText('FLICK SIDEWAYS TO RUSH', 330, 352);
-    mobileActionCard(84, 466, 236, 106, 'jump', 'JUMP', ['TAP TO LEAP']);
-    mobileActionCard(340, 466, 236, 106, 'pause', 'PAUSE', ['TAP TO PAUSE']);
+    ctx.fillText('FLICK SIDEWAYS TO RUSH', 330, 327);
+    mobileActionCard(84, 466, 236, 106, 'jump', 'JUMP', ['TAP']);
+    mobileActionCard(340, 466, 236, 106, 'pause', 'PAUSE', ['TAP']);
 
     setFont(700, 13, 3.4);
     ctx.fillStyle = C.gold;
     ctx.fillText('COMBAT', 696, 210);
     mobileActionCard(696, 228, 242, 154, 'jab', 'JAB / CHAIN',
-      ['TAP TO STRIKE', 'DOUBLE-TAP TO COMBO']);
+      ['TAP', 'DOUBLE-TAP TO COMBO']);
     mobileActionCard(954, 228, 242, 154, 'kick', 'KICK',
-      ['TAP TO KICK']);
+      ['TAP']);
     mobileActionCard(696, 398, 242, 174, 'block', 'BLOCK',
-      ['HOLD TO GUARD']);
+      ['HOLD']);
     mobileActionCard(954, 398, 242, 174, 'grab', 'GRAB / EXECUTE',
       ['HOLD TO CARRY', 'RELEASE TO THROW']);
     endScreen();
@@ -5821,7 +5802,7 @@ export function createFrontEnd({
     stage({ darken: 0.46 });
     beginScreen();
     if (!optionPage) {
-      screenHead('SYSTEM', 'OPTIONS', 'Tune the picture, sound, play, and readability.');
+      screenHead('SYSTEM', 'OPTIONS');
       buttonList(currentItems(), 58, 180, 400, 44, 8, 'opt');
       glass(506, 180, 480, 300, 10);
       const item = currentItems()[selection].label;
@@ -5832,17 +5813,17 @@ export function createFrontEnd({
       setFont(500, 13, 0.2);
       ctx.fillStyle = C.text;
       const copy = {
-        VIDEO: 'Display and motion presentation.',
-        AUDIO: 'Independent music, SFX, voice, and ambience.',
-        CONTROLS: 'Review the mobile touch controls.',
-        GAMEPLAY: 'Difficulty and combat assistance.',
-        ACCESSIBILITY: 'Subtitles, contrast, and motion comfort.',
+        VIDEO: 'Display and effects.',
+        AUDIO: 'Volume levels.',
+        CONTROLS: 'Touch controls and layout.',
+        GAMEPLAY: 'Difficulty and assists.',
+        ACCESSIBILITY: 'Subtitles, contrast, motion.',
         LANGUAGE: 'Interface language.',
-        'RESET SETTINGS': 'Restore the recommended defaults.',
+        'RESET SETTINGS': 'Restore defaults.',
       };
       ctx.fillText(copy[item], 538, 256);
     } else {
-      screenHead('OPTIONS', optionPage, 'Changes are saved on this device.');
+      screenHead('OPTIONS', optionPage, 'Saved on this device.');
       optionRows = optionSpec(optionPage);
       for (let i = 0; i < optionRows.length; i++) {
         const row = optionRows[i];
@@ -5883,8 +5864,8 @@ export function createFrontEnd({
     endScreen();
     drawControlBar(optionPage
       ? (adjustRow >= 0
-        ? [{ icon: 'dpad', label: 'TAP THE ARROWS OR SWIPE UP / DOWN' }, { icon: 'circleBtn', label: 'DONE', color: '#ff8f8f' }]
-        : [{ icon: 'dpad', label: 'TAP A SLIDER TO ADJUST' }, { icon: 'circleBtn', label: 'BACK', color: '#ff8f8f' }])
+        ? [{ icon: 'dpad', label: 'TAP ARROWS OR SWIPE' }, { icon: 'circleBtn', label: 'DONE', color: '#ff8f8f' }]
+        : [{ icon: 'dpad', label: 'TAP SLIDER TO ADJUST' }, { icon: 'circleBtn', label: 'BACK', color: '#ff8f8f' }])
       : MENU_HINTS);
     messagePlate();
     drawGrain();
@@ -5903,7 +5884,7 @@ export function createFrontEnd({
   function drawLevelSelect() {
     stage({ darken: 0.30, darki: { cx: 1080, feet: 646, alpha: 0.4 } });
     beginScreen();
-    screenHead('STREET MAP', 'LEVEL SELECT', 'Only confirmed operations are shown.');
+    screenHead('STREET MAP', 'LEVEL SELECT', 'Confirmed operations only.');
 
     const items = levelSelectItems();
     const focused = items[Math.min(selection, items.length - 1)]?.level ?? 1;
@@ -5984,15 +5965,15 @@ export function createFrontEnd({
     stage({ darken: 0.24, darki: { cx: 1030, feet: 646, alpha: 0.55 } });
     beginScreen();
     glass(40, 40, 700, 640, 12);
-    screenHead('MISSION BRIEFING / LAGOS, NIGERIA', 'LEVEL 01', 'Operation file');
+    screenHead('MISSION BRIEFING / LAGOS, NIGERIA', 'LEVEL 01');
     ctx.textAlign = 'left';
     setDisplay(700, 40, 1.6);
     ctx.fillStyle = C.paper;
     ctx.fillText('THE STREET TAX', 58, 208);
     const rows = [
-      ['OBJECTIVE', 'Stop the street extortion network.'],
+      ['OBJECTIVE', 'End the street extortion.'],
       ['TARGET', 'MC OLODO'],
-      ['SECONDARY', 'Defeat the street collectors.'],
+      ['SECONDARY', 'Beat the collectors.'],
     ];
     for (let i = 0; i < rows.length; i++) {
       const y = 268 + i * 80;
@@ -6083,8 +6064,8 @@ export function createFrontEnd({
      * first three seconds of any viewing. */
     /* Request 349: on a phone the control is a DOUBLE tap, on every viewing,
      * announced 3 s in (drawSkipHint), in the header band's right slot. */
-    if (isTouchUI()) drawSkipHint(ctx, W, introFallbackT, 24);
-    else ctx.fillText('X / SQUARE   SKIP', W - 28, 24);
+    // touch: the lower-centre tap cue is the only skip prompt (request 567, no repetition)
+    if (!isTouchUI()) ctx.fillText('X / SQUARE   SKIP', W - 28, 24);
     /* Request 353: the tap cue sits LOWER-CENTRE, above whatever the foot of
      * this screen already holds — the subtitle band, when subtitles are on. Its
      * height is taken from the band's own geometry (the block below), so the two
@@ -6354,20 +6335,21 @@ export function createFrontEnd({
     ctx.fillText('PROFILE', p.x + 20, p.y + 28);
     hairline(p.x + 20, p.y + 38, p.w - 40);
 
-    const labX = p.x + 30, valX = p.x + 124, valW = p.x + p.w - 18 - valX;
-    let y = p.y + 60;
+    /* Five short rows since request 567, so they get bigger type and air. */
+    const labX = p.x + 30, valX = p.x + 118, valW = p.x + p.w - 18 - valX;
+    let y = p.y + 66;
     for (let i = 0; i < dossier().profile.length; i++) {
       const [label, value, tone] = dossier().profile[i];
       ctx.fillStyle = 'rgba(233,182,84,0.38)';
       ctx.fillRect(p.x + 20, y - 4, 3, 3);
-      setFont(700, 8.5, 1.5);
+      setFont(700, 9.5, 1.5);
       ctx.fillStyle = 'rgba(195,202,214,0.60)';
       ctx.fillText(label, labX, y);
-      setFont(600, 10.5, 0.2);
+      setFont(600, 12, 0.2);
       ctx.fillStyle = tone === 'alert' ? C.red : C.paper;
-      y = textBlock(value, valX, y, valW, 12.5);
-      if (i < dossier().profile.length - 1) hairline(p.x + 20, y + 3, p.w - 40, 0.05);
-      y += 8.5;
+      y = textBlock(value, valX, y, valW, 15);
+      if (i < dossier().profile.length - 1) hairline(p.x + 20, y + 5, p.w - 40, 0.05);
+      y += 18;
     }
     briefY.profile = y;
   }
@@ -6386,9 +6368,9 @@ export function createFrontEnd({
       setFont(700, 9, 0);
       ctx.fillStyle = C.gold;
       ctx.fillText('>', p.x + 24, y);
-      setFont(600, 10.5, 0.2);
+      setFont(600, 12, 0.2);
       ctx.fillStyle = C.paper;
-      y = textBlock(line, p.x + 38, y, p.w - 58, 13) + 8;
+      y = textBlock(line, p.x + 38, y, p.w - 58, 15) + 12;
     }
     briefY.objectives = y;
     setFont(700, 8.5, 2.2);
@@ -6528,9 +6510,9 @@ export function createFrontEnd({
     hairline(p.x + 20, p.y + 42, p.w - 40);
     let y = p.y + 62;
     for (const para of dossier().chainCopy) {
-      setFont(500, 9.5, 0.1);
+      setFont(500, 11, 0.1);
       ctx.fillStyle = C.text;
-      y = textBlock(para, p.x + 20, y, p.w - 40, 13) + 6;
+      y = textBlock(para, p.x + 20, y, p.w - 40, 14.5) + 6;
     }
     setFont(700, 9.5, 0.6);
     ctx.fillStyle = C.gold;
@@ -6674,12 +6656,16 @@ export function createFrontEnd({
         { tint: 'rgba(34,8,6,0.6)', border: 'rgba(224,67,44,0.5)' });
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      setDisplay(700, 14.5, 0.45);
+      // never past the plate (request 567): a line too wide for it steps its size down
+      const fit = (txt, y, set, size) => {
+        let k = size; set(k);
+        while (k > 7 && ctx.measureText(txt).width > l.w - 44) { k -= 0.5; set(k); }
+        ctx.fillText(txt, l.x + 22, y);
+      };
       ctx.fillStyle = C.red;
-      ctx.fillText(dossier().stamp[0], l.x + 22, BRIEF.stampY + 26);
-      setFont(650, 9.2, 0.42);
+      fit(dossier().stamp[0], BRIEF.stampY + 26, (k) => setDisplay(700, k, 0.45), 14.5);
       ctx.fillStyle = C.cream;
-      ctx.fillText(dossier().stamp[1], l.x + 22, BRIEF.stampY + 47);
+      fit(dossier().stamp[1], BRIEF.stampY + 47, (k) => setFont(650, k, 0.42), 9.2);
     }
 
     /* The right column arrives as a transition rather than as a page: each panel
@@ -6753,7 +6739,7 @@ export function createFrontEnd({
   function drawExtras() {
     stage({ darken: 0.46 });
     beginScreen();
-    screenHead('ARCHIVE', 'EXTRAS', 'Additional material unlocks as production expands.');
+    screenHead('ARCHIVE', 'EXTRAS', 'More unlocks as production grows.');
     const items = ['CHARACTER GALLERY', 'CONCEPT ART', 'ANIMATION GALLERY', 'MUSIC', 'STORY', 'DEVELOPER NOTES', 'ARTWORK'];
     for (let i = 0; i < items.length; i++) {
       const x = 58 + (i % 3) * 392, y = 186 + Math.floor(i / 3) * 104;
@@ -7897,7 +7883,7 @@ export function createFrontEnd({
         typed: {
           body: dossier().body.map((_, i) => r3(briefReveal('body', i))),
           call: dossier().call.map((_, i) => r3(briefReveal('call', i))),
-          stamp: dossier().stamp.map(() => 1),       // static UI copy; never on the VO clock
+          stamp: (dossier().stamp ?? []).map(() => 1),       // static UI copy; never on the VO clock
         },
         threat: r3(briefThreatLevel()),
         cards: [0, 1, 2, 3].map((i) => r3(briefCardIn(i))),
