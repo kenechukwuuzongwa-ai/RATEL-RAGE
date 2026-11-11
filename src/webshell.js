@@ -54,4 +54,46 @@
   // touchend / click are the events Chrome accepts as the gesture for fullscreen.
   window.addEventListener('touchend', goFullscreen, true);
   window.addEventListener('click', goFullscreen, true);
+
+  /* RETRY STAYS LANDSCAPE (request 572). RETRY reloads the page, and a reload drops fullscreen
+   * and the landscape lock: a phone with auto-rotate off came back upright and showed ROTATE
+   * PHONE TO PLAY before the loading screen. A retry that lands upright now draws the page
+   * turned a quarter (html.rr-rot, styles.css), the way the player is still holding the phone
+   * (game.js saves screen.orientation.angle as rr.orient before the reload), so the loading
+   * screen comes straight up. The first tap is the gesture fullscreen needs: it goes
+   * fullscreen + landscape (goFullscreen above) and is otherwise swallowed, since the touch HUD
+   * is hidden while the page is turned. The turn is dropped as soon as the window is landscape. */
+  var retrying = false, angle = 90;
+  try {
+    retrying = sessionStorage.getItem('rorSkipToGameplay') === '1';
+    angle = Number(sessionStorage.getItem('rr.orient')) || 90;
+    sessionStorage.removeItem('rr.orient');
+  } catch (e) {}
+  var upright = function () { return window.innerHeight > window.innerWidth; };
+  var turned = false;
+  var setTurned = function (on) {
+    turned = on;
+    root.classList.toggle('rr-rot', on);
+    root.classList.toggle('rr-rot-ccw', on && angle === 270);
+  };
+  if (retrying && root.requestFullscreen && upright()) {
+    setTurned(true);
+    var untilLandscape = function () { if (turned && !upright()) setTurned(false); };
+    window.addEventListener('resize', untilLandscape);
+    window.addEventListener('orientationchange', function () { setTimeout(untilLandscape, 60); });
+    // the first touch while turned is the fullscreen gesture and nothing else
+    var tapped = false;
+    var swallow = function (e) {
+      if (!turned) return;
+      e.stopPropagation();
+      if (e.cancelable && e.type !== 'touchend') e.preventDefault();
+      // if the browser refused fullscreen the page cannot stay turned (touches would land wrong):
+      // fall back to the upright page and its ROTATE PHONE prompt
+      if (e.type === 'touchend' && !tapped) { tapped = true; setTimeout(function () { if (upright()) setTurned(false); }, 1500); }
+    };
+    ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'].forEach(function (t) {
+      window.addEventListener(t, swallow, { capture: true, passive: false });
+    });
+  }
+  W.turned = function () { return turned; };
 })();

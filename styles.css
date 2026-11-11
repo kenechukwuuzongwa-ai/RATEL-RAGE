@@ -145,3 +145,25 @@ canvas {
 @media (orientation: portrait) and (pointer: coarse) {
   .rotate-hint { display: grid; }
 }
+
+/* A RETRY THAT CAME BACK UPRIGHT (request 572, webshell.js): the reload dropped the landscape
+   lock, so the page is drawn turned a quarter, the way the phone is still held, until the first
+   tap brings fullscreen + landscape back. No ROTATE PHONE card in between. */
+html.rr-rot .rotate-hint { display: none !important; }
+html.rr-rot body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vh;
+  height: 100vw;
+  transform-origin: 0 0;
+  transform: translateX(100vw) rotate(90deg);
+}
+html.rr-rot.rr-rot-ccw body { transform: translateY(100vh) rotate(-90deg); }
+html.rr-rot .game-shell { width: min(100vh, calc(100vw * 16 / 9)); }
+html.rr-rot #ror-touch, html.rr-rot #ror-gest { visibility: hidden; }
+@supports (height: 100dvh) {
+  html.rr-rot body { width: 100dvh; }
+  html.rr-rot.rr-rot-ccw body { transform: translateY(100dvh) rotate(-90deg); }
+  html.rr-rot .game-shell { width: min(100dvh, calc(100vw * 16 / 9)); }
+}

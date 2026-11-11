@@ -1,5 +1,5 @@
 import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v126';
-import { createAftermath } from './aftermath.js?v=ratelrage-board571-v1';
+import { createAftermath } from './aftermath.js?v=ratelrage-board572-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -3617,6 +3617,9 @@ function activatePauseChoice() {
     if (item === 'REPLAY LEVEL') { try { sessionStorage.removeItem(RETRY_CHECKPOINT_KEY); } catch {} }
     else saveRetryCheckpoint();
     sessionStorage.setItem('rorSkipToGameplay', '1');
+    // which way the phone is turned: a reload drops the landscape lock, and webshell.js turns the
+    // page the same way so the retry goes straight to the loading screen (request 572)
+    try { if (screen.orientation) sessionStorage.setItem('rr.orient', String(screen.orientation.angle)); } catch {}
     location.reload();
   } else if (item === 'CUSTOMIZE CONTROLS') {
     /* The mobile HUD editor (src/touch.js). The fight stays paused underneath;
@@ -6536,7 +6539,12 @@ const RAGE_SPARKS = { src: 'sounds/rage-sparks.mp3', gain: 1.8, loopStart: 0.2, 
 const rageSparks = { buf: null, loading: false, node: null, g: null, on: false, starts: 0 };
 function updateRageSparks() {
   if (!audioCtx || !sfxGain) return;
-  const want = !!player.rageActive && !paused && !gameOver.active && !frontEnd?.active && !audioMuted;
+  // Live fighting only (request 572): the rage clock stops running once a cutscene, the outro, the
+  // L2 scene/ending, the boss's fall, the level entry or the post-mission board owns the frame, so
+  // rageActive alone would leave the crackle looping on after the gameplay has ended.
+  const want = !!player.rageActive && !paused && !gameOver.active && !frontEnd?.active && !audioMuted
+    && !cutscene.active && !outro.active && !aftermath?.active && !levelEntry.active
+    && waveState !== 'l2scene' && waveState !== 'l2ending' && !bossBeaten();
   if (want && !rageSparks.buf) {
     if (!rageSparks.loading) { rageSparks.loading = true; loadSound(RAGE_SPARKS.src).then((b) => { rageSparks.buf = b; }); }
     return;
@@ -6688,7 +6696,10 @@ function shakeOffset() {
  * is the struck man's NEAR SURFACE (the side facing Darki) at the height the blow arrives:
  * the face for fists, the chest/torso for kicks, kept inside the attack's own reach box so
  * it can never land behind him. strikeImpact() computes it; nothing else pushes one. */
-const IMPACT = { fps: 26, frames: 3, cell: 341, cols: 3, scale: 0.44, bigScale: 0.6, surface: 0.11, max: 24 };
+// scale/bigScale 0.44/0.6 -> 0.37/0.5: "reduce the hitsplashsprite size a bit" (request 572)
+// lastAlpha: the third (last) frame is drawn 50% transparent (request 573)
+const IMPACT = { fps: 26, frames: 3, cell: 341, cols: 3, scale: 0.37, bigScale: 0.5, surface: 0.11, max: 24, lastAlpha: 0.5 };
+let impactLastAlphaSeen = null;   // test hook: the alpha the last frame was drawn at
 let impactImg = null;
 function impactSheet() {
   if (impactImg) return impactImg.complete && impactImg.naturalWidth ? impactImg : null;
@@ -6755,6 +6766,9 @@ function drawHitSplash(s) {
   const sx = (f % IMPACT.cols) * IMPACT.cell, sy = Math.floor(f / IMPACT.cols) * IMPACT.cell;
   const k = s.big ? IMPACT.bigScale : IMPACT.scale, w = IMPACT.cell * k;
   ctx.save();
+  // the last frame plays at half opacity (request 573)
+  if (f === IMPACT.frames - 1) ctx.globalAlpha *= IMPACT.lastAlpha;
+  impactLastAlphaSeen = f === IMPACT.frames - 1 ? ctx.globalAlpha : impactLastAlphaSeen;
   ctx.translate(s.x - cameraX, s.y);
   ctx.rotate(s.rot || 0);
   ctx.scale(s.dir < 0 ? -1 : 1, 1);
@@ -20519,6 +20533,76 @@ function resetL2Mission() {
   setBars(l2m, 0);
   l2DoorSfxStop();
   Object.assign(l2Door, { dy: L2.door.closedDy, target: L2.door.closedDy, from: L2.door.closedDy, t: 0, dur: 0 });
+  for (const k of l2KeyScreens) { k.on = false; k.at = -1e9; }   // both switch screens dark (request 572)
+}
+
+/* THE DOOR SWITCHES' SCREENS (request 572). The room art paints both keypad screens lit; they
+ * are drawn OFF (dark glass) until Darki presses that switch, then light up and glow green, and
+ * go off again once the door has come back down: the outside keypad on the way in, the inside
+ * one on the door's jamb on the way out. Rects are art px (room.png measured by
+ * _chromakey/req572/screens.js). */
+const L2_KEYSCREENS = [
+  { x: 11952, y: 439, w: 14, h: 14 },   // outside: the keypad on its pillar
+  { x: 12299, y: 411, w: 17, h: 16 },   // inside: the door's right-hand jamb
+];
+const L2_KEYSCREEN_FX = { on: 0.14, off: 0.45, glowR: 4.2, glow: 0.55, boost: 0.32 };
+const l2KeyScreens = L2_KEYSCREENS.map(() => ({ on: false, at: -1e9 }));
+let l2KeyLitEvents = 0;
+function l2KeyLight(i, on, now = performance.now() / 1000) {
+  const k = l2KeyScreens[i];
+  if (!k || k.on === on) return;
+  // start the fade from wherever the last one had got to
+  const lvl = l2KeyLevel(i, now);
+  k.at = now - (on ? L2_KEYSCREEN_FX.on * lvl : L2_KEYSCREEN_FX.off * (1 - lvl));
+  k.on = on;
+  k.wasUp = false;
+  if (on) l2KeyLitEvents++;
+}
+function l2KeyLevel(i, now = performance.now() / 1000) {
+  const k = l2KeyScreens[i];
+  const u = Math.max(0, Math.min(1, (now - k.at) / (k.on ? L2_KEYSCREEN_FX.on : L2_KEYSCREEN_FX.off)));
+  return k.on ? u : 1 - u;
+}
+function drawL2KeyScreens(ox, oy) {
+  const now = performance.now() / 1000;
+  const F = L2_KEYSCREEN_FX;
+  // the door is down (or as good as: the ending hands over to its card on l2DoorIsShut, before the
+  // door's own landing step runs): both screens off
+  // — once that door has been up since the press (the press itself happens with the door shut)
+  const shut = l2Door.target === L2.door.closedDy && l2DoorIsShut();
+  l2KeyScreens.forEach((k, i) => {
+    if (k.on && !l2DoorIsShut()) k.wasUp = true;
+    if (k.on && k.wasUp && shut) l2KeyLight(i, false, now);
+  });
+  L2_KEYSCREENS.forEach((s, i) => {
+    const lit = l2KeyLevel(i, now);
+    const x = ox + l2X(s.x), y = oy + l2X(s.y), w = l2X(s.w), h = l2X(s.h);
+    ctx.save();
+    // the glass, dark while the screen is off
+    if (lit < 1) {
+      ctx.globalAlpha = 1 - lit;
+      ctx.fillStyle = '#08110c';
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(150,190,165,0.10)';     // a dull sheen along the top of the glass
+      ctx.fillRect(x + w * 0.12, y + h * 0.1, w * 0.76, Math.max(1, h * 0.12));
+    }
+    if (lit > 0) {
+      const flick = 0.92 + 0.08 * Math.sin(now * 23 + i * 2.1);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = lit * F.boost * flick;
+      ctx.fillStyle = '#5dff8a';
+      ctx.fillRect(x, y, w, h);
+      const cx = x + w / 2, cy = y + h / 2, r = Math.max(w, h) * F.glowR / 2;
+      const g = ctx.createRadialGradient(cx, cy, Math.min(w, h) * 0.3, cx, cy, r);
+      g.addColorStop(0, `rgba(90,255,130,${(F.glow * lit * flick).toFixed(3)})`);
+      g.addColorStop(0.45, `rgba(60,230,100,${(F.glow * 0.35 * lit * flick).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(40,200,80,0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+    ctx.restore();
+  });
 }
 
 /* The door travels; nothing else moves it. */
@@ -20529,6 +20613,8 @@ function l2StepDoor(dt) {
   l2Door.dy = l2Door.from + (l2Door.target - l2Door.from) * l2DoorEase(p);
   if (p >= 1) {
     l2Door.dy = l2Door.target;
+    // the door is down: both switch screens go dark again (request 572)
+    if (l2Door.target === L2.door.closedDy) { l2KeyLight(0, false); l2KeyLight(1, false); }
     l2DoorSfxLand(l2Door.target === L2.door.closedDy);
   } else l2DoorSfxTravel(p);
 }
@@ -20783,7 +20869,7 @@ function updateL2Scene(dt) {
   const S = L2M_STAGE;
   switch (l2m.phase) {
     case 'toKeypad':
-      if (l2WalkTo(S.keypad.x, S.keypad.y, dt)) { player.facing = 1; l2SetPose('wallSwitch'); l2Next('keying'); l2HandSfx('l2Keypad'); }
+      if (l2WalkTo(S.keypad.x, S.keypad.y, dt)) { player.facing = 1; l2SetPose('wallSwitch'); l2Next('keying'); l2HandSfx('l2Keypad'); l2KeyLight(0, true); }
       break;
     case 'keying':
       if (l2PlayOnce(dt)) { l2DoorTo(true); l2SetPose('idle'); l2Next('doorOpening'); }
@@ -21331,7 +21417,7 @@ function updateL2Ending(dt) {
       const m = l2EndSwitchMark();
       const front = { x: m.x, y: Math.max(m.y, l2Y(l2NavRow(L2.nav.top, m.x / L2.scale)) + 4) };
       if (!l2m.swFront) { if (l2WalkTo(front.x, front.y, dt)) l2m.swFront = true; }
-      else if (l2WalkTo(m.x, m.y, dt)) { l2m.swFront = false; player.facing = -1; l2SetPose('wallSwitch'); l2HandSfx('l2Keypad'); l2EndNext('switch'); }
+      else if (l2WalkTo(m.x, m.y, dt)) { l2m.swFront = false; player.facing = -1; l2SetPose('wallSwitch'); l2HandSfx('l2Keypad'); l2EndNext('switch'); l2KeyLight(1, true); }
       break;
     }
     case 'switch':
@@ -22743,6 +22829,7 @@ function drawLevel2Back() {
   if (l2Art.room) {
     ctx.drawImage(l2Art.room, rx, oy + l2X(L2.room.top), l2X(L2.room.w), l2X(L2.room.h));
     drawPlateApron(l2Art.room, rx, oy + l2X(L2.room.top), L2.scale, L2_APRON_DRAW_ROWS);   // its floor too (request 487)
+    drawL2KeyScreens(ox, oy);   // the switch screens: dark, or lit while their press holds the door (request 572)
   }
 }
 /* One weapon rack (request 489): the stand, then the weapons still on it. Drawn in
@@ -26628,6 +26715,9 @@ window.__ror = {
   get impactFrames() { return IMPACT.frames; },
   actorOrder() { return actorList().map((a) => (a.splash ? "splash:" + a.splash : a.solid ? "solid" : a.draw === drawPlayer ? "player" : "other")); },
   get beadGlow() { return { drawn: beadGlowDrawn, trail: beadTrailDrawn, samples: beadTrail.length }; },
+  get keyScreens() { return { lit: l2KeyScreens.map((k, i) => +l2KeyLevel(i).toFixed(2)), on: l2KeyScreens.map((k) => k.on), events: l2KeyLitEvents,
+    world: L2_KEYSCREENS.map((s) => ({ x: l2X(s.x), y: l2Y(s.y) })) }; },
+  get impactScale() { return { scale: IMPACT.scale, big: IMPACT.bigScale, lastAlpha: IMPACT.lastAlpha, lastDrawnAlpha: impactLastAlphaSeen }; },
   get neckGlow() { return { glow: neckGlowDrawn, sparks: neckSparkDrawn, live: neckSparks.filter((q) => q.seated).length }; },
   neckProbe() {
     const spr = spriteFor(player.anim);

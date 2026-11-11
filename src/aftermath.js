@@ -703,7 +703,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       if (opt.bottom) {
         ui.fitFont(700, 8.6, 1.7, opt.bottom, opt.labelW ?? 200);
         ctx.fillStyle = tone;
-        ctx.fillText(assertPlayerSafe(opt.bottom, 'node.bottom'), n.x, n.y + n.r + 39);
+        // 20px under the name, not 15: the two lines read as one block otherwise (request 572)
+        ctx.fillText(assertPlayerSafe(opt.bottom, 'node.bottom'), n.x, n.y + n.r + 44);
       }
       ctx.textAlign = 'left';
       ctx.restore();
@@ -1342,10 +1343,10 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ui.fitFont(700, 20, 0.8, jibril.shortName, 2 * (1280 - 24 - n.x), true);   // never off the right edge
       ctx.fillStyle = C.paper;
       const full = assertPlayerSafe(jibril.shortName, 'target.name');
-      ctx.fillText(full.slice(0, Math.round(full.length * B.name)), n.x, n.y + n.r + 52);
+      ctx.fillText(full.slice(0, Math.round(full.length * B.name)), n.x, n.y + n.r + 56);   // looser lines (request 572)
       ui.setFont(700, 8.8, 1.9);
       ctx.fillStyle = C.gold;
-      if (B.name >= 1) ctx.fillText(file().target.level, n.x, n.y + n.r + 70);
+      if (B.name >= 1) ctx.fillText(file().target.level, n.x, n.y + n.r + 79);
       ctx.textAlign = 'left';
       ctx.restore();
     }
@@ -1502,12 +1503,13 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       if (top) {
         ui.setFont(700, 13, 1.6);
         ctx.fillStyle = node.tone === 'dim' ? C.muted : C.paper;
-        ctx.fillText(assertPlayerSafe(top, 'cabal.top'), n.x - n.r - 22, n.y + 1);
+        ctx.fillText(assertPlayerSafe(top, 'cabal.top'), n.x - n.r - 22, n.y - 2);
       }
+      // the status 22px under the name, not 16 (request 572: more air in the two-line titles)
       ui.setFont(700, 8.6, 1.8);
       ctx.fillStyle = node.tone === 'alert' ? C.red : node.tone === 'green' ? C.green
         : node.tone === 'red' ? C.red : C.dim;
-      ctx.fillText(assertPlayerSafe(node.bottom, 'cabal.bottom'), n.x - n.r - 22, n.y + (top ? 17 : 5));
+      ctx.fillText(assertPlayerSafe(node.bottom, 'cabal.bottom'), n.x - n.r - 22, n.y + (top ? 20 : 5));
       ctx.textAlign = 'left';
       ctx.restore();
 
@@ -2017,7 +2019,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
   }
 
   /* ------------------------------------------------------------- footers */
-  function prompt(ui, text, u = 1, y = 672) {
+  // y 699: inside the lower bar (its rule is at 668, the screen ends at 720), request 572
+  function prompt(ui, text, u = 1, y = 699) {
     ctx.save();
     ctx.globalAlpha *= u * (0.66 + 0.34 * (0.5 + 0.5 * Math.sin(ui.clock * 2.7)));
     ctx.textAlign = 'center';
