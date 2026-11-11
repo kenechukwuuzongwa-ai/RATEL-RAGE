@@ -50,7 +50,7 @@ Range request with a full `200` (no `206`) when tested on 2026-10-09; see sectio
   `_chromakey/_brand/signs.js`, which re-reads the originals from `_chromakey/_brand/backup/`.
   Still in the art and NOT changed: the political murals and vehicle wraps that name or
   show real politicians and parties. That is a content call for the owner, not a brand swap.
-* **Age gate** (the plan's 18+ choice) is not built.
+* **No age gate** (owner's decision, request 580): the game is for everyone. Because there is no 18+ gate, betting and alcohol adverts should not be accepted on the billboards.
 * **iPhone/iPad** are not a target of this pass. Without the Android code path they get
   the desktop-resolution art, which may exceed Safari's canvas memory on older
   iPhones. They also have no fullscreen API for pages.
