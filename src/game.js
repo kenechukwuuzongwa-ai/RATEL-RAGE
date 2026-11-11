@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v126';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v129';
 import { createAftermath } from './aftermath.js?v=ratelrage-board572-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -6539,12 +6539,13 @@ const RAGE_SPARKS = { src: 'sounds/rage-sparks.mp3', gain: 1.8, loopStart: 0.2, 
 const rageSparks = { buf: null, loading: false, node: null, g: null, on: false, starts: 0 };
 function updateRageSparks() {
   if (!audioCtx || !sfxGain) return;
-  // Live fighting only (request 572): the rage clock stops running once a cutscene, the outro, the
-  // L2 scene/ending, the boss's fall, the level entry or the post-mission board owns the frame, so
-  // rageActive alone would leave the crackle looping on after the gameplay has ended.
-  const want = !!player.rageActive && !paused && !gameOver.active && !frontEnd?.active && !audioMuted
-    && !cutscene.active && !outro.active && !aftermath?.active && !levelEntry.active
-    && waveState !== 'l2scene' && waveState !== 'l2ending' && !bossBeaten();
+  // Rage, its effects and the crackle play on past the fight as they always did (the boss's fall,
+  // the taunt, the rout, the walk to the ledger: request 574 restored that). What ends the crackle
+  // is the LEVEL being over: the mission summary card (outro 'card'/'file', Level 02's ending card
+  // too) and the post-mission board — the rage clock stands still there, so rageActive alone
+  // would loop the take forever.
+  const summary = (outro.active && outro.phase >= OUTRO_CARD_PHASE) || !!aftermath?.active;
+  const want = !!player.rageActive && !paused && !gameOver.active && !frontEnd?.active && !audioMuted && !summary;
   if (want && !rageSparks.buf) {
     if (!rageSparks.loading) { rageSparks.loading = true; loadSound(RAGE_SPARKS.src).then((b) => { rageSparks.buf = b; }); }
     return;
@@ -19323,6 +19324,7 @@ function endMission() {
 const evidence = { active: false, x: 0, y: 0, t: 0, held: false, lift: 0, gone: false };
 
 const outroPhase = () => OUTRO.phases[Math.min(outro.phase, OUTRO.phases.length - 1)][0];
+const OUTRO_CARD_PHASE = OUTRO.phases.findIndex((p) => p[0] === 'card');   // the summary card (request 574)
 
 // Olodo has hit the tarmac at (x, y) and been parked: start the ending there.
 function startOutro(x, y) {
@@ -20545,10 +20547,13 @@ const L2_KEYSCREENS = [
   { x: 11952, y: 439, w: 14, h: 14 },   // outside: the keypad on its pillar
   { x: 12299, y: 411, w: 17, h: 16 },   // inside: the door's right-hand jamb
 ];
-const L2_KEYSCREEN_FX = { on: 0.14, off: 0.45, glowR: 4.2, glow: 0.55, boost: 0.32 };
+/* pressFrame: the wall-switch take's fingertip is furthest out on frames 11-12 (the first press,
+ * measured off sprites/darki-wall-switch.png) and pulls back on 13: the screen lights then, after the
+ * first press, not as the take starts (request 574). */
+const L2_KEYSCREEN_FX = { pressFrame: 13, on: 0.14, off: 0.45, glowR: 4.2, glow: 0.55, boost: 0.32 };
 const l2KeyScreens = L2_KEYSCREENS.map(() => ({ on: false, at: -1e9 }));
 let l2KeyLitEvents = 0;
-function l2KeyLight(i, on, now = performance.now() / 1000) {
+function l2KeyLight(i, on, now = mobClock) {
   const k = l2KeyScreens[i];
   if (!k || k.on === on) return;
   // start the fade from wherever the last one had got to
@@ -20558,13 +20563,15 @@ function l2KeyLight(i, on, now = performance.now() / 1000) {
   k.wasUp = false;
   if (on) l2KeyLitEvents++;
 }
-function l2KeyLevel(i, now = performance.now() / 1000) {
+function l2KeyLevel(i, now = mobClock) {
   const k = l2KeyScreens[i];
   const u = Math.max(0, Math.min(1, (now - k.at) / (k.on ? L2_KEYSCREEN_FX.on : L2_KEYSCREEN_FX.off)));
   return k.on ? u : 1 - u;
 }
 function drawL2KeyScreens(ox, oy) {
-  const now = performance.now() / 1000;
+  /* the game's own clock (dt-accumulated), not the wall clock: a repaint of the same frame draws the
+   * same glow, and the screens hold still under the pause (request 576) */
+  const now = mobClock;
   const F = L2_KEYSCREEN_FX;
   // the door is down (or as good as: the ending hands over to its card on l2DoorIsShut, before the
   // door's own landing step runs): both screens off
@@ -20869,11 +20876,14 @@ function updateL2Scene(dt) {
   const S = L2M_STAGE;
   switch (l2m.phase) {
     case 'toKeypad':
-      if (l2WalkTo(S.keypad.x, S.keypad.y, dt)) { player.facing = 1; l2SetPose('wallSwitch'); l2Next('keying'); l2HandSfx('l2Keypad'); l2KeyLight(0, true); }
+      if (l2WalkTo(S.keypad.x, S.keypad.y, dt)) { player.facing = 1; l2SetPose('wallSwitch'); l2Next('keying'); l2HandSfx('l2Keypad'); }
       break;
-    case 'keying':
-      if (l2PlayOnce(dt)) { l2DoorTo(true); l2SetPose('idle'); l2Next('doorOpening'); }
+    case 'keying': {
+      const ended = l2PlayOnce(dt);   // sets this tick's frame of the take first
+      if (player.anim === 'wallSwitch' && player.frame >= L2_KEYSCREEN_FX.pressFrame) l2KeyLight(0, true);   // after the first press (request 574)
+      if (ended) { l2DoorTo(true); l2SetPose('idle'); l2Next('doorOpening'); }
       break;
+    }
     case 'doorOpening':
       advancePlayerAnim(dt);
       if (l2DoorIsOpen()) { l2m.path = 0; l2Next('enter'); }
@@ -21417,12 +21427,15 @@ function updateL2Ending(dt) {
       const m = l2EndSwitchMark();
       const front = { x: m.x, y: Math.max(m.y, l2Y(l2NavRow(L2.nav.top, m.x / L2.scale)) + 4) };
       if (!l2m.swFront) { if (l2WalkTo(front.x, front.y, dt)) l2m.swFront = true; }
-      else if (l2WalkTo(m.x, m.y, dt)) { l2m.swFront = false; player.facing = -1; l2SetPose('wallSwitch'); l2HandSfx('l2Keypad'); l2EndNext('switch'); l2KeyLight(1, true); }
+      else if (l2WalkTo(m.x, m.y, dt)) { l2m.swFront = false; player.facing = -1; l2SetPose('wallSwitch'); l2HandSfx('l2Keypad'); l2EndNext('switch'); }
       break;
     }
-    case 'switch':
-      if (l2PlayOnce(dt)) { l2DoorTo(true); l2SetPose('idle'); l2EndNext('doorOpen'); }
+    case 'switch': {
+      const ended = l2PlayOnce(dt);   // sets this tick's frame of the take first
+      if (player.anim === 'wallSwitch' && player.frame >= L2_KEYSCREEN_FX.pressFrame) l2KeyLight(1, true);   // after the first press (request 574)
+      if (ended) { l2DoorTo(true); l2SetPose('idle'); l2EndNext('doorOpen'); }
       break;
+    }
     case 'doorOpen':
       advancePlayerAnim(dt);
       if (l2DoorIsOpen()) l2EndNext('exit1');
@@ -28384,6 +28397,7 @@ function loop(ts) {
     } else {
       pauseT = 0;
       update(dt);
+      updateRageSparks();              // the same frame the summary card comes up, not the next (request 576)
     }
     /* CONTROLS/OPTIONS from the pause menu hand the canvas to the front end
      * mid-frame; drawing the overlay again here would flash it for one frame. */

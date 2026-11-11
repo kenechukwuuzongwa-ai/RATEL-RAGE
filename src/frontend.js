@@ -6135,27 +6135,27 @@ export function createFrontEnd({
    * written blocks flow off measured heights (textBlock returns the next
    * baseline) instead of hand-counted y values.
    */
+  /* THE USER'S WIREFRAME (request 574): only what was sketched. The title top left (LEVEL 01 /
+   * THE STREET TAX); under it one row of three: the photograph, the PROFILE with the dossier
+   * file number under it, and the DOSSIER (the typed read) in the widest column; GO BACK bottom
+   * left and START MISSION bottom right. The target card, the pledge plate, the objectives, the
+   * cabal chain and CONFIDENTIAL are gone.
+   * Request 576 (the sketch read upright): the photograph is the sketch's size (about a third of
+   * the width, the row about 40% of the height); PROFILE and DOSSIER sit bare on the page, split
+   * by one vertical rule, with each profile label and its value on one line; and the DOSSIER read
+   * runs down its column and then on across the FULL width under the row (`band`), the sketch's
+   * long lines — that band is the window that scrolls when a read is longer than the page. */
   const BRIEF = {
-    left: { x: 46, w: 440 },
-    portrait: { x: 506, y: 46, w: 384, h: 330 },
-    profile: { x: 906, y: 46, w: 328, h: 330 },
-    objective: { x: 506, y: 392, w: 356, h: 232 },
-    chain: { x: 878, y: 392, w: 356, h: 232 },
-    stampY: 556, stampH: 62,
+    title: { x: 56, code: 96, name: 134 },
+    portrait: { x: 56, y: 160, w: 350, h: 270 },
+    profile: { x: 432, y: 160, w: 290, h: 270 },
+    dossier: { x: 758, y: 160, w: 466, h: 270 },
+    band: { x: 56, y: 444, w: 1168, bot: 650 },
   };
-  /* REFIT TO THE SCREEN (request 540). The four right-hand cards were laid out for a
-   * 1280-wide canvas, so on a wider phone they hugged the left and left the right side
-   * empty. Their column (x 506 .. 1234 at 1280) is stretched each frame to end the same
-   * 46 px from the REAL right edge; heights and the left column are unchanged, so a
-   * 1280 frame is exactly the old layout. */
-  const BRIEF_BASE = JSON.parse(JSON.stringify(BRIEF));
+  /* A wider phone (request 540): the dossier column and the band run to 56 px from the REAL right edge. */
   function fitBrief() {
-    const x0 = 506, x1 = 1234, k = Math.max(1, (W - 46 - x0) / (x1 - x0));
-    for (const key of ['portrait', 'profile', 'objective', 'chain']) {
-      const b = BRIEF_BASE[key];
-      BRIEF[key].x = Math.round(x0 + (b.x - x0) * k);
-      BRIEF[key].w = Math.round(b.w * k);
-    }
+    BRIEF.dossier.w = Math.max(466, W - 56 - BRIEF.dossier.x);
+    BRIEF.band.w = Math.max(1168, W - 56 - BRIEF.band.x);
   }
 
   /* Where each wrapped block finished on the last drawn frame. The copy lives in
@@ -6197,6 +6197,9 @@ export function createFrontEnd({
      * and prints one over the other. */
     drawControlBar([{ icon: 'dpad', label: 'FORWARD / BACK' }], 540);
     const y = 668, h = 40;
+    // the wireframe (request 574): GO BACK bottom left, START MISSION bottom right
+    BRIEF_ACTIONS[BRIEF_BACK].x = BRIEF.title.x;
+    BRIEF_ACTIONS[BRIEF_START].x = W - 56 - BRIEF_ACTIONS[BRIEF_START].w;
     BRIEF_ACTIONS.forEach((a, i) => {
       button({
         id: a.id, x: a.x, y, w: a.w, h,
@@ -6205,69 +6208,6 @@ export function createFrontEnd({
       });
       glimmer(a.x, y, a.w, h, 7, BRIEF_GLIMMER[i]);
     });
-  }
-
-  function briefTargetCard(x, y, w, h) {
-    glass(x, y, w, h, 8, { tint: 'rgba(9,13,20,0.74)' });
-    /* The skull breathes on a slower period than the light sweeping over the
-     * card, so the two never fall into step and start reading as one blink. */
-    icon('skull', x + 32, y + 37, 26, C.red, 0.62 + 0.34 * breathe(clock, 2.7));
-    ctx.textAlign = 'left';
-    setFont(700, 9, 2.6);
-    ctx.fillStyle = C.gold;
-    ctx.fillText('TARGET', x + 58, y + 24);
-    setDisplay(700, 24, 1.6);
-    ctx.fillStyle = C.paper;
-    ctx.fillText(dossier().target, x + 58, y + 50);
-    setFont(600, 8.5, 1.8);
-    ctx.fillStyle = C.muted;
-    ctx.fillText(dossier().role, x + 58, y + 64);
-
-    /* Threat reads twice — the word and the bar — so it does not depend on
-     * colour alone. The bar now climbs from zero to HIGH on the narration clock
-     * instead of arriving already complete. */
-    const right = x + w - 20;
-    const level = briefThreatLevel();
-    const threatArrived = clamp(level / Math.max(1, dossier().threat.filled), 0, 1);
-    ctx.textAlign = 'right';
-    setFont(700, 8.5, 2);
-    ctx.fillStyle = C.muted;
-    ctx.fillText('THREAT LEVEL', right, y + 24);
-    setDisplay(700, 18, 1.4);
-    ctx.fillStyle = `rgba(224,67,44,${(0.30 + 0.70 * threatArrived).toFixed(3)})`;
-    ctx.fillText(dossier().threat.label, right, y + 48);
-    ctx.textAlign = 'left';
-    const segW = 11, segGap = 3, n = dossier().threat.of;
-    let sx = right - (n * segW + (n - 1) * segGap);
-    for (let i = 0; i < n; i++) {
-      ctx.fillStyle = 'rgba(224,67,44,0.16)';
-      ctx.fillRect(sx, y + 56, segW, 6);
-      const lit = clamp(level - i, 0, 1);
-      if (lit > 0) {
-        const tip = i === Math.min(dossier().threat.filled - 1, Math.max(0, Math.ceil(level) - 1));
-        ctx.fillStyle = tip
-          ? `rgba(255,${Math.round(90 + 60 * breathe(clock, 1.9))},64,0.98)`
-          : 'rgba(224,67,44,0.92)';
-        ctx.fillRect(sx, y + 56, segW * lit, 6);
-      }
-      sx += segW + segGap;
-    }
-    ctx.textAlign = 'left';
-
-    /* Light raking across the whole card face, forever. This is the one panel on
-     * the page that names the man the level is about, so it is the one that is
-     * never allowed to go still. Drawn LAST, over the text, because light falls
-     * on a card rather than under what is printed on it. */
-    glimmer(x, y, w, h, 8);
-    /* And a live edge under the light — the same period as the wide pass, so the
-     * border brightens as the sweep arrives instead of on its own schedule. */
-    ctx.save();
-    ctx.globalAlpha *= 0.30 + 0.55 * hump(((clock / 3.9) % 1) / 0.42);
-    roundRectPath(ctx, x, y, w, h, 8);
-    ctx.strokeStyle = 'rgba(233,182,84,0.75)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
   }
 
   function briefPortrait() {
@@ -6337,56 +6277,42 @@ export function createFrontEnd({
     ctx.restore();
   }
 
+  /* PROFILE (request 576: as sketched, no panel round it): the heading, then each row as the
+   * sketch has it — the label and its value side by side — and the dossier file under the rows. */
+  const BRIEF_PROFILE = { valX: 92, rowGap: 11 };
   function briefProfile() {
     const p = BRIEF.profile;
-    glass(p.x, p.y, p.w, p.h, 10);
     ctx.textAlign = 'left';
     setFont(700, 10, 3);
     ctx.fillStyle = C.gold;
-    ctx.fillText('PROFILE', p.x + 20, p.y + 28);
-    hairline(p.x + 20, p.y + 38, p.w - 40);
+    ctx.fillText('PROFILE', p.x, p.y + 18);
+    hairline(p.x, p.y + 28, p.w);
 
-    /* Five short rows since request 567, so they get bigger type and air. */
-    const labX = p.x + 30, valX = p.x + 118, valW = p.x + p.w - 18 - valX;
-    let y = p.y + 66;
+    const labX = p.x + 10, valX = p.x + BRIEF_PROFILE.valX, valW = p.w - BRIEF_PROFILE.valX;
+    let y = p.y + 56;
     for (let i = 0; i < dossier().profile.length; i++) {
       const [label, value, tone] = dossier().profile[i];
       ctx.fillStyle = 'rgba(233,182,84,0.38)';
-      ctx.fillRect(p.x + 20, y - 4, 3, 3);
+      ctx.fillRect(p.x, y - 4, 3, 3);
       setFont(700, 9.5, 1.5);
       ctx.fillStyle = 'rgba(195,202,214,0.60)';
       ctx.fillText(label, labX, y);
       setFont(600, 12, 0.2);
       ctx.fillStyle = tone === 'alert' ? C.red : C.paper;
-      y = textBlock(value, valX, y, valW, 15);
-      if (i < dossier().profile.length - 1) hairline(p.x + 20, y + 5, p.w - 40, 0.05);
-      y += 18;
+      y = textBlock(value, valX, y, valW, 15) + BRIEF_PROFILE.rowGap;   // returns the next baseline
     }
     briefY.profile = y;
-  }
-
-  function briefObjectives() {
-    const p = BRIEF.objective;
-    glass(p.x, p.y, p.w, p.h, 10);
-    icon('check', p.x + 28, p.y + 25, 15, C.green, 0.9);
-    ctx.textAlign = 'left';
-    setFont(700, 10, 2.4);
-    ctx.fillStyle = C.green;
-    ctx.fillText('MISSION OBJECTIVE', p.x + 44, p.y + 29);
-    hairline(p.x + 20, p.y + 42, p.w - 40);
-    let y = p.y + 68;
-    for (const line of dossier().objectives) {
-      setFont(700, 9, 0);
-      ctx.fillStyle = C.gold;
-      ctx.fillText('>', p.x + 24, y);
-      setFont(600, 12, 0.2);
-      ctx.fillStyle = C.paper;
-      y = textBlock(line, p.x + 38, y, p.w - 58, 15) + 12;
-    }
-    briefY.objectives = y;
+    // the dossier file number, straight under the rows (the sketch's "Dossier ___"): label, then the number
+    const [fileLab, fileNo] = String(dossier().file).split(/:\s*/);
+    const fy = y - 4;
+    hairline(p.x, fy, p.w);
     setFont(700, 8.5, 2.2);
     ctx.fillStyle = C.dim;
-    ctx.fillText(dossier().file, p.x + 24, p.y + p.h - 18);
+    ctx.fillText(fileLab, p.x, fy + 20);
+    fitFont(700, 11, 1.6, fileNo ?? '', p.w);
+    ctx.fillStyle = C.muted;
+    ctx.fillText(fileNo ?? '', p.x, fy + 38);
+    briefY.fileBottom = fy + 38;
   }
 
   /* The hierarchy is deliberately incomplete: Olodo is the first known face,
@@ -6511,33 +6437,6 @@ export function createFrontEnd({
     ctx.textBaseline = 'alphabetic';
   }
 
-  function briefChain() {
-    const p = BRIEF.chain;
-    glass(p.x, p.y, p.w, p.h, 10);
-    ctx.textAlign = 'left';
-    setFont(700, 10, 2.4);
-    ctx.fillStyle = C.gold;
-    ctx.fillText('CONNECTION TO THE CABAL', p.x + 20, p.y + 29);
-    hairline(p.x + 20, p.y + 42, p.w - 40);
-    let y = p.y + 62;
-    for (const para of dossier().chainCopy) {
-      setFont(500, 11, 0.1);
-      ctx.fillStyle = C.text;
-      y = textBlock(para, p.x + 20, y, p.w - 40, 14.5) + 6;
-    }
-    setFont(700, 9.5, 0.6);
-    ctx.fillStyle = C.gold;
-    ctx.fillText(dossier().chainNote, p.x + 20, y + 6);
-    briefY.chainCopy = y + 6;
-
-    const graphTop = p.y + p.h - 64;
-    briefY.chainBoxTop = graphTop;
-    networkGraph(p.x + 20, graphTop + 19, p.w - 40, {
-      radius: 17,
-      labelSize: 6.6,
-      reveal: clamp((briefT - 1.55) / 1.65, 0, 1),
-    });
-  }
   /* One right-column panel's entrance: a scale-out from its own centre with a
    * small overshoot, lifted from below, fading up over the first part of it.
    *
@@ -6582,131 +6481,150 @@ export function createFrontEnd({
     fitBrief();
     stage({ darken: 0.66 });
     beginScreen(14);
-    const l = BRIEF.left;
-
-    ctx.fillStyle = C.orange;
-    ctx.fillRect(0, 96, 10, 262);
+    const T = BRIEF.title;
 
     ctx.textAlign = 'left';
-    setFont(700, 11, 4);
-    ctx.fillStyle = C.gold;
-    ctx.fillText('MISSION BRIEFING', l.x, 74);
     /* The heading follows the DOSSIER, not the file. It was three hardcoded
      * strings, so Level 02's case file opened under "LEVEL 01 / THE STREET TAX"
      * with Masood Jibril's profile beside it. */
     setDisplay(700, 54, 2);
     ctx.fillStyle = C.paper;
-    ctx.fillText(dossier().code ?? 'LEVEL 01', l.x - 2, 130);
+    ctx.fillText(dossier().code ?? 'LEVEL 01', T.x - 2, T.code);
     setDisplay(700, 32, 1.6);
     ctx.fillStyle = C.gold;
-    ctx.fillText(dossier().title ?? 'THE STREET TAX', l.x, 166);
-    setFont(600, 11, 2.6);
-    ctx.fillStyle = C.muted;
-    ctx.fillText(dossier().place ?? 'LAGOS, NIGERIA', l.x, 190);
+    ctx.fillText(dossier().title ?? 'THE STREET TAX', T.x, T.name);
 
-    briefTargetCard(l.x, 208, l.w, 74);
-
-    setFont(700, 10, 3);
-    ctx.fillStyle = C.gold;
-    ctx.fillText('DOSSIER', l.x, 310);
-    briefProgressRule(l.x, 318, l.w);
-
-    /* The dossier types itself, on the narrator's clock. `head` follows the
-     * reveal into whichever block is currently landing characters and stays at
-     * the end of the last finished one through the pauses between them, so there
-     * is exactly ONE caret on the page at any moment and it is never nowhere. */
-    /* A READABLE DOSSIER THAT SCROLLS AS IT IS READ (request 563). The copy was 11 px so the
-     * whole file fitted the column — unreadable in the pixel face. It is now set large, inside
-     * a WINDOW between the DOSSIER rule and the pledge; the window follows the typing head down
-     * the page (eased, never jumping), and a MATTE at its top edge dissolves each line as it
-     * scrolls up, so nothing spills over the rule. */
-    const win = { top: 326, bot: (dossier().stamp ? BRIEF.stampY : 652) - 8 };
-    const winH = win.bot - win.top;
-    const now = clock, dt = clamp(now - briefScroll.at, 0, 0.1);
-    briefScroll.at = now;
-    if (briefT < 0.05) briefScroll.headY = 0;                   // a fresh file starts at its top
-    const target = clamp(briefScroll.headY + BRIEF_TYPE.lineH * 0.6 - winH, 0, Math.max(0, briefScroll.contentH - winH));
-    if (target < briefScroll.y - 2 || briefT < 0.05) briefScroll.y = target;      // a new file / a rewind: no slide
-    else briefScroll.y += (target - briefScroll.y) * Math.min(1, dt * 5);
-    const off = briefScroll.y;
-    const matte = (ly) => clamp((ly - BRIEF_TYPE.px * 0.9 - win.top) / BRIEF_TYPE.matte, 0, 1);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(l.x - 6, win.top, l.w + 26, winH);
-    ctx.clip();
-    const y0 = win.top + BRIEF_TYPE.lineH;
-    let y = y0 - off;
-    let head = null;
-    for (let i = 0; i < dossier().body.length; i++) {
-      setFont(500, BRIEF_TYPE.size, 0.1);
-      ctx.fillStyle = C.text;
-      const t = textBlockTyped(dossier().body[i], l.x, y, l.w, BRIEF_TYPE.lineH, briefReveal('body', i), matte);
-      if (t.drew) head = { x: t.endX, y: t.endY, size: BRIEF_TYPE.px, typing: t.typing };
-      y = t.next + 10;
-    }
-    y += 12;
-    for (let i = 0; i < dossier().call.length; i++) {
-      setFont(700, BRIEF_TYPE.size, 0.3);
-      ctx.fillStyle = C.gold;
-      const t = textBlockTyped(dossier().call[i], l.x, y, l.w, BRIEF_TYPE.lineH, briefReveal('call', i), matte);
-      if (t.drew) head = { x: t.endX, y: t.endY, size: BRIEF_TYPE.px, typing: t.typing };
-      y = t.next;
-    }
-    briefScroll.contentH = y + off - win.top;                  // the whole file, unscrolled
-    if (head) briefScroll.headY = head.y + off - win.top;
-    briefY.call = y;
-    briefY.scroll = off;
-
-    if (head && matte(head.y) > 0) typeCaret(head.x, head.y, head.size, head.typing);
-    ctx.restore();
-
-    /* Static pledge: it is interface copy, not part of the briefing recording.
-     * Nothing here reads briefT or clock, so it cannot type, pulse or drift. */
-    if (dossier().stamp) {
-      glass(l.x, BRIEF.stampY, l.w, BRIEF.stampH, 6,
-        { tint: 'rgba(34,8,6,0.6)', border: 'rgba(224,67,44,0.5)' });
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
-      // never past the plate (request 567): a line too wide for it steps its size down
-      const fit = (txt, y, set, size) => {
-        let k = size; set(k);
-        while (k > 7 && ctx.measureText(txt).width > l.w - 44) { k -= 0.5; set(k); }
-        ctx.fillText(txt, l.x + 22, y);
-      };
-      ctx.fillStyle = C.red;
-      fit(dossier().stamp[0], BRIEF.stampY + 26, (k) => setDisplay(700, k, 0.45), 14.5);
-      ctx.fillStyle = C.cream;
-      fit(dossier().stamp[1], BRIEF.stampY + 47, (k) => setFont(650, k, 0.42), 9.2);
-    }
-
-    /* The right column arrives as a transition rather than as a page: each panel
-     * scales out from its own centre, the MC Olodo photograph FIRST and the three
-     * written panels behind it in a short cascade. That order is the reading
-     * order the screen wants — see the face, then the file on it. */
+    /* The row: photograph, profile (+ file number), dossier — each scales in, in reading order. */
     briefCard(0, BRIEF.portrait, briefPortrait);
     briefCard(1, BRIEF.profile, briefProfile);
-    briefCard(2, BRIEF.objective, briefObjectives);
-    briefCard(3, BRIEF.chain, briefChain);
+    // the dossier enters as one piece: its column and the full-width band under the row
+    const D = BRIEF.dossier, B = BRIEF.band;
+    briefCard(2, { x: B.x, y: D.y, w: Math.max(B.w, D.x + D.w - B.x), h: B.bot - D.y }, briefDossier);
     endScreen();
 
     drawBriefActions();
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    setFont(700, 10, 3);
-    /* A slow blink, on its own long period — a stamped warning on a live file,
-     * not a light on a dashboard. */
-    ctx.globalAlpha = 0.5 + 0.5 * breathe(clock, 4.3);
-    ctx.fillStyle = 'rgba(224,67,44,0.85)';
-    ctx.fillText('CONFIDENTIAL', BRIEF.profile.x + BRIEF.profile.w, L.hintY + 0.5);
-    ctx.globalAlpha = 1;
-    ctx.textBaseline = 'alphabetic';
-    ctx.textAlign = 'left';
-
-
     drawGrain(0.7);
     transitionVeil();
   }
 
+  /* THE DOSSIER COLUMN (request 574: the wireframe's right-hand column). The read types itself
+   * into it on the narrator's clock, in a window that scrolls with the typing head. */
+  /* Request 576: the read FLOWS — down the dossier column while it has room, then on across the
+   * full-width band under the row (the sketch's long lines). Each line is wrapped to the width of
+   * the slot it lands in, in full before any of it is typed, so nothing reflows while it types.
+   * Column baselines are on the page; band baselines are in the band's own scrolling space. */
+  const BRIEF_BAND_FIRST = 21;   // the band's first baseline, below its top edge
+  function briefFlow() {
+    const D = BRIEF.dossier, B = BRIEF.band, lh = BRIEF_TYPE.lineH;
+    const col = { x: D.x + 18, w: D.w - 18, first: D.y + 58, last: D.y + D.h - 6 };
+    const bandFirst = BRIEF_BAND_FIRST;
+    let y = col.first, inBand = false;
+    const place = () => {
+      if (!inBand && y > col.last) { inBand = true; y = bandFirst; }
+      return inBand ? { x: B.x, w: B.w, y, band: true } : { x: col.x, w: col.w, y, band: false };
+    };
+    const blocks = [];
+    const add = (kind, i, text, font, color) => {
+      setFont(...font);
+      const lines = [];
+      let s = place(), line = '';
+      for (const word of text.split(' ')) {
+        const next = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(next).width > s.w) {
+          lines.push({ text: line, x: s.x, y: s.y, band: s.band });
+          y += leading(lh); s = place(); line = word;
+        } else line = next;
+      }
+      if (line) { lines.push({ text: line, x: s.x, y: s.y, band: s.band }); y += leading(lh); }
+      blocks.push({ kind, i, font, color, lines });
+    };
+    dossier().body.forEach((t, i) => { add('body', i, t, [500, BRIEF_TYPE.size, 0.1], C.text); y += 10; });
+    y += 12;
+    dossier().call.forEach((t, i) => add('call', i, t, [700, BRIEF_TYPE.size, 0.3], C.gold));
+    return { blocks, col, bandEnd: inBand ? y - leading(lh) + 8 : 0 };
+  }
+
+  function briefDossier() {
+    const D = BRIEF.dossier, B = BRIEF.band;
+    ctx.textAlign = 'left';
+    // the sketch's one vertical rule between PROFILE and DOSSIER
+    const P = BRIEF.profile, rx = Math.round((P.x + P.w + D.x) / 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(rx, D.y + 4, 1, D.h - 8);
+    setFont(700, 10, 3);
+    ctx.fillStyle = C.gold;
+    ctx.fillText('DOSSIER', D.x + 18, D.y + 18);
+    briefProgressRule(D.x + 18, D.y + 28, D.w - 18);
+
+    const flow = briefFlow();
+    /* The band is the scrolling window (request 563's, moved under the row): it follows the
+     * typing head down the read, eased, and its matte dissolves each line as it rises to the top. */
+    const win = { top: B.y, bot: B.bot };
+    const winH = win.bot - win.top;
+    const now = clock, dt = clamp(now - briefScroll.at, 0, 0.1);
+    briefScroll.at = now;
+    if (briefT < 0.05) briefScroll.headY = 0;                   // a fresh file starts at its top
+    briefScroll.contentH = flow.bandEnd;
+    /* Scroll in WHOLE LINES: the band's top line always sits on its first baseline, never half
+     * under the top edge — the smallest line-aligned offset that brings the typing head into view. */
+    const need = briefScroll.headY + BRIEF_TYPE.lineH * 0.6 - winH;
+    let target = 0;
+    if (need > 0) {
+      target = Infinity;
+      for (const b of flow.blocks) for (const l of b.lines) if (l.band && l.y - BRIEF_BAND_FIRST >= need - 0.5) target = Math.min(target, l.y - BRIEF_BAND_FIRST);
+      if (!isFinite(target)) target = Math.max(0, need);
+    }
+    if (target < briefScroll.y - 2 || briefT < 0.05) briefScroll.y = target;      // a new file / a rewind: no slide
+    else briefScroll.y += (target - briefScroll.y) * Math.min(1, dt * 5);
+    const off = briefScroll.y;
+    // a line is whole on the band's first baseline and has dissolved one line above it
+    const matte = (ly) => clamp((ly - win.top - BRIEF_BAND_FIRST + BRIEF_TYPE.matte) / BRIEF_TYPE.matte, 0, 1);
+
+    /* Typed on the narrator's clock, counted over the wrapped lines (a break consumes the space it
+     * replaced). `head` is the ONE caret: wherever characters are landing, or the end of the last
+     * finished block through the pauses between them. */
+    let head = null, lastY = null, bandLines = 0, colLines = 0;
+    for (const b of flow.blocks) {
+      setFont(...b.font);
+      ctx.fillStyle = b.color;
+      const r = clamp(briefReveal(b.kind, b.i), 0, 1);
+      let total = b.lines.length - 1;
+      for (const l of b.lines) total += l.text.length;
+      const shown = Math.round(r * total);
+      let seen = 0;
+      for (const l of b.lines) {
+        if (l.band) bandLines++; else colLines++;
+        const ly = l.band ? win.top + l.y - off : l.y;
+        lastY = ly;
+        if (seen >= shown) continue;
+        const take = Math.min(l.text.length, shown - seen);
+        const part = take === l.text.length ? l.text : l.text.slice(0, take);
+        if (l.band) {
+          const la = matte(ly);
+          if (la > 0 && ly < win.bot + BRIEF_TYPE.px) {
+            ctx.save();
+            ctx.beginPath(); ctx.rect(B.x - 6, win.top, B.w + 30, winH); ctx.clip();
+            ctx.globalAlpha *= la;
+            ctx.fillText(part, l.x, ly);
+            ctx.restore();
+          }
+        } else ctx.fillText(part, l.x, ly);
+        head = { x: l.x + ctx.measureText(part).width, y: ly, band: l.band, vy: l.y, typing: r < 1 };
+        seen += l.text.length + 1;
+      }
+    }
+    if (head) briefScroll.headY = head.band ? head.vy : 0;
+    briefY.call = lastY;
+    briefY.scroll = off;
+    briefY.flow = { colLines, bandLines, bandEnd: flow.bandEnd, winH };
+
+    if (head && (!head.band || (matte(head.y) > 0 && head.y < win.bot))) {
+      ctx.save();
+      if (head.band) { ctx.beginPath(); ctx.rect(B.x - 6, win.top, B.w + 30, winH); ctx.clip(); }
+      typeCaret(head.x, head.y, BRIEF_TYPE.px, head.typing);
+      ctx.restore();
+    }
+  }
   /* The one screen the moved loading can still surface on: shown only when the
    * player reaches the handover before the art does. On a normal boot the world
    * is in long before the level title ends and this is never drawn. */
@@ -7607,6 +7525,7 @@ export function createFrontEnd({
     /* The same door the post-mission level choice goes through, so a harness
      * can reach Level 02's case file without playing Level 01 first. */
     startLevel(level) { return startLevel(level); },
+    setLevel(level) { selectLevel(level); return currentLevel; },   // test: which file the case screen shows (request 574)
     levelUnlocked(n) { return levelUnlocked(n); },        // request 403: Level Select's gate
     get levelSelectItems() { return phase === 'levelSelect' ? levelSelectItems().map((it) => it.level) : null; },
     /* The touch gesture guide (request 366): its state as last drawn, and a
@@ -7879,13 +7798,14 @@ export function createFrontEnd({
       const r3 = (v) => +v.toFixed(3);
       return {
         callBottom: r(briefY.call),
-        stampTop: BRIEF.stampY,
+        // the wireframe layout (request 574): no pledge, objectives or chain panels any more
+        layout: JSON.parse(JSON.stringify(BRIEF)),
         profileBottom: r(briefY.profile),
         profilePanelBottom: BRIEF.profile.y + BRIEF.profile.h,
-        objectivesBottom: r(briefY.objectives),
-        objectivesPanelBottom: BRIEF.objective.y + BRIEF.objective.h,
-        chainCopyBottom: r(briefY.chainCopy),
-        chainBoxTop: r(briefY.chainBoxTop),
+        dossierPanelBottom: BRIEF.dossier.y + BRIEF.dossier.h,
+        fileBottom: r(briefY.fileBottom),            // the dossier file number's baseline (request 576)
+        flow: briefY.flow ? { ...briefY.flow } : null,  // column lines, band lines, band content height
+        scroll: r(briefY.scroll),
         /* The reveal, as numbers. How much of each written block has been typed
          * and how far each right-column panel is into its entrance — so a test
          * can assert the animation is where the voiceover is instead of somebody
@@ -7897,7 +7817,7 @@ export function createFrontEnd({
           stamp: (dossier().stamp ?? []).map(() => 1),       // static UI copy; never on the VO clock
         },
         threat: r3(briefThreatLevel()),
-        cards: [0, 1, 2, 3].map((i) => r3(briefCardIn(i))),
+        cards: [0, 1, 2].map((i) => r3(briefCardIn(i))),   // photograph, profile, dossier (request 574)
       };
     },
     /* The case file's clock. WRITING it pins the screen at that beat and pauses
