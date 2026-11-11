@@ -116,7 +116,11 @@
       if (window.RR_WEB && window.RR_WEB.native === false) {
         const viewW = Math.min(2200, Math.round((720 * sw / sh) / 2) * 2);
         const vh = window.CSS && CSS.supports && CSS.supports('height', '100dvh') ? '100dvh' : '100vh';
-        bleed.textContent = `.game-shell{width:min(100vw, calc(${vh} * ${viewW} / 720)) !important;height:auto !important;aspect-ratio:${viewW} / 720 !important;}`;
+        bleed.textContent = `.game-shell{width:min(100vw, calc(${vh} * ${viewW} / 720)) !important;height:auto !important;aspect-ratio:${viewW} / 720 !important;}`
+          /* …and on a TURNED page (a CONTINUE / RETRY reload that landed upright, webshell.js) the
+           * long edge is the window's HEIGHT: without this the shell was sized off the upright
+           * 100vw — a strip a fifth of the screen — until a tap went fullscreen (request 577). */
+          + `html.rr-rot .game-shell{width:min(${vh}, calc(100vw * ${viewW} / 720)) !important;}`;
       } else {
         bleed.textContent = '.game-shell{width:100vw !important;height:100vh !important;aspect-ratio:auto !important;}';
       }

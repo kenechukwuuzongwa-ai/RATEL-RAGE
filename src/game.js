@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v129';
-import { createAftermath } from './aftermath.js?v=ratelrage-board572-v1';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v130';
+import { createAftermath } from './aftermath.js?v=ratelrage-board577-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -4864,17 +4864,12 @@ function drawBatPickup() {
   ctx.globalAlpha = 1;
   ctx.drawImage(img, -batPickupSprite.anchors[f], -h);
   ctx.restore();
-  // in reach: say which button takes it (request 563 — it is no longer walked into)
+  // in reach: SHOW the button that takes it (request 563 — it is no longer walked into): the real
+  // GRAB button art, not the word (request 577)
   if (batPickupReachable()) {
     ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = pixelFont(900, 18);
-    ctx.globalAlpha = 0.75 + 0.25 * pulse;
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillText('GRAB', sx + 2, BAT_PICKUP.y - lift - h - 16 + 2);
-    ctx.fillStyle = '#8cdcff';
-    ctx.fillText('GRAB', sx, BAT_PICKUP.y - lift - h - 16);
+    ctx.globalAlpha = 0.8 + 0.2 * pulse;
+    drawGrabButton(sx, BAT_PICKUP.y - lift - h - 26, 40 + 3 * pulse);
     ctx.restore();
   }
 }
@@ -6640,8 +6635,10 @@ function spawnEmbers(x, y, n, color, spread = 40) {
  *
  * They ride the existing `embers` buffer rather than opening a second particle
  * system, so there is one update loop and one draw loop for all of it. */
-function spawnBloodTrail(x, y, n, power = 0.5, spread = 40) {
+function spawnBloodTrail(x, y, n, power = 0.5, spread = 40, depth = null) {
   const hi = fxRng() < 0.35 + power * 0.4;          // the harder the throw, the more bright red
+  // the body's feet row: the droplets sort into the scene there, behind any solid in front (request 577)
+  const grp = depth == null ? null : { depth, x, y, r: spread * 0.5 + 30 };
   const col = hi ? (fxRng() < 0.5 ? '#e5172c' : '#c8001c') : '#93001a';
   const k = spread / 40;                            // a wider burst also throws them faster
   for (let i = 0; i < n; i++) {
@@ -6649,7 +6646,7 @@ function spawnBloodTrail(x, y, n, power = 0.5, spread = 40) {
       x: x + (fxRng() - 0.5) * spread, y: y - fxRng() * 34,
       vx: (fxRng() - 0.5) * 70 * k, vy: (-20 - fxRng() * 70) * k,
       age: 0, dur: 0.45 + fxRng() * 0.45, color: col,
-      blood: true, s: 2 + Math.round(fxRng() * 2 + power * 1.5),
+      blood: true, s: 2 + Math.round(fxRng() * 2 + power * 1.5), grp,
     });
   }
 }
@@ -6785,12 +6782,7 @@ function drawSparks() {
   for (const e of embers) {
     const p = e.age / e.dur;
     if (e.blood) {
-      // a droplet, not a spark: round, shrinking as it dries (request 561)
-      ctx.globalAlpha = (1 - p) * 0.95;
-      ctx.fillStyle = e.color;
-      ctx.beginPath();
-      ctx.arc(e.x - cameraX, e.y, Math.max(0.6, e.s * (1 - p * 0.45)), 0, Math.PI * 2);
-      ctx.fill();
+      if (!e.grp) drawBloodEmber(e);               // grouped blood is depth-sorted (actorList, request 577)
       continue;
     }
     ctx.globalAlpha = 1 - p;
@@ -6799,7 +6791,17 @@ function drawSparks() {
     ctx.arc(e.x - cameraX, e.y, (1 - p) * 4 + 1, 0, Math.PI * 2);
     ctx.fill();
   }
-  drawGoreAir();                             // the splash and the flying drops, over the bodies
+  drawGoreAir();                             // ungrouped splash/drops only; the rest sort in actorList (request 577)
+  ctx.globalAlpha = 1;
+}
+// a droplet, not a spark: round, shrinking as it dries (request 561)
+function drawBloodEmber(e) {
+  const p = e.age / e.dur;
+  ctx.globalAlpha = (1 - p) * 0.95;
+  ctx.fillStyle = e.color;
+  ctx.beginPath();
+  ctx.arc(e.x - cameraX, e.y, Math.max(0.6, e.s * (1 - p * 0.45)), 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalAlpha = 1;
 }
 
@@ -6890,6 +6892,10 @@ function goreTextures() {
 /* A blow landed at (x, y) on a body whose feet are on `groundY`, travelling `dir` (+1 right). */
 function spawnBlood(x, y, groundY, dir = 1, heavy = false) {
   const R = Math.random, G = GORE;
+  /* ONE BLOW'S BLOOD IS ONE THING IN THE SCENE (request 577): the splash and its drops sort at the
+   * struck body's feet row (actorList), so a vehicle, pillar, crate, rack or desk standing in front
+   * of him covers his blood as it covers him — the same rule as the hit splash (request 571). */
+  const grp = { depth: groundY, x, y, r: 70 };
   const n = Math.round((G.drops[0] + R() * (G.drops[1] - G.drops[0])) * (heavy ? G.heavyMul : 1));
   for (let i = 0; i < n; i++) {
     const fwd = R() < 0.82 ? dir : -dir;                       // most of it goes with the blow
@@ -6898,11 +6904,11 @@ function spawnBlood(x, y, groundY, dir = 1, heavy = false) {
       x: x + (R() - 0.5) * 14, y: y + (R() - 0.5) * 18,
       vx: fwd * sp * (0.35 + 0.65 * R()), vy: -(G.up[0] + R() * (G.up[1] - G.up[0])) * (0.5 + 0.5 * R()),
       ground: groundY + (R() - 0.55) * 20, age: 0, dur: G.life[0] + R() * (G.life[1] - G.life[0]),
-      s: G.sizes[Math.floor(R() * G.sizes.length)], c: G.colors[Math.floor(R() * G.colors.length)],
+      s: G.sizes[Math.floor(R() * G.sizes.length)], c: G.colors[Math.floor(R() * G.colors.length)], grp,
     });
   }
   while (goreDrops.length > G.maxDrops) goreDrops.shift();
-  goreSplats.push({ x, y, dir, age: 0, v: Math.floor(R() * 6), rot: (R() - 0.5) * 0.7, big: heavy });
+  goreSplats.push({ x, y, dir, age: 0, v: Math.floor(R() * 6), rot: (R() - 0.5) * 0.7, big: heavy, grp });
   if (goreSplats.length > 24) goreSplats.shift();
 }
 function updateGore(dt) {
@@ -6943,10 +6949,29 @@ function drawGoreStains() {
 /* Over the bodies: the splash shapes and the flying drops. */
 function drawGoreAir() {
   if (!goreDrops.length && !goreSplats.length) return;
+  drawGoreItems(goreSplats.filter((s) => !s.grp), goreDrops.filter((d) => !d.grp));
+}
+/* One blow's blood as a depth-sorted item (actorList, request 577): its splash, its drops and any
+ * trail droplets that share its group. */
+function drawBloodGroup(g, cut = []) {
+  ctx.save();
+  if (cut.length) {
+    // everything but the vehicles standing in front of it (even-odd: the outlines are holes)
+    ctx.beginPath();
+    ctx.rect(-1e5, -1e5, 2e5, 2e5);                 // world space under the camera transform: unbounded
+    for (const c of cut) ctx.rect(c.x0 - cameraX, c.top, c.x1 - c.x0, c.bot - c.top);
+    ctx.clip('evenodd');
+  }
+  drawGoreItems(g.splats, g.drops);
+  for (const e of g.embers) drawBloodEmber(e);
+  ctx.restore();
+}
+function drawGoreItems(splats, drops) {
+  if (!drops.length && !splats.length) return;
   const T = goreTextures(), G = GORE;
   ctx.save();
   ctx.imageSmoothingEnabled = true;                 // soft splash (request 559)
-  for (const s of goreSplats) {
+  for (const s of splats) {
     const p = s.age / G.splatLife;
     const tex = T.splats[s.v], k = G.splatPx * (s.big ? 1.15 : 1) * (0.55 + 0.6 * Math.min(1, p * 2.4));
     ctx.globalAlpha = p < 0.55 ? 1 : Math.max(0, 1 - (p - 0.55) / 0.45);
@@ -6958,7 +6983,7 @@ function drawGoreAir() {
     ctx.restore();
   }
   ctx.globalAlpha = 1;
-  for (const d of goreDrops) {
+  for (const d of drops) {
     const sz = d.age > d.dur * 0.7 ? Math.max(1, d.s - 1) : d.s;
     const r = sz / 2;                                // ROUND droplets, anti-aliased (request 559)
     ctx.fillStyle = d.c;
@@ -9779,25 +9804,20 @@ function drawExecPrompt(enemy, screenX, headY) {
    * GRAB control, because the game's own hold-to-execute IS hold-to-pick-up
    * (KeyE), and that is exactly what the touch HUD's GRAB dispatches. So the
    * badge says GRAB there, and the button it names is on screen a thumb away. */
-  const label = touchUI() ? 'GRAB' : padSeen ? 'L2' : 'E';
+  // request 577: the GRAB button itself (the touch HUD's art), never a pad name like L2
   ctx.save();                                          // invitation, not a warning
-  const w = touchUI() ? 76 : 54, h = 26, x = screenX - w / 2, y = headY - h - 12;
+  const w = 40, h = 40, x = screenX - w / 2, y = headY - h - 12;
   // A soft pulse under it even on the off-beat, so the badge never fully
   // disappears and the eye can settle on it.
   const pulse = 0.5 + 0.5 * Math.sin(mobClock * 7);
   ctx.globalAlpha = on ? 1 : 0.55;
+  ctx.beginPath(); ctx.arc(screenX, y + h / 2, w / 2 + 5, 0, Math.PI * 2);
   ctx.fillStyle = `rgba(255,210,63,${0.25 + pulse * 0.35})`;
-  ctx.fillRect(x - 4, y - 4, w + 8, h + 8);
-  ctx.fillStyle = '#111';
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = '#ffd23f';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
+  ctx.fill();
+  drawGrabButton(screenX, y + h / 2, h);
   ctx.fillStyle = '#ffd23f';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = display(700, 15);
-  ctx.fillText(label, screenX, y + h / 2 + 1);
   ctx.font = display(700, 11);
   ctx.fillText('EXECUTE', screenX, y - 10);
   ctx.textAlign = 'left';
@@ -10072,56 +10092,31 @@ let execBtnX = 0, execBtnY = 0, execBtnHas = false;
 // the touch HUD's GRAB art, drawn as the execution prompt's button (drawExecButton)
 const grabButtonImg = new Image();
 grabButtonImg.src = 'frontend/ui/controls/grab.png';
+/* The GRAB button as an annotation (request 577): the touch HUD's own art, centred on (cx, cy),
+ * `size` px tall, with a dark drop so it reads on any background. Falls back to a plain round
+ * button in the HUD's blue until the image has loaded — never a console glyph. */
+function drawGrabButton(cx, cy, size, glow = 0) {
+  ctx.save();
+  if (grabButtonImg.complete && grabButtonImg.naturalWidth) {
+    const h = size, w = h * grabButtonImg.naturalWidth / grabButtonImg.naturalHeight;
+    ctx.shadowColor = glow > 0 ? `rgba(255,228,94,${glow})` : 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = glow > 0 ? 16 : 6;
+    ctx.shadowOffsetY = glow > 0 ? 0 : 2;
+    ctx.drawImage(grabButtonImg, cx - w / 2, cy - h / 2, w, h);
+  } else {
+    ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(140,220,255,0.50)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.stroke();
+  }
+  ctx.restore();
+}
 
-function drawPadShape(shape, cx, cy, r, col, lw) {
-  /* ON A PHONE, DRAW THE BUTTON THAT IS ACTUALLY ON THE SCREEN.
-   *
-   * The finisher's beat is △ (the uppercut edge) and the prompt drew a
-   * DualShock triangle for it. A touch player has no triangle, no uppercut key,
-   * and reaches the uppercut only through a hold-KICK + tap-JAB chord that
-   * nobody is going to perform inside a 0.18s perfect window. The control they
-   * DO have is GRAB, so the touch layer routes the finisher onto it (see
-   * touch.js) and this draws that button: the same round body and the same blue
-   * as the HUD control, so the prompt and the thing you press are one object.
-   *
-   * Everything else — the ring, the timing, the grading — is untouched. */
-  if (touchUI()) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 1.18, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(140,220,255,0.50)';        // CONTROLS.grab's own bg
-    ctx.fill();
-    ctx.lineWidth = Math.max(2, lw * 0.7);
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.stroke();
-    ctx.fillStyle = '#0b1220';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = uiFont(800, Math.max(8, r * 0.62));
-    ctx.fillText('GRAB', cx, cy + 0.5);
-    ctx.restore();
-    return;
-  }
-  ctx.strokeStyle = col;
-  ctx.lineWidth = lw;
-  ctx.beginPath();
-  if (shape === 'triangle') {
-    // sat down a touch: a triangle's visual centre is below its centroid
-    ctx.moveTo(cx, cy - r * 1.02);
-    ctx.lineTo(cx + r * 0.92, cy + r * 0.66);
-    ctx.lineTo(cx - r * 0.92, cy + r * 0.66);
-    ctx.closePath();
-  } else if (shape === 'square') {
-    const s = r * 0.82;
-    ctx.rect(cx - s, cy - s, s * 2, s * 2);
-  } else if (shape === 'circle') {
-    ctx.arc(cx, cy, r * 0.9, 0, Math.PI * 2);
-  } else {                                        // cross
-    const s = r * 0.8;
-    ctx.moveTo(cx - s, cy - s); ctx.lineTo(cx + s, cy + s);
-    ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
-  }
-  ctx.stroke();
+function drawPadShape(shape, cx, cy, r, col, lw) {   // eslint-disable-line no-unused-vars
+  /* THE BUTTON THAT IS ACTUALLY ON THE SCREEN, ON EVERY DEVICE (request 577: no console glyphs).
+   * The finisher's beat used to draw a DualShock triangle / square / circle / cross off a phone; the
+   * control the game puts on screen for it is GRAB (the touch layer routes the finisher onto it), so
+   * every device gets that button. The ring, the timing and the grading are untouched. */
+  drawGrabButton(cx, cy, r * 2.36);
 }
 
 // The damping runs in the UPDATE, not the draw, for the same reason every other
@@ -13893,7 +13888,7 @@ function dropCarry(opts = {}) {
     // The heave itself: a cone of sparks thrown the way the man is going, plus a
     // ring of dust off the foot he plants to do it. Both scale, so a snap
     // release is a puff and a wound-up one is an event.
-    spawnBloodTrail(hx, hy, Math.round(8 + 26 * p), p, 90 + 120 * p);
+    spawnBloodTrail(hx, hy, Math.round(8 + 26 * p), p, 90 + 120 * p, e.y);
     spawnEmbers(player.x + dir * 14, player.y - 6, Math.round(5 + 16 * p), '#c9b79a', 70 + 90 * p);
     triggerFlash('255,255,255', 0.10 + 0.14 * p);
     // He keeps the height he was carried at, so the throw starts from Darki's
@@ -13941,7 +13936,7 @@ function updateThrownBody(e, dt) {
       e.throwLanded = true;
       const q = e.throwPower ?? 0;
       spawnEmbers(e.x, e.y - 8, Math.round(10 + 24 * q), '#c9b79a', 100 + 130 * q);
-      spawnBloodTrail(e.x, e.y - 18, Math.round(4 + 12 * q), q, 70 + 80 * q);
+      spawnBloodTrail(e.x, e.y - 18, Math.round(4 + 12 * q), q, 70 + 80 * q, e.y);
       // The release is the first impact; the street is the second. A short,
       // charge-scaled landing stop gives the arc a brutal full stop without
       // extending the release freeze itself.
@@ -13959,7 +13954,7 @@ function updateThrownBody(e, dt) {
   while (carryTrailDebt >= 1) {
     carryTrailDebt -= 1;
     // BLOOD since request 561: same cadence and spread, droplets instead of gold energy
-    spawnBloodTrail(e.x, e.y + (e.jumpY || 0) - 40, 1, q);
+    spawnBloodTrail(e.x, e.y + (e.jumpY || 0) - 40, 1, q, 40, e.y);
   }
 
   const imp = CARRY.impact;
@@ -13999,7 +13994,7 @@ function updateThrownBody(e, dt) {
     playHit(iHit);
     triggerFlash('255,255,255', 0.12 + 0.16 * q);
     // Two bodies meeting at speed: sparks both ways, not a tidy little puff.
-    spawnBloodTrail(mx, my, Math.round(12 + 30 * q), q, 110 + 130 * q);
+    spawnBloodTrail(mx, my, Math.round(12 + 30 * q), q, 110 + 130 * q, Math.max(o.y, e.y));
     spawnEmbers(mx, o.y - 10, Math.round(6 + 14 * q), '#c9b79a', 90 + 90 * q);
     /* WHAT IT DOES TO HIM DEPENDS ON HOW HARD HE WAS HIT.
      *
@@ -24132,6 +24127,24 @@ function actorList() {
         && (a.solid === true || (sp.x + r > a.solid.x0 && sp.x - r < a.solid.x1 && sp.y + r > a.solid.top)));
       actors.push({ depth: hidden ? sp.depth + 0.0005 : front, tie: hidden ? 99 : 102, draw: () => drawHitSplash(sp), splash: hidden ? 'behind' : 'front' });
     }
+    /* …AND SO DOES THE BLOOD (request 577): each blow's splash + drops (and a thrown body's trail)
+     * is one item at the struck body's feet row, in front of him and Darki unless a solid stands
+     * between — then it drops behind that solid with the man it came off. */
+    const groups = new Map();
+    const at = (g) => { let b = groups.get(g); if (!b) groups.set(g, (b = { splats: [], drops: [], embers: [] })); return b; };
+    for (const sp of goreSplats) if (sp.grp) at(sp.grp).splats.push(sp);
+    for (const d of goreDrops) if (d.grp) at(d.grp).drops.push(d);
+    for (const e of embers) if (e.blood && e.grp) at(e.grp).embers.push(e);
+    for (const [g, b] of groups) {
+      const front = Math.max(g.depth, player.y) + 0.002;
+      const between = solids.filter((a) => a.depth > g.depth && a.depth < front + 1
+        && (a.solid === true || (g.x + g.r > a.solid.x0 && g.x - g.r < a.solid.x1 && g.y + g.r > a.solid.top)));
+      const hidden = between.length > 0;
+      /* A vehicle's windows are see-through glass, so blood behind one would still show in them and
+       * read as blood ON the vehicle: blood behind a vehicle is cut out of its whole outline. */
+      const cut = between.filter((a) => a.solid !== true).map((a) => ({ x0: a.solid.x0, x1: a.solid.x1, top: a.solid.top, bot: a.depth + 6 }));
+      actors.push({ depth: hidden ? g.depth + 0.0004 : front, tie: hidden ? 98 : 103, draw: () => drawBloodGroup(b, cut), blood: hidden ? 'behind' : 'front' });
+    }
   }
   actors.sort((a, b) => (a.depth - b.depth) || (a.tie - b.tie));
   return actors;
@@ -25224,7 +25237,7 @@ function drawOutro() {
   ctx.textAlign = 'center';
   ui.setFont(700, 12, 3.4);
   ctx.fillStyle = C.gold;
-  ctx.fillText(isTouchUI() ? 'TAP TO ANALYZE' : 'PRESS X TO ANALYZE', VIEW_W / 2, 612);   // request 538
+  ctx.fillText(isTouchUI() ? 'TAP TO ANALYZE' : 'PRESS ENTER TO ANALYZE', VIEW_W / 2, 612);   // request 538
   ctx.restore();
   ctx.textAlign = 'left';
   ui.drawControlBar([{ icon: 'cross', label: 'ANALYZE EVIDENCE' }]);
@@ -26725,8 +26738,9 @@ window.__ror = {
   get lastRebound() { return lastRebound; },
   get fallDust() { return fallDustCount; },
   testSplash(x, y, depth) { sparks.push({ x, y, age: 0, dur: IMPACT.frames / IMPACT.fps, big: false, dir: 1, kind: "test", rot: 0, depth }); },
+  testBlood(x, y, depth) { goreSplats.length = 0; goreDrops.length = 0; spawnBlood(x, y, depth, 1, true); },   // request 577
   get impactFrames() { return IMPACT.frames; },
-  actorOrder() { return actorList().map((a) => (a.splash ? "splash:" + a.splash : a.solid ? "solid" : a.draw === drawPlayer ? "player" : "other")); },
+  actorOrder() { return actorList().map((a) => (a.splash ? "splash:" + a.splash : a.blood ? "blood:" + a.blood : a.solid ? "solid" : a.draw === drawPlayer ? "player" : "other")); },
   get beadGlow() { return { drawn: beadGlowDrawn, trail: beadTrailDrawn, samples: beadTrail.length }; },
   get keyScreens() { return { lit: l2KeyScreens.map((k, i) => +l2KeyLevel(i).toFixed(2)), on: l2KeyScreens.map((k) => k.on), events: l2KeyLitEvents,
     world: L2_KEYSCREENS.map((s) => ({ x: l2X(s.x), y: l2Y(s.y) })) }; },

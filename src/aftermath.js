@@ -1085,12 +1085,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     chevron(left + 4, 1);
     chevron(right - 4, -1);
 
-    ui.setFont(700, 8.6, 1.9);
-    ctx.fillStyle = C.muted;
-    ctx.textAlign = 'left';
-    ctx.fillText('L1', left + 16, y + 3);
-    ctx.textAlign = 'right';
-    ctx.fillText('R1', right - 16, y + 3);
+    // the chevrons alone: no L1 / R1 shoulder labels (request 577)
 
     /* The position, and whether it is being held there. "FOLLOWING" is the
      * honest word for the auto panel: it is not page 4 of 4, it is page 4
@@ -1099,8 +1094,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.textAlign = 'center';
     ui.setFont(700, 8.6, 1.9);
     ctx.fillStyle = page === null ? C.dim : C.gold;
-    // the longest wording that fits between L1 and R1 (request 563: the lifted type no longer fit)
-    const room = right - left - 2 * (16 + ctx.measureText('R1').width + 10);
+    // the longest wording that fits between the chevrons (request 563: the lifted type no longer fit)
+    const room = right - left - 2 * 22;
     const pos = `${idx + 1} / ${pages.length}`;
     const say = [page === null ? `FOLLOWING THE READ  ·  ${pos}` : pos, page === null ? `AUTO  ·  ${pos}` : pos, pos]
       .find((t) => ctx.measureText(t).width <= room) ?? pos;
@@ -2026,8 +2021,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.textAlign = 'center';
     ui.setFont(700, 12, 3.4);
     ctx.fillStyle = ui.C.gold;
-    // a phone has no X button: there the same prompt says TAP (request 538)
-    if (ui.isTouchUI?.()) text = text.replace(/^PRESS X TO /, 'TAP TO ');
+    // no console button is ever named (request 577): a phone TAPs, a keyboard presses ENTER
+    text = text.replace(/^PRESS X TO /, ui.isTouchUI?.() ? 'TAP TO ' : 'PRESS ENTER TO ');
     ctx.fillText(text, W / 2, y);
     ctx.textAlign = 'left';
     ctx.restore();
@@ -2501,7 +2496,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * A shoulder hint over a one-page file is an instruction to press a button
      * that does nothing. */
     if (PAGED_STATES.has(state) && panelPages().length > 1) {
-      hints.push({ icon: 'bumpers', label: 'L1 / R1  BROWSE' });
+      hints.push({ icon: 'bumpers', label: 'BROWSE' });
       /* …and the action is advertised only on a page that HAS one. A REPLAY
        * legend sitting under an evidence brief is an offer the button will
        * refuse. */
@@ -2511,7 +2506,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       }
     }
     if (state === 'CABAL_NETWORK_REVEAL') {
-      hints.push({ icon: 'bumpers', label: 'L1 / R1  NETWORK' });
+      hints.push({ icon: 'bumpers', label: 'NETWORK' });
       /* Off the SAME router the buttons use, so the legend cannot advertise a
        * verb the press will refuse — it used to appear only for a rung with a
        * file, which left the NEXT TARGET looking inert. */

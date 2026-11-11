@@ -1153,12 +1153,17 @@ function loadSettings() {
  *
  * Anything absent from this table draws the same on both (play, gear, lock and
  * the rest are not hardware, they are pictures of what the row does). */
+/* REQUEST 577: NO CONSOLE GLYPHS ON ANY DEVICE. The swap below used to apply on a phone only, so a
+ * desktop still drew the PlayStation cross / circle / triangle / square, the D-pad and a gamepad.
+ * It now applies everywhere: every console glyph a caller names is drawn as the game's own
+ * gesture picture instead (and the gamepad on HOW TO PLAY / CONTROLS as the tap). */
 const TOUCH_ICON = {
   cross: 'tapBtn',
   triangleBtn: 'tapBtn',
   squareBtn: 'tapBtn',
   circleBtn: 'swipeLeft',
   dpad: 'swipeUpDown',
+  pad: 'tapBtn',
 };
 
 /* Touch-shaped UI, not merely a touch-capable screen: a laptop with a
@@ -3847,7 +3852,7 @@ export function createFrontEnd({
   }
 
   function icon(name, cx, cy, size, color, alpha = 1, weight = 1.65) {
-    const fn = ICONS[TOUCH_ICON[name] && isTouchUI() ? TOUCH_ICON[name] : name];
+    const fn = ICONS[TOUCH_ICON[name] ?? name];     // never a console glyph (request 577)
     if (!fn) return;
     ctx.save();
     /* MULTIPLIED, not assigned.
@@ -4975,7 +4980,7 @@ export function createFrontEnd({
       ctx.globalAlpha = Math.min(1, (phaseT - DISCLAIMER.minRead) / 0.5) * (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(clock * 2.7)));
       setFont(700, 12, 3.4);
       ctx.fillStyle = C.gold;
-      fillCentred(isTouchUI() ? 'TAP TO CONTINUE' : 'PRESS X TO CONTINUE', cx, H - 44);
+      fillCentred(isTouchUI() ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', cx, H - 44);   // no console button names (request 577)
       ctx.restore();
     }
     hitboxes.push({ x: 0, y: 0, w: W, h: H, index: 0, id: 'disclaimer:go' });
@@ -5239,8 +5244,9 @@ export function createFrontEnd({
        * the run of text rather than being nudged into place. */
       setFont(700, 15, 4.2);
       const wPress = ctx.measureText('PRESS').width;
-      const wTo = ctx.measureText('TO ENTER').width;
-      const plate = 34, gap = 13;
+      const wTo = ctx.measureText('TO START').width;
+      /* request 577: the key is NAMED (ENTER), never drawn as a console button */
+      const plate = ctx.measureText('ENTER').width, gap = 13;
       const total = wPress + gap + plate + gap + wTo;
       let x = W / 2 - total / 2;
 
@@ -5258,11 +5264,12 @@ export function createFrontEnd({
        * `plate` box survives as pure LAYOUT (it reserves the glyph's slot in the
        * measured run and is what the hitbox is cut from); nothing draws it. */
       const plateX = x;
-      icon('cross', x + plate / 2, py, 21, '#8fb4ff', 0.72 + 0.28 * breathe, 1.7);
+      ctx.fillStyle = `rgba(143,180,255,${0.72 + 0.28 * breathe})`;
+      ctx.fillText('ENTER', x, py);
       x += plate + gap;
 
       ctx.fillStyle = `rgba(255,230,191,${0.55 + 0.45 * breathe})`;
-      ctx.fillText('TO ENTER', x, py);
+      ctx.fillText('TO START', x, py);
 
       /* NO HAIRLINES. Two 135px gradient rules used to run out either side of
        * the prompt, borrowed from the tagline's treatment. Removed by request —
@@ -5278,7 +5285,7 @@ export function createFrontEnd({
        * name — and makes the title clickable, which it never was. Only the
        * keycap plate is registered, not the whole run of words: the ring wants
        * the affordance, and a 300 px box would put it off in the margins. */
-      hitboxes.push({ x: plateX, y: py - plate / 2, w: plate, h: plate, index: 0, id: 'title:enter' });
+      hitboxes.push({ x: plateX, y: py - 17, w: plate, h: 34, index: 0, id: 'title:enter' });
     }
 
     /* A press anywhere enters, prompt or no prompt: this is a "press any key"
@@ -6076,7 +6083,7 @@ export function createFrontEnd({
     /* Request 349: on a phone the control is a DOUBLE tap, on every viewing,
      * announced 3 s in (drawSkipHint), in the header band's right slot. */
     // touch: the lower-centre tap cue is the only skip prompt (request 567, no repetition)
-    if (!isTouchUI()) ctx.fillText('X / SQUARE   SKIP', W - 28, 24);
+    if (!isTouchUI()) ctx.fillText('ENTER   SKIP', W - 28, 24);   // a key, never a console button (request 577)
     /* Request 353: the tap cue sits LOWER-CENTRE, above whatever the foot of
      * this screen already holds — the subtitle band, when subtitles are on. Its
      * height is taken from the band's own geometry (the block below), so the two
@@ -6144,18 +6151,22 @@ export function createFrontEnd({
    * the width, the row about 40% of the height); PROFILE and DOSSIER sit bare on the page, split
    * by one vertical rule, with each profile label and its value on one line; and the DOSSIER read
    * runs down its column and then on across the FULL width under the row (`band`), the sketch's
-   * long lines — that band is the window that scrolls when a read is longer than the page. */
+   * long lines — that band is the window that scrolls when a read is longer than the page.
+   * Request 577: two columns. The left one is the photograph with the PROFILE under it; the DOSSIER
+   * takes the whole right column, top to bottom, in larger type — `band` is now that column's own
+   * text window (it still scrolls in whole lines when a read is longer than the column). */
   const BRIEF = {
     title: { x: 56, code: 96, name: 134 },
-    portrait: { x: 56, y: 160, w: 350, h: 270 },
-    profile: { x: 432, y: 160, w: 290, h: 270 },
-    dossier: { x: 758, y: 160, w: 466, h: 270 },
-    band: { x: 56, y: 444, w: 1168, bot: 650 },
+    portrait: { x: 56, y: 160, w: 360, h: 234 },
+    profile: { x: 56, y: 410, w: 360, h: 240 },
+    dossier: { x: 456, y: 160, w: 768, h: 490 },
+    band: { x: 474, y: 196, w: 750, bot: 650 },
   };
-  /* A wider phone (request 540): the dossier column and the band run to 56 px from the REAL right edge. */
+  /* A wider phone (request 540): the dossier column runs to 56 px from the REAL right edge. */
   function fitBrief() {
-    BRIEF.dossier.w = Math.max(466, W - 56 - BRIEF.dossier.x);
-    BRIEF.band.w = Math.max(1168, W - 56 - BRIEF.band.x);
+    const D = BRIEF.dossier;
+    D.w = Math.max(768, W - 56 - D.x);
+    Object.assign(BRIEF.band, { x: D.x + 18, y: D.y + 36, w: D.w - 18, bot: D.y + D.h });
   }
 
   /* Where each wrapped block finished on the last drawn frame. The copy lives in
@@ -6163,7 +6174,8 @@ export function createFrontEnd({
    * silently — this is what the harness reads to catch that. */
   const briefY = {};
   /* The dossier's scrolling window (request 563): the type it is set in, and where it is scrolled to. */
-  const BRIEF_TYPE = { size: 15, px: readablePx(15 * PIXEL_FIT.body), lineH: 27, matte: 22 };
+  // request 577: larger (was 15 / 27)
+  const BRIEF_TYPE = { size: 18, px: readablePx(18 * PIXEL_FIT.body), lineH: 31, matte: 24 };
   const briefScroll = { y: 0, headY: 0, contentH: 0, at: 0 };
 
   /* GO BACK first, START MISSION second — and the ORDER OF THIS LIST IS THE
@@ -6279,7 +6291,7 @@ export function createFrontEnd({
 
   /* PROFILE (request 576: as sketched, no panel round it): the heading, then each row as the
    * sketch has it — the label and its value side by side — and the dossier file under the rows. */
-  const BRIEF_PROFILE = { valX: 92, rowGap: 11 };
+  const BRIEF_PROFILE = { valX: 92, rowGap: 7 };
   function briefProfile() {
     const p = BRIEF.profile;
     ctx.textAlign = 'left';
@@ -6498,8 +6510,7 @@ export function createFrontEnd({
     briefCard(0, BRIEF.portrait, briefPortrait);
     briefCard(1, BRIEF.profile, briefProfile);
     // the dossier enters as one piece: its column and the full-width band under the row
-    const D = BRIEF.dossier, B = BRIEF.band;
-    briefCard(2, { x: B.x, y: D.y, w: Math.max(B.w, D.x + D.w - B.x), h: B.bot - D.y }, briefDossier);
+    briefCard(2, BRIEF.dossier, briefDossier);
     endScreen();
 
     drawBriefActions();
@@ -6509,20 +6520,14 @@ export function createFrontEnd({
 
   /* THE DOSSIER COLUMN (request 574: the wireframe's right-hand column). The read types itself
    * into it on the narrator's clock, in a window that scrolls with the typing head. */
-  /* Request 576: the read FLOWS — down the dossier column while it has room, then on across the
-   * full-width band under the row (the sketch's long lines). Each line is wrapped to the width of
-   * the slot it lands in, in full before any of it is typed, so nothing reflows while it types.
-   * Column baselines are on the page; band baselines are in the band's own scrolling space. */
-  const BRIEF_BAND_FIRST = 21;   // the band's first baseline, below its top edge
+  /* The read, wrapped in full to the dossier column's window before any of it is typed, so nothing
+   * reflows while it types (request 576). Since request 577 the whole column is that window: every
+   * baseline is in its own scrolling space (`band: true`). */
+  const BRIEF_BAND_FIRST = Math.round(BRIEF_TYPE.px * 0.9) + 6;   // the window's first baseline, below its top edge
   function briefFlow() {
-    const D = BRIEF.dossier, B = BRIEF.band, lh = BRIEF_TYPE.lineH;
-    const col = { x: D.x + 18, w: D.w - 18, first: D.y + 58, last: D.y + D.h - 6 };
-    const bandFirst = BRIEF_BAND_FIRST;
-    let y = col.first, inBand = false;
-    const place = () => {
-      if (!inBand && y > col.last) { inBand = true; y = bandFirst; }
-      return inBand ? { x: B.x, w: B.w, y, band: true } : { x: col.x, w: col.w, y, band: false };
-    };
+    const B = BRIEF.band, lh = BRIEF_TYPE.lineH;
+    let y = BRIEF_BAND_FIRST;
+    const place = () => ({ x: B.x, w: B.w, y, band: true });
     const blocks = [];
     const add = (kind, i, text, font, color) => {
       setFont(...font);
@@ -6541,7 +6546,7 @@ export function createFrontEnd({
     dossier().body.forEach((t, i) => { add('body', i, t, [500, BRIEF_TYPE.size, 0.1], C.text); y += 10; });
     y += 12;
     dossier().call.forEach((t, i) => add('call', i, t, [700, BRIEF_TYPE.size, 0.3], C.gold));
-    return { blocks, col, bandEnd: inBand ? y - leading(lh) + 8 : 0 };
+    return { blocks, bandEnd: y - leading(lh) + 8 };
   }
 
   function briefDossier() {
