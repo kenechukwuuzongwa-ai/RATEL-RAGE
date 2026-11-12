@@ -149,7 +149,43 @@ html = html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n  ${f
  * anything loads, because saves, settings and the sign-in session live per address:
  * a player who reached both would otherwise have two separate games. */
 const SITE = 'https://ratelrage.com';
-html = html.replace(flag, `<script>if (location.hostname === 'www.ratelrage.com') location.replace('${SITE}' + location.pathname + location.search + location.hash);</script>\n  ${flag}\n  <link rel="canonical" href="${SITE}/" />`);
+/* …AND THE OLD ADDRESS TOO (request 599: "the .dev domain still loads"). ratel-rage.pages.dev (the
+ * production alias only — a deploy's own <hash>.ratel-rage.pages.dev preview still opens, which is how a
+ * build is checked from a network that filters the new domain) sends the player on to ratelrage.com.
+ * Saves live per address, so the move CARRIES them: the game's own storage (progress and best scores,
+ * settings, the control layout and its saved slots, the guest sign-in so the same account carries on)
+ * rides in the URL's #fragment — never sent to any server — and ratelrage.com takes each key it does
+ * not already have, then wipes the fragment from the address bar before any game script runs. A
+ * fragment the address already carries (a sign-in link's #access_token) is passed on untouched instead. */
+const MOVE = `(function () {
+    var H = location.hostname, S = '${SITE}', P = location.pathname + location.search;
+    if (H === 'www.ratelrage.com') { location.replace(S + P + location.hash); return; }
+    if (H === 'ratel-rage.pages.dev') {
+      var tail = location.hash;
+      if (!tail) {
+        try {
+          var d = {}, n = 0;
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (/^(ror\\.|rr\\.|ratelrage\\.)/.test(k) && !/^ror\\.(assets|regions|tune|diag|boots)/.test(k)) { d[k] = localStorage.getItem(k); n++; }
+          }
+          var s = JSON.stringify(d);
+          if (n && s.length < 300000) tail = '#rr-carry=' + encodeURIComponent(btoa(unescape(encodeURIComponent(s))));
+        } catch (e) {}
+      }
+      location.replace(S + P + tail);
+      return;
+    }
+    var m = /^#rr-carry=([^&]+)$/.exec(location.hash);
+    if (m) {
+      try {
+        var o = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));
+        for (var key in o) if (/^(ror\\.|rr\\.|ratelrage\\.)/.test(key) && localStorage.getItem(key) == null) localStorage.setItem(key, String(o[key]));
+      } catch (e) {}
+      history.replaceState(history.state, '', location.pathname + location.search);
+    }
+  })();`;
+html = html.replace(flag, `<script>${MOVE}</script>\n  ${flag}\n  <link rel="canonical" href="${SITE}/" />`);
 /* Media cache (deploy/media-sw.js, request 537): Chrome never HTTP-caches audio
  * or video, so without it every reload and return visit downloads the sounds,
  * music and menu video again. Web build only. `--no-media-cache` leaves it out. */

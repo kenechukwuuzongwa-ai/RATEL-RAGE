@@ -122,6 +122,13 @@ Cloudflare too keeps both in one account once the site moves there.
    sign-in are per address) and marks `https://ratelrage.com/` as canonical. The rr-ads and rr-stats
    Workers accept both addresses (ALLOWED_ORIGINS) and rr-ads' GAME_ORIGIN is the new domain.
    Deploys go to `--branch main` only: the old strongroom-test branch was removed (request 580).
+   **The old address forwards too (request 599):** `ratel-rage.pages.dev` sends the player on to
+   `ratelrage.com` and carries their saved game in the URL `#fragment` (progress, best scores, settings,
+   control layout and its cloud/device slots, the guest sign-in): ratelrage.com adds only the keys it
+   does not have yet, then clears the fragment. A sign-in link's own `#access_token` is passed on as it
+   is. A deploy's preview (`<hash>.ratel-rage.pages.dev`) still opens in place, which is how builds are
+   checked from a network that filters ratelrage.com. Code: `MOVE` in `deploy/build-web.js`; test
+   `_chromakey/req597/movetest.js`.
 
 **What happened on the first deploy (2026-10-09, Wrangler 4.149):** Wrangler now hands
 Pages commands to Cloudflare Workers, and `pages project create` failed there for want
