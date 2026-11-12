@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v130';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v131';
 import { createAftermath } from './aftermath.js?v=ratelrage-board577-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -6390,7 +6390,11 @@ let chosenDifficulty = 'NORMAL';
 const DIFFICULTY = {
   // learn: how fast the street reads a repeated technique (STREET_SMARTS, request 403)
   EASY:   { dmgTaken: 0.50, enemyHp: 0.55, pressure: 0.70, learn: 0.7, attackers: 1, regen: 1.6, heal: 1.4, bossHp: 0.70, bossDmg: 0.75 },
-  NORMAL: { dmgTaken: 1.00, enemyHp: 1.00, pressure: 1.00, learn: 1.0, attackers: null, regen: 1, heal: 1, bossHp: 1, bossDmg: 1 },
+  /* REQUEST 596 — NORMAL softened for launch. On the old 1/1/1 row the req538 bot (blocking 40%)
+   * died in the first wave (112 s / 131 s, 1-2 kills). On this row it clears the first section
+   * and about half the street (337 s / 338 s, 11 kills), where EASY's bot clears every wave.
+   * Tuned with _chromakey/req596/diffsim.js. HARD and ARCADE are unchanged. */
+  NORMAL: { dmgTaken: 0.75, enemyHp: 0.75, pressure: 0.85, learn: 0.85, attackers: 2, regen: 1.25, heal: 1.2, bossHp: 0.85, bossDmg: 0.85 },
   HARD:   { dmgTaken: 1.40, enemyHp: 1.25, pressure: 1.30, learn: 1.2, attackers: null, regen: 1, heal: 1, bossHp: 1, bossDmg: 1 },
   ARCADE: { dmgTaken: 1.75, enemyHp: 1.45, pressure: 1.55, learn: 1.35, attackers: null, regen: 1, heal: 1, bossHp: 1, bossDmg: 1 },
 };

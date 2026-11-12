@@ -16,12 +16,14 @@ Built 2026-10-23 (request 446). The plan it follows is `LAUNCH_ADS_STATS_PLAN.md
 
 ## Advertising policy (request 590)
 
-The game is for everyone (request 580, no age gate), so every advert must suit players of any age.
+The game is for everyone (request 580, no age gate). **Betting and alcohol adverts are allowed** (owner's rule, request 596; policy version 3) under extra conditions; never ban them outright.
 
 - **Where:** `/policy` on the ads server. The text lives in one place, `POLICY` in `ads/pages.js`. Change it there, bump `version` and `updated`, and redeploy.
 - **Agreement:** the booking form has a required box: "My advert and its tap link follow the advertising policy, and I accept its refund terms". The server refuses bookings that don't send `agree: true`. Each booking stores the policy version it agreed to (`policy` column, request 593).
-- **Welcome:** food and soft drinks, shops and fashion, phones and telecoms, all-ages apps, games, music, films and events, schools and courses, local services, sports, banks and licensed payment services, and charities that don't campaign politically.
-- **Not allowed:** betting and gambling, alcohol, tobacco, vapes and drugs, sexual content and dating services, weapons and fireworks, get-rich-quick schemes (investment offers, crypto/forex trading, pyramid schemes, unlicensed loan apps), politics, health claims (medicines, miracle cures, slimming products), hate and shock images, lies and scams, other people's brands, and anything illegal.
+- **Welcome:** food and drinks, shops and fashion, phones and telecoms, all-ages apps, games, music, films and events, schools and courses, local services, sports, banks and licensed payment services, charities that don't campaign politically, and licensed betting and alcoholic drinks under the rules below.
+- **Betting and alcohol conditions** (`POLICY.regulated`): betting needs an NLRC or state gaming licence with the licence number on the link page, "18+" and a responsible-play message, no promised wins or "free money", no tips or predictions. Alcohol needs "18+" and "Drink responsibly", nobody who is or looks under 25, and no link between drinking and fighting, driving, sport, success or attractiveness. Neither may be aimed at children. The advertiser handles ARCON vetting. On /admin, check the licence number, "18+" and the responsible message before approving.
+- **Legal risk to know about:** with no age gate, these adverts are seen by players of every age. Nigerian rules restrict betting and alcohol advertising that reaches under-18s, so get legal advice before taking the first one.
+- **Not allowed:** tobacco, vapes and drugs, sexual content and dating services, weapons and fireworks, get-rich-quick schemes (investment offers, crypto/forex trading, pyramid schemes, unlicensed loan apps), politics, health claims (medicines, miracle cures, slimming products), hate and shock images, lies and scams, other people's brands, and anything illegal.
 - **Artwork:** the advertiser's own, with their brand name on it, and nothing that looks like part of the game (no fake buttons, fake warnings or "tap to win").
 - **Tap link:** opens the advertiser's own page, matching the advert. No automatic downloads, no pop-ups, and no collecting children's details.
 - **Review terms:** a live advert that breaks the policy comes down. The advertiser is responsible for any legal approval their advert needs, such as ARCON vetting. Refunds follow the fixed terms below.
@@ -142,7 +144,7 @@ The source tree, the editor and the APK keep `ads-config.js` empty. So they show
 
 ## Tests
 
-- `node ads/test/ads.test.mjs`: the Worker against a local SQLite D1 (92 checks).
+- `node ads/test/ads.test.mjs`: the Worker against a local SQLite D1 (94 checks).
 - `node _chromakey/ads/e2e.js`: against the **live** server. It books, approves, pays, checks the game draws and counts it, opens the pause link, then deletes the booking.
 - `node _chromakey/ads/pagesmoke.js`: the live advertiser pages in a real browser (upload, preview, submit, status, admin), then deletes the booking.
 

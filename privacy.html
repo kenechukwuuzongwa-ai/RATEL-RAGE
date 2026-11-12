@@ -14,14 +14,16 @@
 </head>
 <body>
 <main>
+  <!-- Request 596: rewritten for accounts (request 378), advertisers, Paystack and refunds (requests 446, 590, 593). -->
   <h1>Privacy</h1>
-  <p class="muted">RATEL RAGE by KenCrafts Interactive Studio · last updated 10 October 2026</p>
+  <p class="muted">RATEL RAGE by KenCrafts Interactive Studio · last updated 12 November 2026</p>
 
-  <p>We collect a little <strong>anonymous</strong> gameplay data to see how many play, where it is too hard,
-  and what breaks. We never collect your name, email, phone number, contacts, precise location or
-  IP address. No advertising tracking.</p>
+  <p>You can play RATEL RAGE without giving us any personal details. We collect a little
+  <strong>anonymous</strong> gameplay data to see how many play, where it is too hard and what breaks.
+  If you choose to make an account, or to advertise on the billboards, we keep the details you give us
+  for that, and nothing more. We never sell your data, and there is no advertising tracking.</p>
 
-  <h2>What the game sends</h2>
+  <h2>1. Anonymous gameplay stats (everyone)</h2>
   <ul>
     <li><strong>Gameplay events:</strong> session start, a one-minute "still playing" signal while on screen,
       level start, Darki knocked out (level and arena section), retry, quit, and level finish (time, score, rank).</li>
@@ -33,22 +35,68 @@
       players count once. Not linked to who you are. With "Do Not Track" or "Global Privacy Control" on,
       no player ID is stored.</li>
   </ul>
+  <p>These stats do not include your name, email, phone number, contacts, precise location or IP address.
+  Cloudflare Web Analytics also counts page visits, without cookies and without identifying visitors.</p>
 
-  <h2>Page-visit counts</h2>
-  <p>Cloudflare Web Analytics counts page visits without cookies or identifying visitors.</p>
+  <h2>2. Your game progress and account (optional)</h2>
+  <ul>
+    <li><strong>As a guest</strong> (the default), the game gives you an anonymous account so your progress can be
+      saved online: best scores, levels cleared, the furthest section and your last checkpoint, plus a random
+      display name. No email is asked for. Your progress is also kept on your device.</li>
+    <li><strong>If you register</strong>, we also keep your <strong>email address</strong> and a password (stored
+      only in scrambled, hashed form). We use your email to confirm your account and to reset your password, and
+      for nothing else: no newsletters or marketing.</li>
+    <li><strong>The leaderboard</strong> (registered players only) shows your display name, score, rank, time and
+      date to other players. You choose the display name; it never shows your email.</li>
+    <li><strong>Gameplay events</strong> from a signed-in player are also stored against their account ID, so
+      progress and the leaderboard can be checked.</li>
+    <li><strong>Security:</strong> our account provider sees the IP address you connect from, to stop abuse such as
+      mass sign-ups, and keeps it in its security logs. We do not put it in our game data.</li>
+  </ul>
+  <p>Accounts run on <strong>Supabase</strong> (servers in Ireland, EU). Account emails are sent through
+  <strong>Resend</strong> (USA) from no-reply@ratelrage.com.</p>
+  <p><strong>Under 18?</strong> You can play as a guest without giving any personal details. Please ask a parent
+  or guardian before registering with an email address.</p>
 
-  <h2>Billboards</h2>
-  <p>Some in-game billboards show paid adverts, fetched from our ad server. For advertisers it counts, per board
-  per day, how often a board was on screen and its pause-menu link opened. Totals only: no ID, account,
-  device details or anything about you is sent.</p>
+  <h2>3. Billboards and advertisers</h2>
+  <p><strong>Players:</strong> some in-game billboards show paid adverts, fetched from our ad server. For
+  advertisers we count, per board per day, how often a board was on screen and how often its link was opened
+  from the pause menu. Totals only: no ID, account, device details or anything about you is sent. Opening an
+  advert's link takes you to the advertiser's own website, which has its own privacy policy.</p>
+  <p><strong>Advertisers:</strong> when you book a billboard we keep your business and brand name, contact name,
+  email, phone number (if given), your tap link, any note, your artwork, your dates and price, the policy version
+  you agreed to, your payment and refund records, and your advert's view and tap totals. We use these to review,
+  run, invoice and report on your booking and to handle cancellations and refunds.</p>
+  <ul>
+    <li><strong>Payments:</strong> online payments are handled by <strong>Paystack</strong>. Your card or bank
+      details go to Paystack, not to us; we only receive a payment reference and the amount. Refunds go back the
+      same way, or by bank transfer if you paid by invoice.</li>
+    <li>Your booking's status page is private: only people with its link can open it.</li>
+  </ul>
 
-  <h2>Storage and retention</h2>
-  <p>On Cloudflare's servers, readable only by the developer. Gameplay events are deleted after 180 days,
-  session summaries after 400. Used only to improve the game; never sold or shared.</p>
+  <h2>4. Where it is kept, and for how long</h2>
+  <ul>
+    <li><strong>Gameplay stats</strong> and <strong>advert bookings</strong>: on Cloudflare's servers. Gameplay
+      events are deleted after 180 days and session summaries after 400 days.</li>
+    <li><strong>Accounts and online saves</strong>: on Supabase, for as long as the account exists. Delete your
+      account (see below) and its profile, saves, leaderboard entries and events are deleted with it.</li>
+    <li><strong>Advertiser records</strong>: for as long as the booking runs and then for as long as we need them
+      for our tax and accounting records.</li>
+  </ul>
+  <p>Some of these providers are outside Nigeria. They process the data only on our behalf. Only the developer
+  can read it. It is used to run and improve the game and the billboards, and is never sold or shared for
+  anyone else's marketing.</p>
 
-  <h2>Your choices</h2>
-  <p>Clearing this site's browser data deletes the player ID; "Do Not Track" or "Global Privacy Control"
-  stops it being created. Questions or deletion requests: contact KenCrafts Interactive Studio.<!-- CONTACT: add the public contact address here once the owner picks one --></p>
+  <h2>5. Your choices and rights</h2>
+  <ul>
+    <li>Clearing this site's browser data deletes the anonymous player ID; "Do Not Track" or "Global Privacy
+      Control" stops it being created.</li>
+    <li>You can play without an account, change your display name at any time, and sign out.</li>
+    <li>Under Nigeria's Data Protection Act you can ask to see the personal data we hold about you, have it
+      corrected or deleted (including your whole account), object to how we use it, or take a copy of it.
+      You can also complain to the Nigeria Data Protection Commission.</li>
+  </ul>
+  <p>For any of these, or other privacy questions, contact KenCrafts Interactive Studio.<!-- CONTACT: add the public contact address here once the owner picks one (request 596 asked the owner) --></p>
 
   <p><a href="./">Back to game</a></p>
 </main>

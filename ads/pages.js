@@ -37,16 +37,18 @@ const shell = (title, body) => `<!doctype html><html lang="en"><head><meta chars
 const naira = `const naira=(n)=>'\\u20a6'+Number(n).toLocaleString('en-NG');`;
 const el = `const $=(s)=>document.querySelector(s);const mk=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Object.entries(a)){if(x==='text')e.textContent=y;else if(x==='cls')e.className=y;else e.setAttribute(x,y)}for(const c of k)e.append(c);return e};const D=JSON.parse($('#data').textContent);`;
 
-/* The advertising policy (request 590). The game is for everyone (request 580), so every
- * advert must suit players of any age. This is the one source: /policy renders it, the
+/* The advertising policy (request 590). The game is for everyone (request 580), with no age
+ * gate. Betting and alcohol adverts are ALLOWED (owner's rule, request 596) under the extra
+ * conditions in `regulated`; never ban them outright. This is the one source: /policy renders it, the
  * booking form links to it and asks the advertiser to agree, the admin page links to it. */
 export const POLICY = {
-  version: '2',
+  version: '3',
   updated: '12 November 2026',
-  intro: 'It is played by people of all ages, so every advert on its billboards must be suitable for everyone. '
-    + 'We check every advert, and the page its tap link opens, before it goes live. If an advert does not meet this policy, we do not approve it.',
+  intro: 'It is played by people of all ages, so adverts must be honest, legal and fit to be seen by anyone. '
+    + 'Betting and alcohol adverts are welcome, under the extra rules below. We check every advert, and the page its tap link opens, before it goes live. If an advert does not meet this policy, we do not approve it.',
   allowed: [
-    'Food, restaurants and soft drinks (no alcohol)',
+    'Food, restaurants and drinks',
+    'Licensed betting, lotteries and gaming, and alcoholic drinks, under the extra rules below',
     'Shops, markets, fashion and beauty',
     'Phones, electronics, telecoms and internet services',
     'Apps and games suitable for all ages',
@@ -58,8 +60,6 @@ export const POLICY = {
     'Charities and community causes that do not campaign politically',
   ],
   banned: [
-    ['Betting and gambling', 'sports betting, casinos, lotteries, raffles you pay to enter, betting tips or predictions'],
-    ['Alcohol', 'drinks, drinks brands and bars promoted for their alcohol'],
     ['Tobacco, vapes and drugs', 'cigarettes, e-cigarettes, shisha, cannabis and any other drug'],
     ['Sexual content', 'sexual or suggestive images, adult services and dating or hook-up services'],
     ['Weapons', 'guns, knives, ammunition and fireworks'],
@@ -70,6 +70,24 @@ export const POLICY = {
     ['Lies and scams', 'false claims, fake giveaways, fake prizes, and pages that ask for passwords, PINs or bank details'],
     ['Other people\'s property', 'brands, logos, characters, photos or faces you do not own or have permission to use'],
     ['Anything illegal', 'anything against Nigerian law, or the law where the advert is aimed'],
+  ],
+  /* Betting and alcohol (request 596): allowed, with these conditions. */
+  regulated: [
+    ['Betting, lotteries and gaming', [
+      'You must hold a valid licence from the National Lottery Regulatory Commission or a state gaming board, and show your licence number on the page your advert links to.',
+      'The advert must show "18+" and a responsible-play message, such as "Bet responsibly".',
+      'No promises that people will win or earn money, and no "free money" or guaranteed-win offers.',
+      'No betting tips, predictions or "sure odds" services.',
+    ]],
+    ['Alcohol', [
+      'The advert must show "18+" and "Drink responsibly".',
+      'No one in the advert may be, or look, under 25.',
+      'Do not link drinking with fighting, driving, sport, success or attractiveness.',
+    ]],
+    ['Both', [
+      'Nothing aimed at children: no cartoon characters, toys or school themes, and no styling that copies the game.',
+      'You are responsible for any approval the advert needs, including ARCON vetting, and for following the rules of your licence.',
+    ]],
   ],
   artwork: [
     'The artwork must be yours, or you must have the right to use it.',
@@ -109,6 +127,7 @@ export function policyPage() {
 <main style="max-width:780px">
 <div class="card"><b>Ratel Rage is a game for everyone.</b> ${esc(POLICY.intro)}</div>
 <h2 style="margin-top:22px">Welcome</h2><ul>${li(POLICY.allowed)}</ul>
+<h2>Betting and alcohol</h2>${POLICY.regulated.map(([h, list]) => `<p><b>${esc(h)}</b></p><ul>${li(list)}</ul>`).join('')}
 <h2>Not allowed</h2><ul>${POLICY.banned.map(([h, t]) => `<li><b>${esc(h)}:</b> ${esc(t)}</li>`).join('')}</ul>
 <h2>Your artwork</h2><ul>${li(POLICY.artwork)}</ul>
 <h2>Your tap link</h2><ul>${li(POLICY.link)}</ul>
@@ -126,7 +145,7 @@ export function landingPage({ boards, gameOrigin, notFound = false }) {
 Each board is shared by up to three advertisers who take turns on it; take all of its shares and it is yours alone.
 We check every advert before it goes live; once it is approved and paid, it appears on that board for every player. Your private status page shows views and taps.</div>
 <div class="grid" id="boards"></div>
-<p class="small dim" style="margin-top:24px">Play the game: <a id="play"></a>. Ratel Rage is for players of all ages, so every advert must suit everyone: no betting, alcohol, tobacco, adult content or politics. Read the <a href="/policy">advertising policy</a> before you book.</p>
+<p class="small dim" style="margin-top:24px">Play the game: <a id="play"></a>. Ratel Rage is played by people of all ages. Betting and alcohol adverts are welcome under extra rules; tobacco, adult content and politics are not. Read the <a href="/policy">advertising policy</a> before you book.</p>
 </main>${data({ boards, gameOrigin })}<script>${el}${naira}
 $('#play').textContent=D.gameOrigin;$('#play').href=D.gameOrigin;
 for(const b of D.boards){
@@ -289,7 +308,7 @@ bi.onload=draw;ai.onload=draw;bi.onerror=draw;bi.src=D.gameOrigin+'/'+B.art;ai.s
 export function adminPage({ gameOrigin }) {
   return shell('Ratel Rage ads - admin', `
 <header><h1>Billboard admin</h1><p>Review, approve, mark paid. A board shows an advert only when it is approved, paid and inside its dates.</p>
-<p class="small">Before approving, check the artwork <b>and open its tap link</b> against the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>. The game is for all ages: no betting, alcohol, tobacco, sexual content, weapons, get-rich-quick schemes, politics, health claims or other people's brands.</p></header>
+<p class="small">Before approving, check the artwork <b>and open its tap link</b> against the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>. No tobacco, sexual content, weapons, get-rich-quick schemes, politics, health claims or other people's brands. Betting and alcohol are allowed: check the licence number on the link page, "18+" and the responsible-play / "Drink responsibly" message.</p></header>
 <main><div class="card"><h2>Boards</h2><table id="boards"></table></div>
 <h2 style="margin-top:22px">Bookings</h2><p class="small"><label style="display:inline"><input type="checkbox" id="all"> show closed (rejected / cancelled / ended)</label></p>
 <div id="list"></div><p class="err" id="err"></p></main>

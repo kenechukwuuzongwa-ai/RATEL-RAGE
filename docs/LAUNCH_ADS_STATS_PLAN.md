@@ -11,7 +11,7 @@ Every decision below is the recommendation the owner accepted ("I will go with y
 |---|---|---|
 | 1 | Where does the feedback build live? | **itch.io first**; move to our own Cloudflare domain when the ad system launches |
 | 2 | Real brands on the billboards (BET9JA, Naija Win)? | **Replace with fictional brands** in every public build. Approach real brands separately as sponsors; their art only goes in under a signed deal |
-| 3 | Age rating | **For everyone, no age gate** (owner's decision, request 580, overriding the earlier 18+ pick). Without an 18+ gate, betting and alcohol adverts are out of bounds |
+| 3 | Age rating | **For everyone, no age gate** (owner's decision, request 580, overriding the earlier 18+ pick). Betting and alcohol adverts are still allowed, with conditions (request 596) |
 | 4 | Player profile | **Optional** (nickname, age range, gender, city), offered for a small in-game reward. Needed for age and gender targeting and for leaderboards |
 | 5 | Ad pricing | **Flat monthly sponsorship per board first.** Price per view or per tap only once view numbers are proven |
 | 6 | Private stats dashboard | **GameAnalytics** (free, built for games), from the feedback launch |
@@ -127,7 +127,7 @@ The advertiser flow:
 
 - Nigeria Data Protection Act 2023: consent, privacy policy, collect only what's needed. GDPR applies if EU players arrive.
 - Google Play: data-safety form, ads declaration, the internet permission added to the app.
-- No age gate (request 580): the game is for everyone, so betting and alcohol adverts are not accepted.
+- No age gate (request 580): the game is for everyone. Betting and alcohol adverts are allowed with conditions (request 596; see docs/ADS.md).
 - Written ad policy and moderation before any advert goes live.
 - No real brands without written permission.
 

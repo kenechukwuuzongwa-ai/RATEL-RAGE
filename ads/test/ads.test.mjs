@@ -66,7 +66,13 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   const land = await call(env, '/'); const landText = await land.text();
   check('landing page renders, links the policy, no 18+ wording', land.status === 200 && landText.includes('href="/policy"') && !landText.includes('18+'));
   const pol = await call(env, '/policy'); const polText = await pol.text();
-  check('policy page renders the bans and the all-ages rule', pol.status === 200 && /Betting and gambling/.test(polText) && /Alcohol/.test(polText) && /all ages/.test(polText));
+  check('policy page renders the bans and the all-ages rule', pol.status === 200 && /Tobacco, vapes and drugs/.test(polText) && /Politics/.test(polText) && /all ages/.test(polText));
+  // request 596: betting and alcohol are allowed with conditions, never banned
+  const notAllowed = polText.slice(polText.indexOf('<h2>Not allowed</h2>'), polText.indexOf('<h2>Your artwork</h2>'));
+  check('betting and alcohol are allowed with conditions, not in the banned list',
+    /<h2>Betting and alcohol<\/h2>/.test(polText) && /National Lottery Regulatory Commission/.test(polText) && /Drink responsibly/.test(polText) && /18\+/.test(polText)
+    && notAllowed.length > 0 && !/betting|alcohol/i.test(notAllowed) && /Licensed betting/.test(polText) && /Version 3/.test(polText));
+  check('the board list no longer says no betting or alcohol', !/no betting/i.test(landText) && /Betting and alcohol adverts are welcome/.test(landText));
   check('board page asks for policy agreement', text.includes('id="agree"') && text.includes('href="/policy"'));
   check('admin page links the policy', (await (await call(env, '/admin', { headers: admin })).text()).includes('href="/policy"'));
   check('an unknown board is a 404 page', (await call(env, '/b/board-9')).status === 404);
@@ -222,12 +228,12 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   const cancel = (token) => call(env, `/api/cancel/${token}`, { method: 'POST' });
   const row = (id) => env.DB.raw.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
   const pol = await (await call(env, '/policy')).text();
-  check('policy page has the refund terms, version 2', /id="refunds"/.test(pol) && /Cancel after it starts/.test(pol) && /12\/30/.test(pol) && /10 working days/.test(pol) && /Version 2/.test(pol));
+  check('policy page has the refund terms, version 3', /id="refunds"/.test(pol) && /Cancel after it starts/.test(pol) && /12\/30/.test(pol) && /10 working days/.test(pol) && /Version 3/.test(pol));
   check('board page: agreeing covers the refund terms', (await (await call(env, '/b/board-3')).text()).includes('href="/policy#refunds"'));
 
   // unpaid: cancel at no cost
   const u = await post({ brand: 'U', shares: 1, start: shift(3), months: 1 });
-  check('a booking records the policy version agreed to', row(u.id).policy === '2');
+  check('a booking records the policy version agreed to', row(u.id).policy === '3');
   const cu = await cancel(u.token); const cuo = await cu.json();
   check('advertiser cancels an unpaid booking: nothing owed', cu.status === 200 && cuo.refundDue === 0 && row(u.id).status === 'cancelled' && row(u.id).cancelled_by === 'advertiser');
   check('cancelling twice is refused; an unknown token is a 404', (await cancel(u.token)).status === 409 && (await cancel('0'.repeat(36))).status === 404);
@@ -258,7 +264,7 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   // owner: reject a paid booking, reopen it, take one down for a breach or not
   const R = await post({ brand: 'R', shares: 1, start: shift(2), months: 1 });
   await act(R.id, 'paid');
-  await act(R.id, 'reject', { reason: 'Betting advert' });
+  await act(R.id, 'reject', { reason: 'Tobacco advert' });
   check('rejecting a paid booking owes everything back', row(R.id).refund_due === R.amount && /full refund/.test(row(R.id).refund_note));
   await act(R.id, 'review');
   check('reopening it for review clears a refund not yet sent', row(R.id).refund_due === 0 && row(R.id).status === 'review');
