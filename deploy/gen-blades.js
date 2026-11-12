@@ -65,6 +65,35 @@ function cellMask(data, W, x0, y0, cw, ch, out, relax = 1) {
     if (ext < 70 * sc && fx > 0.3 && fx < 0.7 && fy > 0.12 && fy < 0.5) continue;   // the vest
     for (const p of px) keep[p] = 1;
   }
+  /* THE SWOOSH TRAILS (request 598: "the sword tornado trails also have the rage glows"). The tornado
+   * (and some swings) paint the blade's path as solid white arcs in the air. A bright, near-neutral run
+   * counts as a trail when it FLOATS — most of its outline touches empty air — which the lace on his
+   * wrap and the white of his eyes never do (cloth and skin all round them). Lit like the edge. */
+  const air = (x, y) => x < 0 || y < 0 || x >= cw || y >= ch || data[((y0 + y) * W + x0 + x) * 4 + 3] < 160;
+  const bright = new Uint8Array(N);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    const q = ((y0 + y) * W + x0 + x) * 4;
+    if (data[q + 3] < 160 || keep[y * cw + x]) continue;
+    const r = data[q], g = data[q + 1], b = data[q + 2], mx = Math.max(r, g, b), sp = mx - Math.min(r, g, b);
+    if (mx >= 170 && sp <= 45 && r - b <= 30) bright[y * cw + x] = 1;
+  }
+  const seenB = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    if (!bright[i] || seenB[i]) continue;
+    const st = [i], px = []; seenB[i] = 1;
+    let edge = 0, open = 0;
+    while (st.length) {
+      const p = st.pop(); px.push(p);
+      const x = p % cw, y = (p / cw) | 0;
+      for (const [xx, yy] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        const q = yy * cw + xx;
+        if (xx >= 0 && yy >= 0 && xx < cw && yy < ch && bright[q]) { if (!seenB[q]) { seenB[q] = 1; st.push(q); } continue; }
+        edge++; if (air(xx, yy)) open++;
+      }
+    }
+    if (px.length < 40 * sc * sc || open / Math.max(1, edge) < 0.45) continue;
+    for (const p of px) keep[p] = 2;
+  }
   let found = 0;
   for (let i = 0; i < N; i++) {
     let k = keep[i];

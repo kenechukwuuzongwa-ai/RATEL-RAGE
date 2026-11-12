@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v132';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v133';
 import { createAftermath } from './aftermath.js?v=ratelrage-board577-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -23713,7 +23713,8 @@ const BLADE_GLOW = {
 const bladeTrail = [];
 const GLOW_KINDS = {
   beads: { dir: 'sprites/beads/', test: /^darki-/, cfg: BEAD_GLOW, trail: beadTrail },
-  blades: { dir: 'sprites/blades/', test: /^darki-(machete-|pull-machete)/, cfg: BLADE_GLOW, trail: bladeTrail },
+  // `v`: the masks are cached like any sprite, so a regenerated set (request 598: the tornado's swoosh trails) needs a new tag
+  blades: { dir: 'sprites/blades/', test: /^darki-(machete-|pull-machete)/, cfg: BLADE_GLOW, trail: bladeTrail, v: '598' },
 };
 function beadFrameFor(spr, fi, kind = 'beads') {
   if (!spr?.crop || !spr.src) return null;
@@ -23725,7 +23726,7 @@ function beadFrameFor(spr, fi, kind = 'beads') {
     B = spr[kind] = { frames: [], img: new Image(), ok: false };
     B.img.onload = () => { B.ok = true; };
     B.img.onerror = () => { B.failed = true; };
-    B.img.src = K.dir + base;
+    B.img.src = K.dir + base + (K.v ? '?v=' + K.v : '');
   }
   if (!B.ok) return null;
   if (B.frames[fi] !== undefined) return B.frames[fi];
