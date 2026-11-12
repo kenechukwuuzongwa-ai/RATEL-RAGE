@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v133';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v134';
 import { createAftermath } from './aftermath.js?v=ratelrage-board577-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -8276,7 +8276,7 @@ function drawLevelEntry() {
     const since = entrySkipSince();
     if (voT >= 0 || since != null) {
       drawTapCue(ctx, VIEW_W, VIEW_H, Math.max(0, levelEntry.t - levelEntry.lead),
-        { inset: Math.round(bars) + 22, since });
+        { corner: true, top: 34, since });   // request 600: top right, no plate
     }
   }
 }
@@ -18899,10 +18899,8 @@ const REACH_OLODO_SUBS = [
 ];
 // The bar's type: two lines fit the 92 px bar — the one being said, the one before.
 // Scroll/lead/fade timing is the shared SUB_SCROLL (frontend.js).
-// request 597: twice the size (was 22 / 34). The 92-px bar now holds the line being said; the one
-// before it dissolves as it scrolls up (drawSubtitleScroll caps its fade to the bar's slack), and a
-// line too long for the screen is set a little smaller on its own.
-const SUBS = { font: 44, lineH: 66, maskPad: 4 };
+// (request 597 doubled it; request 600 put it back)
+const SUBS = { font: 22, lineH: 34, maskPad: 4 };   // request 600: back to the pre-597 size
 /* Seconds into the line. The AUDIO clock while the voice is really playing, so
  * a dropped or stalled frame cannot pull the text off the voice; the scene's own
  * accumulated dt otherwise (audio context suspended, or a headless test). */

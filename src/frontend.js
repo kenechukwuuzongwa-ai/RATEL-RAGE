@@ -418,9 +418,9 @@ const INTRO_SUBS_L2 = [
  * Returns false when there is nothing to draw (before the first line, or after
  * the last has faded), so callers can skip their own furniture with it. */
 export const SUB_SCROLL = { lead: 0.22, scroll: 0.30, linger: 0.7, fade: 0.4 };
-/* The video cutscenes' subtitle type, before the SUBTITLE SIZE option scales it: doubled from 20
- * (request 597: "double the size of the subtitle"). */
-const INTRO_SUB_PX = 40;
+/* The video cutscenes' subtitle type, before the SUBTITLE SIZE option scales it (request 597 doubled
+ * it; request 600 put it back to 20). */
+const INTRO_SUB_PX = 20;   // request 600: back to the pre-597 size
 /* KEEP A MUSIC BED ALIVE (request 347). The menu ambience and the level music
  * are <audio> elements that were only ever told to play at the moment a screen
  * or a fight began. On Android the WebView pauses them behind our back — the
@@ -561,8 +561,11 @@ export function drawTapCue(ctx, W, H, t, o = {}) {
   const textW = Math.max(ctx.measureText(text).width, ctx.measureText(TAP_CUE.done).width);
   const pad = 17, glyphW = 52, h = 58;
   const w = Math.round(pad * 2 + glyphW + textW);
-  const cy = Math.round((o.cy ?? H - (o.inset ?? 56) - h / 2) - (since == null ? 0 : easeOut3(u) * 12));
-  const x = Math.round((W - w) / 2), y = cy - Math.round(h / 2);
+  /* IN THE CORNER (request 600: "remove the placeholder of the tap to skip annotation and move it to
+   * top right out of direct view"): the skip cue sits in the top-right corner, with no plate behind it. */
+  const corner = !!o.corner;
+  const cy = corner ? Math.round(o.top ?? 34) : Math.round((o.cy ?? H - (o.inset ?? 56) - h / 2) - (since == null ? 0 : easeOut3(u) * 12));
+  const x = corner ? Math.round(W - w - 8) : Math.round((W - w) / 2), y = cy - Math.round(h / 2);
   const alpha = arrival * (since == null ? 1 : 1 - easeOut3(u));
   tapCueState.drawn = true; tapCueState.x = x; tapCueState.y = y;
   tapCueState.w = w; tapCueState.h = h; tapCueState.pulse = pulse;
@@ -574,11 +577,16 @@ export function drawTapCue(ctx, W, H, t, o = {}) {
   ctx.globalAlpha = alpha;
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(x, y, w, h, h / 2); else ctx.rect(x, y, w, h);
-  ctx.fillStyle = 'rgba(4,6,9,0.74)';
-  ctx.fill();
-  ctx.strokeStyle = `rgba(233,182,84,${0.22 + 0.10 * pulse})`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  if (!corner) {
+    ctx.fillStyle = 'rgba(4,6,9,0.74)';
+    ctx.fill();
+    ctx.strokeStyle = `rgba(233,182,84,${0.22 + 0.10 * pulse})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  } else {
+    ctx.beginPath();                 // no plate (request 600): the words keep a dark edge instead
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 4;
+  }
 
   /* THE GLYPH. The ring is the screen ("tap here"); the fingertip dips and
    * settles; a ripple leaves on each tap, the second one behind the first —
@@ -5048,7 +5056,7 @@ export function createFrontEnd({
     // Request 349: taps are answered in onPointerDown as a DOUBLE tap; say so 3 s into the clip.
     if (live && isTouchUI()) {
       // (no top-right hint since request 567: the cue below says it once)
-      drawTapCue(ctx, W, H, splashVideoT(), { inset: 40 });   // request 353: lower-centre
+      drawTapCue(ctx, W, H, splashVideoT(), { corner: true });   // request 600: top right, no plate
     }
   }
 
@@ -6129,7 +6137,7 @@ export function createFrontEnd({
     if (isTouchUI()) {
       const bandH = settings.subtitles
         ? Math.round(readablePx(Math.round(INTRO_SUB_PX * settings.subtitleSize) * PIXEL_FIT.body) * 1.4) * 2 + 10 : 0;
-      drawTapCue(ctx, W, H, introFallbackT, { inset: 32 + bandH });
+      drawTapCue(ctx, W, H, introFallbackT, { corner: true, top: 30 });   // request 600: top right in the header strip, no plate
     }
     ctx.textBaseline = 'alphabetic';
 
@@ -6139,7 +6147,7 @@ export function createFrontEnd({
        * the lower row, the one before it scrolling up and out under the band's
        * top edge, words lighting as they are spoken. */
       const time = introTime();
-      const fs = Math.round(INTRO_SUB_PX * settings.subtitleSize);   // request 597: twice the old 20
+      const fs = Math.round(INTRO_SUB_PX * settings.subtitleSize);
       const lineH = Math.round(readablePx(fs * PIXEL_FIT.body) * 1.4);   // off the size really drawn (request 563)
       const bh = lineH * 2 + 10, bw = W - 80;
       const band = { x: (W - bw) / 2, y: H - 20 - bh, w: bw, h: bh };
@@ -6209,9 +6217,8 @@ export function createFrontEnd({
   const briefY = {};
   /* The dossier's scrolling window (request 563): the type it is set in, and where it is scrolled to. */
   // request 577: larger (was 15 / 27)
-  // request 597: doubled (was 18 / 31 / 24) — the column scrolls with the narrator, so the larger read
-  // simply takes more lines of the same window
-  const BRIEF_TYPE = { size: 36, px: readablePx(36 * PIXEL_FIT.body), lineH: 62, matte: 48 };
+  // (request 597 doubled this; request 600 put it back)
+  const BRIEF_TYPE = { size: 18, px: readablePx(18 * PIXEL_FIT.body), lineH: 31, matte: 24 };   // request 600: back to 18 / 31 / 24
   const briefScroll = { y: 0, headY: 0, contentH: 0, at: 0 };
 
   /* GO BACK first, START MISSION second — and the ORDER OF THIS LIST IS THE
