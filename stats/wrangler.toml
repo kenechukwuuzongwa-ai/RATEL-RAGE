@@ -15,7 +15,7 @@ database_id = "50a229a9-9f9f-41c0-9cac-d0fce5c4c226"
 crons = ["17 3 * * *"]
 
 [vars]
-ALLOWED_ORIGINS = "https://ratel-rage.pages.dev,https://*.ratel-rage.pages.dev,https://localhost"
+ALLOWED_ORIGINS = "https://ratelrage.com,https://www.ratelrage.com,https://ratel-rage.pages.dev,https://*.ratel-rage.pages.dev,https://localhost"
 RETAIN_EVENTS_DAYS = "180"
 RETAIN_SESSIONS_DAYS = "400"
 # DASH_PASSWORD is a secret: npx wrangler secret put DASH_PASSWORD

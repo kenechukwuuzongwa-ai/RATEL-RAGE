@@ -116,4 +116,4 @@ npx wrangler d1 execute rr-ads --remote --file schema.sql     # only after schem
 - **Per-player targeting** (plan phase 3).
 - **Email notifications.**
 - **Level 2 boards:** it has no billboard art or slots.
-- **A custom domain:** it's on `workers.dev`. A domain like `ads.ratelrage.com` can be pointed at the Worker later; the QR codes follow the endpoint in `ads-config.js`.
+- **A custom domain:** it's on `workers.dev`. `ratelrage.com` is now the game's domain (request 581), so `ads.ratelrage.com` can be pointed at the Worker later; the QR codes follow the endpoint in `ads-config.js`.

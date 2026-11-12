@@ -16,8 +16,10 @@ empty, the game behaves exactly as before: progress is kept on the device
   - password minimum 8 (matches `account.js`);
   - anonymous sign-ins limited to 200 per hour per IP (the default 30 is low for
     mobile networks that share IPs);
-  - Site URL `https://ratel-rage.pages.dev/`; redirect allow-list: that URL, `/**`,
-    and `https://*.ratel-rage.pages.dev/**` (preview deployments).
+  - Site URL `https://ratelrage.com/` (request 581; was `https://ratel-rage.pages.dev/`); redirect
+    allow-list: `https://ratelrage.com/`, `/**`, `https://www.ratelrage.com/**`, and the old
+    `https://ratel-rage.pages.dev/`, `/**`, `https://*.ratel-rage.pages.dev/**`. `redirectTo` stays
+    empty, so links return to whichever of those addresses the player is on.
   - Google: OFF, and the game hides its buttons (`google: false`).
 * **Wiring:** `deploy/build-web.js` writes the URL and the **publishable** key into
   `deploy/dist/supabase-config.js` only. It refuses a `sb_secret_` key, and `--no-accounts`

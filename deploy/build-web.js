@@ -144,6 +144,12 @@ let html = fs.readFileSync(idx, 'utf8');
 const flag = `<script>window.RR_WEB = ${JSON.stringify({ production: true, build: `web-${build}`, lowres, webp })};</script>`;
 if (!html.includes('<meta charset="UTF-8" />')) { console.error('index.html: charset meta not found'); process.exit(1); }
 html = html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n  ${flag}`);
+/* ONE ADDRESS (request 581): the game's home is ratelrage.com. www.ratelrage.com is
+ * attached too (people type it) but sends the player on to the bare domain before
+ * anything loads, because saves, settings and the sign-in session live per address:
+ * a player who reached both would otherwise have two separate games. */
+const SITE = 'https://ratelrage.com';
+html = html.replace(flag, `<script>if (location.hostname === 'www.ratelrage.com') location.replace('${SITE}' + location.pathname + location.search + location.hash);</script>\n  ${flag}\n  <link rel="canonical" href="${SITE}/" />`);
 /* Media cache (deploy/media-sw.js, request 537): Chrome never HTTP-caches audio
  * or video, so without it every reload and return visit downloads the sounds,
  * music and menu video again. Web build only. `--no-media-cache` leaves it out. */

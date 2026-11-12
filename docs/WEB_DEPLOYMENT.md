@@ -115,7 +115,13 @@ Cloudflare too keeps both in one account once the site moves there.
    ```
    The game is live at `https://ratel-rage.pages.dev`, and each later run publishes a
    new version (add `--branch main --commit-dirty=true`: the folder is not a git checkout).
-3. Optional: a custom domain under Pages → *Custom domains* (HTTPS is automatic).
+3. Custom domain (request 581): `ratelrage.com` (registered with Cloudflare Registrar on 2026-11-12, zone in
+   the same account) and `www.ratelrage.com` are attached under Pages → *Custom domains*. Each needs
+   its CNAME to `ratel-rage.pages.dev` (the dashboard's *Activate domain* adds it; the wrangler login
+   cannot edit DNS). The web build sends www to the bare domain before anything loads (saves and
+   sign-in are per address) and marks `https://ratelrage.com/` as canonical. The rr-ads and rr-stats
+   Workers accept both addresses (ALLOWED_ORIGINS) and rr-ads' GAME_ORIGIN is the new domain.
+   Deploys go to `--branch main` only: the old strongroom-test branch was removed (request 580).
 
 **What happened on the first deploy (2026-10-09, Wrangler 4.149):** Wrangler now hands
 Pages commands to Cloudflare Workers, and `pages project create` failed there for want

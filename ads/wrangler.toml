@@ -11,8 +11,8 @@ database_name = "rr-ads"
 database_id = "0654e092-82c9-4c7a-8bcc-d85b627ebf33"
 
 [vars]
-ALLOWED_ORIGINS = "https://ratel-rage.pages.dev,https://*.ratel-rage.pages.dev,https://localhost"
-GAME_ORIGIN = "https://ratel-rage.pages.dev"
+ALLOWED_ORIGINS = "https://ratelrage.com,https://www.ratelrage.com,https://ratel-rage.pages.dev,https://*.ratel-rage.pages.dev,https://localhost"
+GAME_ORIGIN = "https://ratelrage.com"
 CURRENCY = "NGN"
 # Secrets (npx wrangler secret put NAME):
 #   ADMIN_PASSWORD   the /admin page (HTTP Basic, any user name)
