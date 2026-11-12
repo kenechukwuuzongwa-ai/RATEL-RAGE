@@ -36,7 +36,7 @@ Policy version 2 replaced "refunds for unused time are at our discretion" with f
 | Not approved (rejected) | everything paid |
 | Advertiser cancels before the start date | everything paid |
 | Advertiser cancels after it starts | the days left after the cancel day, day by day (30-day booking, 12 left: 12/30 back), rounded down to whole naira |
-| Owner takes it down for a policy breach (advert or link page) | nothing |
+| Owner takes it down for a policy breach (advert or link page) | nothing (confirmed by the owner, request 594) |
 | Owner takes it down for any other reason | as an advertiser cancel |
 | Game or board broken by our fault for 2+ days in a row | those days (set by hand with **Set refund**) |
 | Low views or taps | nothing: numbers are not promised |
