@@ -17,7 +17,12 @@ CREATE TABLE IF NOT EXISTS bookings (
   status TEXT NOT NULL DEFAULT 'review',   -- review | approved | rejected | cancelled
   paid INTEGER NOT NULL DEFAULT 0, pay_ref TEXT NOT NULL DEFAULT '',
   reason TEXT NOT NULL DEFAULT '',
-  created INTEGER NOT NULL, updated INTEGER NOT NULL
+  created INTEGER NOT NULL, updated INTEGER NOT NULL,
+  -- refunds (request 593, migrations/0003_refunds.sql): naira owed and naira sent back
+  refund_due INTEGER NOT NULL DEFAULT 0, refunded INTEGER NOT NULL DEFAULT 0,
+  refund_ref TEXT NOT NULL DEFAULT '', refund_note TEXT NOT NULL DEFAULT '',
+  cancelled_by TEXT NOT NULL DEFAULT '',   -- '' | advertiser | owner
+  policy TEXT NOT NULL DEFAULT '1'          -- the advertising policy version agreed to at booking
 );
 CREATE INDEX IF NOT EXISTS bookings_slot ON bookings (slot, status, paid);
 CREATE TABLE IF NOT EXISTS creatives (

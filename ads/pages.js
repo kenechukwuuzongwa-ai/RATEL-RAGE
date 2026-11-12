@@ -41,7 +41,7 @@ const el = `const $=(s)=>document.querySelector(s);const mk=(t,a={},...k)=>{cons
  * advert must suit players of any age. This is the one source: /policy renders it, the
  * booking form links to it and asks the advertiser to agree, the admin page links to it. */
 export const POLICY = {
-  version: '1',
+  version: '2',
   updated: '12 November 2026',
   intro: 'It is played by people of all ages, so every advert on its billboards must be suitable for everyone. '
     + 'We check every advert, and the page its tap link opens, before it goes live. If an advert does not meet this policy, we do not approve it.',
@@ -84,10 +84,21 @@ export const POLICY = {
   ],
   terms: [
     'Every advert is reviewed before it goes live, usually within 2 working days. If we reject it, we tell you why on your status page.',
-    'If you have already paid and we do not approve your advert, we refund you in full.',
-    'We may take down a live advert that breaks this policy, or that players report and we find breaks it. Refunds for the unused time are at our discretion.',
+    'We may take down a live advert that breaks this policy, or that players report and we find breaks it.',
     'You are responsible for your advert and for any approval it needs under Nigerian advertising law (for example, ARCON vetting).',
     'We may update this policy. Approved bookings keep the version they agreed to, unless the law requires a change.',
+  ],
+  /* Refund terms (request 593). worker.js refundFor() applies exactly these rules. */
+  refunds: [
+    ['Not approved', 'if we do not approve your advert, we refund everything you paid.'],
+    ['Cancel before it starts', 'cancel from your status page before your start date and we refund everything you paid.'],
+    ['Cancel after it starts', 'we refund the days left after the day you cancel, worked out day by day. For example, a 30-day booking cancelled with 12 days left gets 12/30 of its price back.'],
+    ['Taken down for breaking this policy', 'no refund, when the advert or the page its link opens breaks this policy, including a page changed after we approved it.'],
+    ['Taken down for any other reason', 'if we take your advert down for a reason that is not your fault, we refund the days left, as above.'],
+    ['Our faults', 'if the game or your board is not working through a fault on our side for 2 days or more in a row, we refund those days.'],
+    ['Views and taps', 'we show your numbers honestly but do not promise any number of views or taps, and we do not refund for low numbers.'],
+    ['Unpaid bookings', 'you can cancel a booking you have not paid for at any time, at no cost.'],
+    ['How you are paid back', 'to the card or account you paid with, or by bank transfer if you paid by invoice, within 10 working days of the refund being due. We do not take any fees out of it. Your status page shows the refund and when it has been sent.'],
   ],
 };
 
@@ -101,7 +112,8 @@ export function policyPage() {
 <h2>Not allowed</h2><ul>${POLICY.banned.map(([h, t]) => `<li><b>${esc(h)}:</b> ${esc(t)}</li>`).join('')}</ul>
 <h2>Your artwork</h2><ul>${li(POLICY.artwork)}</ul>
 <h2>Your tap link</h2><ul>${li(POLICY.link)}</ul>
-<h2>Review, refunds and changes</h2><ul>${li(POLICY.terms)}</ul>
+<h2>Review and changes</h2><ul>${li(POLICY.terms)}</ul>
+<h2 id="refunds">Refunds</h2><ul>${POLICY.refunds.map(([h, t]) => `<li><b>${esc(h)}:</b> ${esc(t)}</li>`).join('')}</ul>
 <p class="small dim">Not sure whether your advert fits? Say so in the booking's "Anything we should know" box, and we'll tell you during the review.</p>
 </main>`);
 }
@@ -166,7 +178,7 @@ export function boardPage({ board, today, gameOrigin, payments, artScale }) {
     <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
     <p><b id="total"></b></p>
     <p class="small dim">We review every advert before it goes live (usually within 2 working days). ${payments ? 'After booking you can pay securely with Paystack.' : 'After review we send you an invoice; your advert goes live once it is paid.'}</p>
-    <label style="font-weight:400"><input type="checkbox" id="agree" required> My advert and its tap link follow the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>. The game is for players of all ages.</label>
+    <label style="font-weight:400"><input type="checkbox" id="agree" required> My advert and its tap link follow the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>, and I accept its <a href="/policy#refunds" target="_blank" rel="noopener">refund terms</a>. The game is for players of all ages.</label>
     <p class="err" id="err"></p>
     <button class="btn" id="send" type="submit">Send booking</button>
   </form>
@@ -237,7 +249,7 @@ export function statusPage({ missing = false, booking, stats, board, gameOrigin,
   return shell(`Your booking - Ratel Rage`, `
 <header><a href="/" class="small">All boards</a><h1>Your billboard booking</h1><p id="sub"></p></header>
 <main><div class="cols"><section><canvas id="pv" class="preview"></canvas></section>
-<section class="card"><div id="state"></div><table id="t"></table><h3>Numbers</h3><div id="nums"></div><div id="pay"></div></section></div></main>
+<section class="card"><div id="state"></div><table id="t"></table><h3>Numbers</h3><div id="nums"></div><div id="pay"></div><div id="cancelbox"></div></section></div></main>
 ${data({ booking, stats, board, gameOrigin, payments, today })}<script>${el}${naira}
 const b=D.booking,B=D.board;$('#sub').textContent=b.business+' on '+B.name;
 const live=b.status==='approved'&&b.paid&&b.start<=D.today&&b.end>D.today;
@@ -246,7 +258,22 @@ const st=b.status==='rejected'?['bad','Not approved']:b.status==='cancelled'?['b
 $('#state').append(mk('p',{},mk('span',{cls:'pill '+st[0],text:st[1]})));
 if(b.reason)$('#state').append(mk('p',{cls:'err',text:'Reason: '+b.reason}));
 const rows=[['Board',B.name],['Brand',b.brand],['Dates',b.start+' to '+b.end+' ('+b.months+(b.months>1?' months)':' month)')],['Share of the board',b.shares===B.shares?'The whole board':b.shares+' of '+B.shares+' shares (taking turns with other advertisers)'],['Total',naira(b.amount)],['Payment',b.paid?'Paid':'Not paid yet'],['Tap link',b.link||'(none)']];
+if(b.cancelledBy)rows.push(['Cancelled by',b.cancelledBy==='advertiser'?'You':'Us']);
+if(b.refundDue>0)rows.push(['Refund',b.refunded>=b.refundDue?'Sent: '+naira(b.refunded)+(b.refundRef?' (ref '+b.refundRef+')':''):naira(b.refundDue)+' on its way: paid back within 10 working days, with no fees taken'+(b.refunded?' ('+naira(b.refunded)+' sent so far)':'')]);
+else if(b.refundNote)rows.push(['Refund',b.refundNote]);
+if(b.refundDue>0&&b.refundNote)rows.push(['Why',b.refundNote]);
 for(const[k,v]of rows)$('#t').append(mk('tr',{},mk('th',{text:k}),mk('td',{text:v})));
+// cancelling (request 593): open bookings only; the refund follows the policy's refund terms
+if(b.status!=='rejected'&&b.status!=='cancelled'&&b.end>D.today){
+  const back=b.paid?(b.refundIfCancelled>=b.amount?'You get everything you paid back: '+naira(b.amount)+'.':'You get the days left after today back: '+naira(b.refundIfCancelled)+'.'):'You have not paid, so nothing is owed either way.';
+  const cx=mk('div',{cls:'card',style:'margin-top:14px'},mk('h3',{style:'margin-top:0',text:'Cancel this booking'}),
+    mk('p',{cls:'small',text:back+' '+(live?'Your advert comes off the board straight away.':'Your advert will not go live.')}),
+    mk('p',{cls:'small dim'},'See the ',mk('a',{href:'/policy#refunds',text:'refund terms'}),'.'));
+  const btn=mk('button',{cls:'btn ghost small',type:'button',id:'cancel',text:'Cancel booking'});
+  btn.onclick=async()=>{if(!confirm('Cancel this booking? This cannot be undone. '+back))return;btn.disabled=true;
+    const r=await fetch('/api/cancel/'+b.token,{method:'POST'});const o=await r.json().catch(()=>({}));
+    if(r.ok)location.reload();else{btn.disabled=false;alert(o.error||'The booking could not be cancelled.')}};
+  cx.append(btn);$('#cancelbox').append(cx)}
 $('#nums').append(mk('p',{text:D.stats.views.toLocaleString()+' views, '+D.stats.taps.toLocaleString()+' taps so far'}),
   mk('p',{cls:'small dim',text:'A view is your board at least half on screen for at least one second. A tap is a player opening your link from the pause menu.'}));
 if(!b.paid&&b.status!=='rejected'&&b.status!=='cancelled'){
@@ -277,18 +304,28 @@ function render(){
     const save=mk('button',{cls:'btn small',type:'button',text:'Save'});save.onclick=async()=>{const r=await fetch('/api/admin/boards/'+b.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({price:Number(price.value),shares:Number(shares.value),bookable:open.checked})});if(!r.ok)$('#err').textContent=(await r.json()).error;await load()};
     bt.append(mk('tr',{},mk('td',{},mk('b',{text:b.id}),mk('div',{cls:'small dim',text:b.name})),mk('td',{},price),mk('td',{},shares),mk('td',{},open),mk('td',{text:v.toLocaleString()}),mk('td',{text:t.toLocaleString()}),mk('td',{},save)))}
   const list=$('#list');list.textContent='';const all=$('#all').checked;
-  const shown=A.bookings.filter(b=>all||(b.status!=='rejected'&&b.status!=='cancelled'&&b.end_day>A.today));
+  const shown=A.bookings.filter(b=>all||b.refund_due>b.refunded||(b.status!=='rejected'&&b.status!=='cancelled'&&b.end_day>A.today));
   if(!shown.length)list.append(mk('p',{cls:'dim',text:'No bookings.'}));
   for(const b of shown){const c=mk('div',{cls:'card booking'});c.style.marginBottom='12px';
-    const pill=b.live?['ok','LIVE']:b.status==='approved'&&b.paid?['ok','approved + paid']:b.status==='approved'?['warn','approved, unpaid']:b.status==='review'?['warn','to review']:['bad',b.status];
+    const owed=b.refund_due-b.refunded;
+    const pill=owed>0?['bad','REFUND OWED '+naira(owed)]:b.live?['ok','LIVE']:b.status==='approved'&&b.paid?['ok','approved + paid']:b.status==='approved'?['warn','approved, unpaid']:b.status==='review'?['warn','to review']:['bad',b.status+(b.cancelled_by?' by '+b.cancelled_by:'')];
     const info=mk('div',{},mk('p',{},mk('span',{cls:'pill '+pill[0],text:pill[1]}),' ',mk('b',{text:b.brand}),' ',mk('span',{cls:'dim',text:'('+b.business+') on '+b.slot})));
-    const rows=[['Dates',b.start_day+' to '+b.end_day+' ('+b.months+' mo)'],['Shares',String(b.shares)],['Amount',naira(b.amount)+(b.paid?' - paid ('+b.pay_ref+')':' - unpaid')],['Contact',b.name+', '+b.email+(b.phone?', '+b.phone:'')],['Tap link',b.link||'(none)'],['Note',b.note||''],['Numbers',b.views+' views, '+b.taps+' taps'],['Status page','/status/'+b.token],['Booked',new Date(b.created).toLocaleString()]];
-    if(b.reason)rows.push(['Reason',b.reason]);const t=mk('table');for(const[k,v]of rows)t.append(mk('tr',{},mk('th',{text:k}),mk('td',{text:v})));info.append(t);
+    const rows=[['Dates',b.start_day+' to '+b.end_day+' ('+b.months+' mo)'],['Shares',String(b.shares)],['Amount',naira(b.amount)+(b.paid?' - paid ('+b.pay_ref+')':' - unpaid')],['Contact',b.name+', '+b.email+(b.phone?', '+b.phone:'')],['Tap link',b.link||'(none)'],['Note',b.note||''],['Numbers',b.views+' views, '+b.taps+' taps'],['Status page','/status/'+b.token],['Booked',new Date(b.created).toLocaleString()+' (policy v'+b.policy+')']];
+    if(b.reason)rows.push(['Reason',b.reason]);
+    if(b.refund_due>0||b.refunded>0)rows.push(['Refund',naira(b.refund_due)+' owed, '+naira(b.refunded)+' sent'+(b.refund_ref?' (ref '+b.refund_ref+')':'')+(b.refund_note?' - '+b.refund_note:'')]);
+    const t=mk('table');for(const[k,v]of rows)t.append(mk('tr',{},mk('th',{text:k}),mk('td',{text:v})));info.append(t);
     const ac=mk('div',{cls:'actions'});const B=(label,fn,cls='btn small')=>{const x=mk('button',{cls,type:'button',text:label});x.onclick=fn;ac.append(x)};
-    if(b.status!=='approved')B('Approve',()=>act(b.id,'approve'));
-    if(b.status!=='rejected')B('Reject',()=>{const reason=prompt('Reason shown to the advertiser:');if(reason!==null)act(b.id,'reject',{reason})},'btn small ghost');
-    if(!b.paid)B('Mark paid',()=>{const ref=prompt('Payment reference (invoice number, transfer ref):','invoice');if(ref!==null)act(b.id,'paid',{ref})},'btn small ghost');else B('Mark unpaid',()=>act(b.id,'unpaid'),'btn small ghost');
-    if(b.status!=='cancelled')B('Cancel',()=>{if(confirm('Cancel this booking?'))act(b.id,'cancel')},'btn small ghost');
+    if(b.status!=='approved'&&b.status!=='cancelled')B('Approve',()=>act(b.id,'approve'));
+    if(b.status!=='rejected'&&b.status!=='cancelled')B('Reject',()=>{const reason=prompt('Reason shown to the advertiser:'+(b.paid?' (They have paid, so they will be owed a full refund.)':''));if(reason!==null)act(b.id,'reject',{reason})},'btn small ghost');
+    if(!b.paid)B('Mark paid',()=>{const ref=prompt('Payment reference (invoice number, transfer ref):','invoice');if(ref!==null)act(b.id,'paid',{ref})},'btn small ghost');else if(!b.refunded)B('Mark unpaid',()=>act(b.id,'unpaid'),'btn small ghost');
+    if(b.status!=='cancelled'&&b.status!=='rejected'){
+      if(b.paid){
+        B('Cancel, not their fault (refund '+naira(b.refundIfCancelled)+')',()=>{if(confirm('Take this advert down and owe '+naira(b.refundIfCancelled)+' back (the refund terms: everything before the start date, the days left after it)?'))act(b.id,'cancel',{why:'other'})},'btn small ghost');
+        B('Take down: broke the policy (no refund)',()=>{if(confirm('Take this advert down for breaking the advertising policy? Under the refund terms nothing is owed back. Tell the advertiser why.'))act(b.id,'cancel',{why:'breach'})},'btn small ghost');
+      } else B('Cancel',()=>{if(confirm('Cancel this booking? It is unpaid, so nothing is owed.'))act(b.id,'cancel')},'btn small ghost');
+    }
+    if(b.paid)B('Set refund',()=>{const v=prompt('Refund owed, in naira (0 to '+b.amount+'). For days lost to a fault on our side, work out amount x days lost / days booked.',String(b.refund_due));if(v===null)return;const note=prompt('Why (shown to the advertiser):',b.refund_note||'');if(note!==null)act(b.id,'refund',{amount:Number(v),note})},'btn small ghost');
+    if(owed>0)B('Mark refund sent',()=>{const ref=prompt('Refund reference (Paystack refund id or transfer ref) for '+naira(owed)+':','');if(ref!==null)act(b.id,'refunded',{ref})});
     B('Delete',()=>{if(confirm('Delete this booking and its artwork for good?'))act(b.id,'delete')},'btn small ghost');
     info.append(ac);c.append(mk('img',{src:'/c/'+b.id,alt:b.brand}),info);list.append(c)}}
 $('#all').onchange=render;load().catch(e=>$('#err').textContent=String(e));

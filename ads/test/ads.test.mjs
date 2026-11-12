@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHmac } from 'node:crypto';
 import path from 'node:path';
-import worker, { today, addMonths, imageInfo, peakShares, priceFor } from '../worker.js';
+import worker, { today, addMonths, imageInfo, peakShares, priceFor, refundFor } from '../worker.js';
 import { BOARDS, uploadSize } from '../boards.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -201,6 +201,88 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   const pub = (await (await call(env, '/api/boards')).json()).boards.find((x) => x.id === 'board-3');
   check('the board list reports shares and what is free today', pub.shares === 4 && pub.freeToday === 0, { shares: pub.shares, free: pub.freeToday });
   check('the status page shows the share', (await (await call(env, `/status/${a.token}`)).text()).includes('"shares":1'));
+}
+
+// ---------- refunds (request 593)
+{
+  const B = { paid: 1, amount: 30000, start_day: '2026-11-01', end_day: '2026-12-01' };   // 30 days
+  check('refundFor: unpaid owes nothing', refundFor({ ...B, paid: 0 }, '2026-11-10', 'cancel') === 0 && refundFor({ ...B, paid: 0 }, '2026-10-01', 'rejected') === 0);
+  check('refundFor: not approved is a full refund', refundFor(B, '2026-11-20', 'rejected') === 30000);
+  check('refundFor: cancelled before the start is a full refund', refundFor(B, '2026-10-31', 'cancel') === 30000);
+  check('refundFor: cancelled with 12 of 30 days left gets 12/30 back', refundFor(B, '2026-11-18', 'cancel') === 12000);
+  check('refundFor: the day you cancel counts as used', refundFor(B, '2026-11-01', 'cancel') === 29000 && refundFor(B, '2026-11-30', 'cancel') === 0);
+  check('refundFor: a policy breach gets nothing back', refundFor(B, '2026-10-20', 'breach') === 0 && refundFor(B, '2026-11-18', 'breach') === 0);
+  check('refundFor rounds down to whole naira', refundFor({ ...B, amount: 26667 }, '2026-11-18', 'cancel') === Math.floor(26667 * 12 / 30));
+}
+{
+  const env = mkEnv({ PAYSTACK_SECRET: 'sk_test_x' });
+  const shift = (n) => new Date(Date.parse(today() + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  const post = (o) => call(env, '/api/bookings', { method: 'POST', body: form(o) }).then((r) => r.json());
+  const act = (id, action, extra = {}) => call(env, `/api/admin/bookings/${id}`, { method: 'POST', headers: { ...admin, 'Content-Type': 'application/json' }, body: { action, ...extra } });
+  const cancel = (token) => call(env, `/api/cancel/${token}`, { method: 'POST' });
+  const row = (id) => env.DB.raw.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
+  const pol = await (await call(env, '/policy')).text();
+  check('policy page has the refund terms, version 2', /id="refunds"/.test(pol) && /Cancel after it starts/.test(pol) && /12\/30/.test(pol) && /10 working days/.test(pol) && /Version 2/.test(pol));
+  check('board page: agreeing covers the refund terms', (await (await call(env, '/b/board-3')).text()).includes('href="/policy#refunds"'));
+
+  // unpaid: cancel at no cost
+  const u = await post({ brand: 'U', shares: 1, start: shift(3), months: 1 });
+  check('a booking records the policy version agreed to', row(u.id).policy === '2');
+  const cu = await cancel(u.token); const cuo = await cu.json();
+  check('advertiser cancels an unpaid booking: nothing owed', cu.status === 200 && cuo.refundDue === 0 && row(u.id).status === 'cancelled' && row(u.id).cancelled_by === 'advertiser');
+  check('cancelling twice is refused; an unknown token is a 404', (await cancel(u.token)).status === 409 && (await cancel('0'.repeat(36))).status === 404);
+  check('a cancelled booking cannot be approved again, or rejected', (await act(u.id, 'approve')).status === 409 && (await act(u.id, 'reject', { reason: 'x' })).status === 409);
+  const sig = (o) => { const t = JSON.stringify(o); return { body: t, headers: { 'x-paystack-signature': createHmac('sha512', 'sk_test_x').update(t).digest('hex') } }; };
+  const late = sig({ event: 'charge.success', data: { reference: u.id, amount: u.amount * 100, id: 501 } });
+  await call(env, '/api/paystack', { method: 'POST', ...late });
+  check('paid by Paystack after it was cancelled: all of it is owed back', row(u.id).paid === 1 && row(u.id).refund_due === u.amount);
+
+  // paid, not started: full refund
+  const f = await post({ brand: 'F', shares: 1, start: shift(5), months: 1 });
+  await act(f.id, 'approve'); await act(f.id, 'paid', { ref: 'INV-9' });
+  const sp0 = await (await call(env, `/status/${f.token}`)).text();
+  check('status page offers Cancel with the full refund before the start', sp0.includes('id="cancelbox"') && sp0.includes(`"refundIfCancelled":${f.amount}`));
+  const cf = await (await cancel(f.token)).json();
+  check('advertiser cancels a paid booking before it starts: full refund', cf.refundDue === f.amount && row(f.id).refund_due === f.amount);
+  const sp1 = await (await call(env, `/status/${f.token}`)).text();
+  check('status page shows the refund owed', sp1.includes(`"refundDue":${f.amount}`) && sp1.includes('"cancelledBy":"advertiser"'));
+
+  // paid and live for 10 of 30 days: the days left after today
+  const L = await post({ brand: 'L', shares: 1, start: today(), months: 1 });
+  env.DB.raw.prepare('UPDATE bookings SET start_day = ?, end_day = ? WHERE id = ?').run(shift(-10), shift(20), L.id);
+  await act(L.id, 'approve'); await act(L.id, 'paid');
+  const cl = await (await cancel(L.token)).json();
+  check('advertiser cancels a live booking: the days left after today, day by day', cl.refundDue === Math.floor(L.amount * 19 / 30), cl);
+  check('the cancelled advert is off the board', !(await (await call(env, '/api/slots?level=1')).json()).slots.find((s) => s.id === 'board-3').rotation.some((x) => x.id === L.id));
+
+  // owner: reject a paid booking, reopen it, take one down for a breach or not
+  const R = await post({ brand: 'R', shares: 1, start: shift(2), months: 1 });
+  await act(R.id, 'paid');
+  await act(R.id, 'reject', { reason: 'Betting advert' });
+  check('rejecting a paid booking owes everything back', row(R.id).refund_due === R.amount && /full refund/.test(row(R.id).refund_note));
+  await act(R.id, 'review');
+  check('reopening it for review clears a refund not yet sent', row(R.id).refund_due === 0 && row(R.id).status === 'review');
+  const T = await post({ brand: 'T', shares: 1, start: today(), months: 1 });
+  env.DB.raw.prepare('UPDATE bookings SET start_day = ?, end_day = ? WHERE id = ?').run(shift(-10), shift(20), T.id);
+  await act(T.id, 'approve'); await act(T.id, 'paid');
+  const adm = await (await call(env, '/api/admin/data', { headers: admin })).json();
+  check('admin data gives the refund if cancelled now', adm.bookings.find((b) => b.id === T.id).refundIfCancelled === Math.floor(T.amount * 19 / 30));
+  await act(T.id, 'cancel', { why: 'breach' });
+  check('taken down for a policy breach: no refund', row(T.id).status === 'cancelled' && row(T.id).cancelled_by === 'owner' && row(T.id).refund_due === 0);
+  await act(R.id, 'approve');
+  await act(R.id, 'cancel', { why: 'other' });
+  check('cancelled by us before the start, not their fault: full refund', row(R.id).refund_due === R.amount);
+
+  // setting and sending refunds
+  check('a refund larger than the price is refused', (await act(T.id, 'refund', { amount: T.amount + 1 })).status === 400);
+  check('the owner sets a refund by hand (days lost to our fault)', (await act(T.id, 'refund', { amount: 2000, note: '2 days down' })).status === 200 && row(T.id).refund_due === 2000 && row(T.id).refund_note === '2 days down');
+  check('mark refund sent', (await act(T.id, 'refunded', { ref: 'RF-1' })).status === 200 && row(T.id).refunded === 2000 && row(T.id).refund_ref === 'RF-1');
+  check('nothing more owed: marking it sent again is refused', (await act(T.id, 'refunded')).status === 409);
+  check('a refund cannot drop below what was already sent', (await act(T.id, 'refund', { amount: 1000 })).status === 409);
+  const sp2 = await (await call(env, `/status/${T.token}`)).text();
+  check('status page shows the refund as sent', sp2.includes('"refunded":2000') && sp2.includes('"refundRef":"RF-1"'));
+  const ap = await (await call(env, '/admin', { headers: admin })).text();
+  check('admin page has the refund controls', ap.includes('Mark refund sent') && ap.includes('broke the policy (no refund)') && ap.includes('Set refund'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

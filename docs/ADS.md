@@ -19,13 +19,43 @@ Built 2026-10-23 (request 446). The plan it follows is `LAUNCH_ADS_STATS_PLAN.md
 The game is for everyone (request 580, no age gate), so every advert must suit players of any age.
 
 - **Where:** `/policy` on the ads server. The text lives in one place, `POLICY` in `ads/pages.js`. Change it there, bump `version` and `updated`, and redeploy.
-- **Agreement:** the booking form has a required box: "My advert and its tap link follow the advertising policy". The server refuses bookings that don't send `agree: true`. The booking's `created` date plus the policy version history shows what each advertiser agreed to.
+- **Agreement:** the booking form has a required box: "My advert and its tap link follow the advertising policy, and I accept its refund terms". The server refuses bookings that don't send `agree: true`. Each booking stores the policy version it agreed to (`policy` column, request 593).
 - **Welcome:** food and soft drinks, shops and fashion, phones and telecoms, all-ages apps, games, music, films and events, schools and courses, local services, sports, banks and licensed payment services, and charities that don't campaign politically.
 - **Not allowed:** betting and gambling, alcohol, tobacco, vapes and drugs, sexual content and dating services, weapons and fireworks, get-rich-quick schemes (investment offers, crypto/forex trading, pyramid schemes, unlicensed loan apps), politics, health claims (medicines, miracle cures, slimming products), hate and shock images, lies and scams, other people's brands, and anything illegal.
 - **Artwork:** the advertiser's own, with their brand name on it, and nothing that looks like part of the game (no fake buttons, fake warnings or "tap to win").
 - **Tap link:** opens the advertiser's own page, matching the advert. No automatic downloads, no pop-ups, and no collecting children's details.
-- **Review terms:** if a paid advert isn't approved, the advertiser gets a full refund. A live advert that breaks the policy comes down, and a refund for the unused time is at the owner's discretion. The advertiser is responsible for any legal approval their advert needs, such as ARCON vetting.
+- **Review terms:** a live advert that breaks the policy comes down. The advertiser is responsible for any legal approval their advert needs, such as ARCON vetting. Refunds follow the fixed terms below.
 - **On /admin:** a reminder at the top tells you to check the artwork **and open the tap link** against the policy before approving.
+
+## Refund terms (request 593)
+
+Policy version 2 replaced "refunds for unused time are at our discretion" with fixed rules. The wording is `POLICY.refunds` in `ads/pages.js` (shown at `/policy#refunds`), and `refundFor()` in `ads/worker.js` does the same sums. Change both together.
+
+| Case | Refund |
+|---|---|
+| Not approved (rejected) | everything paid |
+| Advertiser cancels before the start date | everything paid |
+| Advertiser cancels after it starts | the days left after the cancel day, day by day (30-day booking, 12 left: 12/30 back), rounded down to whole naira |
+| Owner takes it down for a policy breach (advert or link page) | nothing |
+| Owner takes it down for any other reason | as an advertiser cancel |
+| Game or board broken by our fault for 2+ days in a row | those days (set by hand with **Set refund**) |
+| Low views or taps | nothing: numbers are not promised |
+| Unpaid booking | cancel any time, nothing owed |
+| Money that arrives after a booking was closed | everything paid |
+
+Refunds go back to the card or account paid with (Paystack dashboard: Transactions > Refund) or by bank transfer for invoices, within 10 working days, with no fees taken. Bookings record the policy version agreed to (`policy` column; earlier bookings show 1).
+
+**Advertiser:** the status page has **Cancel booking**. It shows what they get back before they confirm, then shows the refund owed and, once sent, the reference.
+
+**Owner, on /admin:**
+- A booking with money owed shows a red **REFUND OWED** pill and stays listed until the refund is marked sent, even when it is closed.
+- Paid bookings have two take-down buttons: **Cancel, not their fault (refund ...)** and **Take down: broke the policy (no refund)**. Unpaid ones have a plain **Cancel**.
+- **Reject** on a paid booking owes everything back. Reopening it for review clears a refund not yet sent.
+- **Set refund** changes the amount owed by hand, with a reason shown to the advertiser.
+- **Mark refund sent** records the refund reference once you have sent the money. The server does not move money itself.
+- A cancelled booking cannot be approved again; the advertiser books afresh.
+
+**Database change:** `migrations/0003_refunds.sql` adds `refund_due`, `refunded`, `refund_ref`, `refund_note`, `cancelled_by` and `policy`.
 
 ## What you do (the owner)
 
@@ -36,7 +66,7 @@ The game is for everyone (request 580, no age gate), so every advert must suit p
 - **Live rule:** a board shows the advert only when it is **approved + paid + today is inside its dates**. Otherwise it shows the house art. Players pick up changes within about 5 minutes: at the next level start, or the next page load.
 - **Boards:** edit each board's price per month and whether it is open for booking. Board 1, the Ratel Open University board, is reserved.
 - **Numbers:** views and taps per board for the last 30 days, and running totals per booking.
-- **Cancel / Delete:** delete removes the booking and its artwork for good.
+- **Cancel / Delete:** cancelling works out the refund under the terms above; delete removes the booking and its artwork for good.
 
 Nothing emails you or the advertiser yet. Check `/admin` for new bookings, and email advertisers yourself.
 
@@ -112,7 +142,7 @@ The source tree, the editor and the APK keep `ads-config.js` empty. So they show
 
 ## Tests
 
-- `node ads/test/ads.test.mjs`: the Worker against a local SQLite D1 (44 checks).
+- `node ads/test/ads.test.mjs`: the Worker against a local SQLite D1 (92 checks).
 - `node _chromakey/ads/e2e.js`: against the **live** server. It books, approves, pays, checks the game draws and counts it, opens the pause link, then deletes the booking.
 - `node _chromakey/ads/pagesmoke.js`: the live advertiser pages in a real browser (upload, preview, submit, status, admin), then deletes the booking.
 
@@ -121,7 +151,8 @@ The source tree, the editor and the APK keep `ads-config.js` empty. So they show
 ```
 cd "RAGE OF RATELS/ads"
 npx wrangler deploy
-npx wrangler d1 execute rr-ads --remote --file schema.sql     # only after schema changes
+npx wrangler d1 execute rr-ads --remote --file schema.sql     # new tables only
+npx wrangler d1 execute rr-ads --remote --file migrations/0003_refunds.sql   # columns on an existing database: run each migration once
 ```
 
 ## Not built yet

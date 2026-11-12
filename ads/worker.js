@@ -6,6 +6,7 @@
  *   GET  /status/:token       the advertiser's private page: review/payment state, dates, views and taps
  *   GET  /policy              the advertising policy (pages.js POLICY); bookings must send agree:true
  *   POST /api/bookings        a booking with its artwork (JSON, artwork as a data URL)
+ *   POST /api/cancel/:token   the advertiser cancels; the refund owed follows the policy's refund terms (refundFor)
  *   POST /api/pay/:token      Paystack checkout for a booking (only when PAYSTACK_SECRET is set)
  *   POST /api/paystack        Paystack webhook (signature-checked) -> booking paid
  * Game:
@@ -26,7 +27,7 @@
  * ones per pass, weighted by shares, so each gets about its share of the views.
  * The board's price is for the WHOLE board; a share costs its fraction. */
 import { BOARDS, boardById, uploadSize, ART_SCALE, SAFE_MARGIN } from './boards.js';
-import { landingPage, boardPage, statusPage, adminPage, policyPage } from './pages.js';
+import { landingPage, boardPage, statusPage, adminPage, policyPage, POLICY } from './pages.js';
 
 const DAY = 86400000;
 const MAX_ART_B64 = 1_600_000;       // ~1.2 MB of image; D1 rows top out at 2 MB
@@ -63,6 +64,23 @@ export function peakShares(list, start, end) {
 }
 // What a booking costs: the whole board's monthly price, times the fraction of it taken, times the months.
 export const priceFor = (board, shares, months) => Math.round(board.price * shares / board.shares) * months;
+/* REFUNDS (request 593): the refund terms in POLICY.refunds, as arithmetic. Naira owed back
+ * for a booking closed on `day`:
+ *   'rejected'  not approved: everything paid
+ *   'cancel'    cancelled by the advertiser, or taken down by us for a reason not their fault:
+ *               everything before the start date; after it, the days left after `day`, day by day
+ *   'breach'    taken down because the advert or its link broke the policy: nothing
+ * An unpaid booking is owed nothing. */
+const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / DAY);
+export function refundFor(r, day, why) {
+  if (!r.paid || why === 'breach') return 0;
+  if (why === 'rejected' || day < r.start_day) return r.amount;
+  const total = daysBetween(r.start_day, r.end_day);
+  const from = nextDay(day) > r.start_day ? nextDay(day) : r.start_day;
+  const left = Math.max(0, daysBetween(from, r.end_day));
+  return total > 0 ? Math.floor(r.amount * left / total) : 0;
+}
+const isOpen = (r, day) => r.status !== 'rejected' && r.status !== 'cancelled' && r.end_day > day;
 const rid = (n = 16) => { const a = new Uint8Array(n); crypto.getRandomValues(a); return [...a].map((x) => x.toString(16).padStart(2, '0')).join(''); };
 const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
 
@@ -195,8 +213,8 @@ async function createBooking(req, env) {
   const id = 'rr' + rid(8), token = rid(18), now = Date.now();
   const amount = priceFor(board, shares, months);
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO bookings (id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, created, updated)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, token, b.id, f.business, f.brand, f.name, f.email, f.phone, f.link, f.note, start, end, months, shares, amount, now, now),
+    env.DB.prepare(`INSERT INTO bookings (id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, policy, created, updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, token, b.id, f.business, f.brand, f.name, f.email, f.phone, f.link, f.note, start, end, months, shares, amount, POLICY.version, now, now),
     env.DB.prepare('INSERT INTO creatives (booking, mime, w, h, data) VALUES (?, ?, ?, ?, ?)').bind(id, info.mime, info.w, info.h, m[2]),
   ]);
   return json({ ok: true, id, token, status: `/status/${token}`, amount, end, shares, pay: env.PAYSTACK_SECRET ? `/api/pay/${token}` : null });
@@ -211,7 +229,21 @@ async function bookingStats(env, id) {
   return { days: rows, views: rows.reduce((a, r) => a + r.views, 0), taps: rows.reduce((a, r) => a + r.taps, 0) };
 }
 const publicBooking = (r) => ({ id: r.id, slot: r.slot, business: r.business, brand: r.brand, link: r.link,
-  start: r.start_day, end: r.end_day, months: r.months, shares: r.shares, amount: r.amount, status: r.status, paid: !!r.paid, reason: r.reason });
+  start: r.start_day, end: r.end_day, months: r.months, shares: r.shares, amount: r.amount, status: r.status, paid: !!r.paid, reason: r.reason,
+  refundDue: r.refund_due || 0, refunded: r.refunded || 0, refundRef: r.refund_ref || '', refundNote: r.refund_note || '', cancelledBy: r.cancelled_by || '' });
+
+// The advertiser cancels from their status page. Refund per the terms ('cancel').
+async function cancelByAdvertiser(env, token) {
+  const r = await bookingByToken(env, token);
+  if (!r) return json({ error: 'Unknown booking.' }, 404);
+  const day = today();
+  if (!isOpen(r, day)) return json({ error: r.end_day <= day ? 'This booking has already ended.' : 'This booking is already closed.' }, 409);
+  const due = refundFor(r, day, 'cancel');
+  const note = !due ? '' : day < r.start_day ? 'Cancelled before the start date: full refund.' : `Cancelled on ${day}: the days left.`;
+  await env.DB.prepare(`UPDATE bookings SET status = 'cancelled', cancelled_by = 'advertiser', refund_due = ?, refund_note = ?, updated = ? WHERE id = ?`)
+    .bind(due, note, Date.now(), r.id).run();
+  return json({ ok: true, refundDue: due });
+}
 
 // ---- payments (Paystack): amounts are in kobo
 async function payInit(req, env, token) {
@@ -244,10 +276,13 @@ async function payWebhook(req, env) {
   if (diff) return new Response(null, { status: 401 });
   let ev; try { ev = JSON.parse(raw); } catch { return new Response(null, { status: 400 }); }
   if (ev?.event === 'charge.success' && ev.data?.reference) {
-    const r = await env.DB.prepare('SELECT id, amount FROM bookings WHERE id = ?').bind(String(ev.data.reference)).first();
+    const r = await env.DB.prepare('SELECT id, amount, status, paid FROM bookings WHERE id = ?').bind(String(ev.data.reference)).first();
     // the full amount, in naira, or it stays unpaid for the owner to look at
-    if (r && Number(ev.data.amount) >= r.amount * 100) {
-      await env.DB.prepare('UPDATE bookings SET paid = 1, pay_ref = ?, updated = ? WHERE id = ?').bind(String(ev.data.id || ev.data.reference).slice(0, 60), Date.now(), r.id).run();
+    if (r && !r.paid && Number(ev.data.amount) >= r.amount * 100) {
+      // paid for a booking that was already rejected or cancelled: all of it is owed back
+      const closed = r.status === 'rejected' || r.status === 'cancelled';
+      await env.DB.prepare(`UPDATE bookings SET paid = 1, pay_ref = ?, ${closed ? "refund_due = amount, refund_note = 'Paid after the booking was closed: full refund.', " : ''}updated = ? WHERE id = ?`)
+        .bind(String(ev.data.id || ev.data.reference).slice(0, 60), Date.now(), r.id).run();
     }
   }
   return new Response(null, { status: 200 });
@@ -287,6 +322,7 @@ async function adminAction(req, env, id) {
   const set = (sql, ...a) => env.DB.prepare(`UPDATE bookings SET ${sql}, updated = ? WHERE id = ?`).bind(...a, now, id).run();
   switch (body.action) {
     case 'approve': {
+      if (r.status === 'cancelled') return json({ error: 'A cancelled booking cannot be approved again. The advertiser can make a new booking.' }, 409);
       const board = (await boardRows(env)).find((x) => x.id === r.slot);
       const others = (await env.DB.prepare(`SELECT id, start_day, end_day, shares FROM bookings WHERE slot = ? AND status = 'approved' AND id != ?`).bind(r.slot, id).all()).results || [];
       const peak = peakShares(others, r.start_day, r.end_day);
@@ -296,10 +332,35 @@ async function adminAction(req, env, id) {
       }
       await set("status = 'approved', reason = ''"); break;
     }
-    case 'reject': await set("status = 'rejected', reason = ?", str(body.reason, 300)); break;
-    case 'review': await set("status = 'review'"); break;
-    case 'cancel': await set("status = 'cancelled'"); break;
-    case 'paid': await set("paid = 1, pay_ref = ?", str(body.ref, 60) || 'invoice'); break;
+    case 'reject': {
+      if (r.status === 'cancelled') return json({ error: 'This booking is already cancelled.' }, 409);
+      const due = r.refunded ? r.refund_due : refundFor(r, today(), 'rejected');
+      await set("status = 'rejected', reason = ?, refund_due = ?, refund_note = ?", str(body.reason, 300), due, due ? 'Not approved: full refund.' : ''); break;
+    }
+    case 'review':   // reopened: a refund not yet sent is no longer owed
+      if (r.refunded) await set("status = 'review', cancelled_by = ''");
+      else await set("status = 'review', cancelled_by = '', refund_due = 0, refund_note = ''");
+      break;
+    case 'cancel': {   // body.why: 'breach' (broke the policy: no refund) or anything else (not their fault: the days left)
+      const why = body.why === 'breach' ? 'breach' : 'cancel';
+      const due = Math.max(r.refunded, refundFor(r, today(), why));
+      await set("status = 'cancelled', cancelled_by = 'owner', refund_due = ?, refund_note = ?", due,
+        why === 'breach' ? 'Taken down for breaking the advertising policy: no refund.' : due ? 'Cancelled by us, not your fault: the days left.' : ''); break;
+    }
+    case 'refund': {   // set the refund owed by hand (e.g. days lost to a fault on our side)
+      const amt = Math.round(Number(body.amount));
+      if (!(amt >= 0 && amt <= r.amount)) return json({ error: `A refund is 0 to ${r.amount} naira.` }, 400);
+      if (amt < r.refunded) return json({ error: `${r.refunded} naira has already been sent back.` }, 409);
+      await set('refund_due = ?, refund_note = ?', amt, str(body.note, 200) || r.refund_note); break;
+    }
+    case 'refunded': {   // the owner has sent the money back (Paystack refund or bank transfer)
+      if (!(r.refund_due > r.refunded)) return json({ error: 'No refund is owed on this booking.' }, 409);
+      await set('refunded = refund_due, refund_ref = ?', str(body.ref, 60) || 'sent'); break;
+    }
+    case 'paid':   // money that arrives for an already-closed booking is all owed back, as with the webhook
+      if ((r.status === 'rejected' || r.status === 'cancelled') && !r.paid) await set("paid = 1, pay_ref = ?, refund_due = amount, refund_note = 'Paid after the booking was closed: full refund.'", str(body.ref, 60) || 'invoice');
+      else await set("paid = 1, pay_ref = ?", str(body.ref, 60) || 'invoice');
+      break;
     case 'unpaid': await set("paid = 0, pay_ref = ''"); break;
     case 'delete':
       await env.DB.batch([env.DB.prepare('DELETE FROM creatives WHERE booking = ?').bind(id), env.DB.prepare('DELETE FROM bookings WHERE id = ?').bind(id),
@@ -310,7 +371,8 @@ async function adminAction(req, env, id) {
   return json({ ok: true, booking: { ...(await env.DB.prepare('SELECT * FROM bookings WHERE id = ?').bind(id).first()), token: undefined } });
 }
 async function adminData(env) {
-  const bookings = (await env.DB.prepare(`SELECT id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, status, paid, pay_ref, reason, created FROM bookings ORDER BY created DESC LIMIT 500`).all()).results || [];
+  const bookings = (await env.DB.prepare(`SELECT id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, status, paid, pay_ref, reason,
+    refund_due, refunded, refund_ref, refund_note, cancelled_by, policy, created FROM bookings ORDER BY created DESC LIMIT 500`).all()).results || [];
   const live = new Set((await liveBookings(env)).map((b) => b.id));
   const since = today(Date.now() - 30 * DAY);
   const stats = (await env.DB.prepare('SELECT slot, booking, SUM(views) views, SUM(taps) taps FROM ad_stats WHERE day >= ? GROUP BY slot, booking').bind(since).all()).results || [];
@@ -318,7 +380,7 @@ async function adminData(env) {
   const tMap = new Map(totals.map((t) => [t.booking, t]));
   return {
     today: today(), boards: await boardsPublic(env), stats30: stats, payments: !!env.PAYSTACK_SECRET,
-    bookings: bookings.map((b) => ({ ...b, paid: !!b.paid, live: live.has(b.id), views: tMap.get(b.id)?.views || 0, taps: tMap.get(b.id)?.taps || 0 })),
+    bookings: bookings.map((b) => ({ ...b, paid: !!b.paid, live: live.has(b.id), refundIfCancelled: refundFor(b, today(), 'cancel'), views: tMap.get(b.id)?.views || 0, taps: tMap.get(b.id)?.taps || 0 })),
   };
 }
 
@@ -369,10 +431,11 @@ export default {
       if ((m = /^\/status\/([0-9a-f]{36})$/.exec(p)) && M === 'GET') {
         const r = await bookingByToken(env, m[1]);
         if (!r) return html(statusPage({ missing: true }), 404);
-        return html(statusPage({ booking: { ...publicBooking(r), token: r.token }, stats: await bookingStats(env, r.id),
+        return html(statusPage({ booking: { ...publicBooking(r), token: r.token, refundIfCancelled: refundFor(r, today(), 'cancel') }, stats: await bookingStats(env, r.id),
           board: (await boardRows(env)).find((x) => x.id === r.slot), gameOrigin: env.GAME_ORIGIN, payments: !!env.PAYSTACK_SECRET, today: today() }));
       }
       if (M === 'POST' && (m = /^\/api\/pay\/([0-9a-f]{36})$/.exec(p))) return payInit(req, env, m[1]);
+      if (M === 'POST' && (m = /^\/api\/cancel\/([0-9a-f]{36})$/.exec(p))) return cancelByAdvertiser(env, m[1]);
       if (M === 'POST' && p === '/api/paystack') return payWebhook(req, env);
 
       // owner
