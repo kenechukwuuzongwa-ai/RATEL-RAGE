@@ -192,20 +192,84 @@
   }
 
   let HUDS = HUD_DEFAULTS();
+  /* A stored layout onto the defaults, every value clamped — the one door for the saved layout AND a
+   * layout loaded back from a cloud slot (request 597), so neither can put a control off screen. */
+  function layoutFrom(controls) {
+    const out = HUD_DEFAULTS();
+    for (const id of Object.keys(out)) {
+      const s = controls && controls[id];
+      if (!s) continue;
+      if (Number.isFinite(s.x)) out[id].x = clamp01(s.x);
+      if (Number.isFinite(s.y)) out[id].y = clamp01(s.y);
+      if (Number.isFinite(s.scale)) out[id].scale = Math.max(0.6, Math.min(1.8, s.scale));
+      if (Number.isFinite(s.opacity)) out[id].opacity = Math.max(0, Math.min(1, s.opacity));   // request 597: down to 0
+      if (typeof s.visible === 'boolean') out[id].visible = s.visible;
+    }
+    return out;
+  }
   try {
     const saved = JSON.parse(localStorage.getItem(HUD_KEY) || 'null');
-    if (saved && saved.v === 1 && saved.controls) {
-      for (const id of Object.keys(HUDS)) {
-        const s = saved.controls[id];
-        if (!s) continue;
-        if (Number.isFinite(s.x)) HUDS[id].x = clamp01(s.x);
-        if (Number.isFinite(s.y)) HUDS[id].y = clamp01(s.y);
-        if (Number.isFinite(s.scale)) HUDS[id].scale = Math.max(0.6, Math.min(1.8, s.scale));
-        if (Number.isFinite(s.opacity)) HUDS[id].opacity = Math.max(0.25, Math.min(1, s.opacity));
-        if (typeof s.visible === 'boolean') HUDS[id].visible = s.visible;
-      }
-    }
+    if (saved && saved.v === 1 && saved.controls) HUDS = layoutFrom(saved.controls);
   } catch {}
+
+  /* ------------------------------------------------------- layout slots
+   * LAYOUTS (request 597): "store my control configs to a file in cloud and be able to load it back
+   * anytime, just like in PUBG Mobile". Three named slots, each a whole layout: every control's
+   * position, size, opacity and HIDE/SHOW. Saved to the player's account (RRAccount.saveControls —
+   * guests have one too) and mirrored on this device, so a slot still loads offline and on a build
+   * with accounts off (the APK, the editor), where the slots live on the device only. */
+  const SLOT_KEY = 'ror.hud.slots';
+  const SLOT_N = 3;
+  const blankSlots = () => ({ v: 1, slots: Array.from({ length: SLOT_N }, () => null) });
+  function slotsLocal() {
+    try {
+      const r = JSON.parse(localStorage.getItem(SLOT_KEY) || 'null');
+      if (r && r.v === 1 && Array.isArray(r.slots)) return { v: 1, slots: Array.from({ length: SLOT_N }, (_, i) => r.slots[i] || null) };
+    } catch {}
+    return blankSlots();
+  }
+  const slotsKeep = (rec) => { try { localStorage.setItem(SLOT_KEY, JSON.stringify(rec)); } catch {} };
+  const cloud = () => (window.RRAccount && window.RRAccount.enabled && window.RRAccount.saveControls) ? window.RRAccount : null;
+  // the newer of the device copy and the cloud copy, slot by slot
+  function mergeSlots(a, b) {
+    const out = blankSlots();
+    for (let i = 0; i < SLOT_N; i++) {
+      const x = a?.slots?.[i] || null, y = b?.slots?.[i] || null;
+      out.slots[i] = !x ? y : !y ? x : (Date.parse(y.at) > Date.parse(x.at) ? y : x);
+    }
+    return out;
+  }
+  async function slotsRead() {
+    const local = slotsLocal();
+    const c = cloud();
+    if (!c) return { rec: local, where: 'device' };
+    const r = await c.loadControls().catch(() => ({ error: 'failed' }));
+    if (r.error) return { rec: local, where: 'device', offline: true };
+    const rec = mergeSlots(local, r.data);
+    slotsKeep(rec);
+    return { rec, where: 'cloud' };
+  }
+  async function slotSave(i) {
+    const entry = { name: 'LAYOUT ' + (i + 1), at: new Date().toISOString(), controls: JSON.parse(JSON.stringify(HUDS)) };
+    const local = slotsLocal();
+    local.slots[i] = entry;
+    slotsKeep(local);
+    const c = cloud();
+    if (!c) return { where: 'device' };
+    const r = await c.saveControls((rec) => {
+      const next = mergeSlots(rec && rec.v === 1 ? rec : blankSlots(), blankSlots());
+      next.slots[i] = entry;
+      return next;
+    }).catch(() => ({ error: 'failed' }));
+    return r.error ? { where: 'device', offline: true } : { where: 'cloud' };
+  }
+  function slotApply(entry) {
+    if (!entry || !entry.controls) return false;
+    pushUndo();                                   // a load can be undone, like any other change
+    HUDS = layoutFrom(entry.controls);
+    hudSave();
+    return true;
+  }
   function hudSave() {
     try {
       localStorage.setItem(HUD_KEY, JSON.stringify({ v: 1, controls: HUDS }));
@@ -864,11 +928,12 @@
     panel.innerHTML =
       '<span class="lab" id="ror-hud-sel">—</span>'
       + '<span class="lab">Size</span><input id="ror-hud-size" type="range" min="0.6" max="1.8" step="0.05">'
-      + '<span class="lab">Opacity</span><input id="ror-hud-opac" type="range" min="0.25" max="1" step="0.05">'
+      + '<span class="lab">Opacity</span><input id="ror-hud-opac" type="range" min="0" max="1" step="0.05"><span class="lab" id="ror-hud-opac-v">100%</span>'
       + '<button id="ror-hud-vis">HIDE</button>'
       + '<button id="ror-hud-undo">UNDO</button>'
       + '<button id="ror-hud-reset">RESET</button>'
       + '<button id="ror-hud-copy">COPY LAYOUT</button>'
+      + '<button id="ror-hud-slots">LAYOUTS</button>'
       + '<button id="ror-hud-save">SAVE</button>'
       + '<button id="ror-hud-cancel">CANCEL</button>'
       + '<button id="ror-hud-done">DONE</button>';
@@ -899,7 +964,7 @@
       if (!editing_sel) return;
       slideStart();
       HUDS[editing_sel].opacity = Number(e.target.value);
-      notch(HUDS[editing_sel].opacity, 0.25, 1);
+      notch(HUDS[editing_sel].opacity, 0, 1);
       liveEdit();
     });
     panel.querySelector('#ror-hud-vis').addEventListener('click', () => {
@@ -949,6 +1014,7 @@
       btn.textContent = copied ? 'COPIED' : 'IN CONSOLE';
       setTimeout(() => { btn.textContent = 'COPY LAYOUT'; }, 1400);
     });
+    panel.querySelector('#ror-hud-slots').addEventListener('click', () => { sfx('forward'); openSlots(); });
     panel.querySelector('#ror-hud-save').addEventListener('click', () => {
       hudSave();
       sfx('save');
@@ -959,6 +1025,67 @@
       hudSave();
       closeEditor();
     });
+  }
+  /* THE LAYOUTS SHEET (request 597): three slots over the editor — SAVE puts the layout on screen
+   * into a slot, LOAD puts a slot's layout back on screen. Where it went is said plainly: your
+   * account (cloud) or, offline / with accounts off, this device. */
+  let slotsEl = null, slotsBusy = false;
+  const fmtAt = (iso) => { try { const d = new Date(iso); return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+  function buildSlots() {
+    slotsEl = document.createElement('div');
+    slotsEl.id = 'ror-hud-slots-sheet';
+    slotsEl.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;'
+      + 'flex-direction:column;gap:10px;padding:16px 18px;border-radius:16px;min-width:min(420px,calc(100vw - 32px));'
+      + 'background:rgba(18,24,38,.94);border:1px solid rgba(255,255,255,.22);pointer-events:auto;'
+      + 'box-shadow:0 10px 40px rgba(0,0,0,.55);font:400 12px/1.5 "RR Pixel",monospace;color:#eaf0ff;z-index:5;';
+    wrap.appendChild(slotsEl);
+    slotsEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+  }
+  async function openSlots() {
+    if (!slotsEl) buildSlots();
+    slotsEl.style.display = 'flex';
+    renderSlots(null, 'LOADING…');
+    const got = await slotsRead();
+    renderSlots(got, got.where === 'cloud' ? 'SAVED TO YOUR ACCOUNT' : got.offline ? 'OFFLINE: ON THIS DEVICE' : 'ON THIS DEVICE');
+  }
+  function closeSlots() { if (slotsEl) slotsEl.style.display = 'none'; }
+  function renderSlots(got, status) {
+    const rec = got ? got.rec : slotsLocal();
+    slotsEl.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">'
+      + '<span style="font-family:&quot;RR Pixel Bold&quot;,monospace;letter-spacing:.08em;color:#ffe45e">LAYOUTS</span>'
+      + '<span class="lab" id="ror-hud-slots-status" style="color:#9fb2d8">' + status + '</span></div>'
+      + rec.slots.map((e, i) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.06)">'
+        + '<span style="flex:1">LAYOUT ' + (i + 1) + '<br><span style="color:#9fb2d8">' + (e ? fmtAt(e.at) : 'EMPTY') + '</span></span>'
+        + '<button data-save="' + i + '">SAVE</button>'
+        + '<button data-load="' + i + '"' + (e ? '' : ' disabled style="opacity:.4"') + '>LOAD</button></div>').join('')
+      + '<div style="display:flex;justify-content:flex-end"><button data-close="1">CLOSE</button></div>';
+    slotsEl.querySelectorAll('button').forEach((b) => {
+      b.style.cssText += ';padding:7px 12px;border-radius:9px;cursor:pointer;color:#eaf0ff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);font:inherit;letter-spacing:.06em;';
+    });
+    const st = (t) => { const el = slotsEl.querySelector('#ror-hud-slots-status'); if (el) el.textContent = t; };
+    slotsEl.onclick = async (ev) => {
+      const b = ev.target.closest('button'); if (!b || slotsBusy) return;
+      if (b.dataset.close) { sfx('back'); closeSlots(); return; }
+      if (b.dataset.save != null) {
+        const i = +b.dataset.save;
+        if (rec.slots[i] && !window.confirm('Replace LAYOUT ' + (i + 1) + ' with the layout on screen?')) return;
+        slotsBusy = true; st('SAVING…');
+        const r = await slotSave(i);
+        slotsBusy = false;
+        sfx('save');
+        renderSlots({ rec: slotsLocal() }, r.where === 'cloud' ? 'LAYOUT ' + (i + 1) + ' SAVED TO YOUR ACCOUNT' : r.offline ? 'OFFLINE: SAVED ON THIS DEVICE' : 'LAYOUT ' + (i + 1) + ' SAVED ON THIS DEVICE');
+        return;
+      }
+      if (b.dataset.load != null) {
+        const i = +b.dataset.load;
+        if (!slotApply(rec.slots[i])) return;
+        sfx('forward');
+        editing_sel = null;
+        refreshSel(); placeAll(); placeStickAtHome(); refreshUndo();
+        closeSlots();
+        flash('LAYOUT ' + (i + 1) + ' LOADED');
+      }
+    };
   }
   function flash(msg) {
     const el = panel.querySelector('#ror-hud-sel');
@@ -1000,6 +1127,7 @@
       + (s.visible ? '' : ' · hidden');
     panel.querySelector('#ror-hud-size').value = s.scale;
     panel.querySelector('#ror-hud-opac').value = s.opacity;
+    panel.querySelector('#ror-hud-opac-v').textContent = Math.round(s.opacity * 100) + '%';
   }
 
   function openEditor() {
@@ -1020,11 +1148,13 @@
     editing_sel = null; drag = null;
     undoStack = []; openLayout = null;
     if (panel) panel.style.display = 'none';
+    closeSlots();
     releaseAll();
     placeAll(); placeStickAtHome();
   }
   window.__rorTouch = {
     openEditor, closeEditor, layoutCode,
+    openSlots, slotSave, slotsRead, get slotsLocal() { return slotsLocal(); },
     get editing() { return editing; },
     get cutFade() { return { on: cutOn, opacity: wrap ? Number(getComputedStyle(wrap).opacity) : null, display: wrap?.style.display ?? null, blocked: !!wrap?.classList.contains('ror-cut') }; },
     get layout() { return HUDS; },

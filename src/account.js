@@ -823,8 +823,50 @@
   }
   if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
 
+  // ------------------------------------------------------ control layouts ----
+  /* CLOUD CONTROL LAYOUTS (request 597): "store my control configs to a file in cloud and load it
+   * back anytime, like PUBG Mobile". One more record in public.cloud_saves (slot 'controls', the
+   * same owner-only table and save/load RPCs as the progress save), holding the saved layout slots.
+   * Guests have an account too (anonymous sign-in), so this works before registering; registering
+   * keeps the same user id, so the layouts follow the player onto every device they sign in on. */
+  var CTL_SLOT = 'controls';
+  function cloudReady() {
+    return Promise.resolve(sb ? null : boot()).then(function () {
+      if (S.uid && session) return true;
+      // a guest sign-in still in flight: give it a moment
+      return new Promise(function (res) { setTimeout(function () { res(!!(sb && S.uid && session)); }, 1500); });
+    });
+  }
+  function loadControls() {
+    return cloudReady().then(function (ok) {
+      if (!ok) return { error: 'offline' };
+      return rpc('load_progress', { p_slot: CTL_SLOT }).then(function (r) {
+        if (r.error) return { error: r.error.message || 'failed' };
+        var d = r.data || {};
+        return { ok: true, data: d.status === 'ok' ? d.data : null, version: d.version || 0 };
+      });
+    });
+  }
+  // `change(record)` returns the new record; re-run on a newer copy if another device saved first.
+  function saveControls(change) {
+    return cloudReady().then(async function (ok) {
+      if (!ok) return { error: 'offline' };
+      for (var i = 0; i < 3; i++) {
+        var cur = await loadControls();
+        if (cur.error) return cur;
+        var next = change(cur.data || { v: 1, slots: [] });
+        var w = await rpc('save_progress', { p_slot: CTL_SLOT, p_data: next, p_expected_version: cur.version });
+        if (w.error) return { error: w.error.message || 'failed' };
+        if (w.data && w.data.status === 'ok') return { ok: true, data: next };
+      }
+      return { error: 'conflict' };
+    });
+  }
+
   // ------------------------------------------------------------------ API ----
   window.RRAccount = {
+    loadControls: loadControls,
+    saveControls: saveControls,
     enabled: true,
     get status() { return S.status; },
     get state() { return JSON.parse(JSON.stringify(S)); },

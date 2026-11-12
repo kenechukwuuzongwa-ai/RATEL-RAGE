@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v131';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v132';
 import { createAftermath } from './aftermath.js?v=ratelrage-board577-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -6479,7 +6479,23 @@ const LEVEL_MUSIC_SRCS = ['../music/bg1.mp3', '../music/bg2.mp3'];
  * playlist, and starts again from the top when it ends. No loop splices, bar cuts, ending
  * stitch or ducking under the voice (the request-563 Web Audio mix is gone). */
 const L2_MUSIC_SRCS = ['../music/level2.mp3'];
-const musicSrcs = () => (activeLevel === 2 ? L2_MUSIC_SRCS : LEVEL_MUSIC_SRCS);
+/* LEVEL 02's SCORE STARTS ON THE PRESS (request 597): "level 2 soundtrack should start immediately
+ * the start mission button is pressed". The front end calls onMissionStart on START MISSION (and when
+ * the read ends by itself), before the bars close and the entry runs — activeLevel is still the old
+ * one there, so `musicLevel` names the level the track is for, and `keepEarlyMusic` lets the
+ * startLevelEntry -> endMission reset that follows leave the already-playing track alone. */
+let musicLevel = null, keepEarlyMusic = false;
+const musicSrcs = () => ((musicLevel ?? activeLevel) === 2 ? L2_MUSIC_SRCS : LEVEL_MUSIC_SRCS);
+function startMissionMusic(level, settings) {
+  if (level !== 2) return;                 // Level 01's BG1 still begins under its narrated walk-in
+  if (settings) applyGameplaySettings(null, settings);
+  if (musicStarted && musicLevel === 2) return;
+  if (musicStarted) resetMusicPlaylist();
+  musicLevel = 2;
+  if (audioCtx && audioCtx.state !== 'running' && audioCtx.state !== 'closed') audioCtx.resume().catch(() => {});
+  startMusic();
+  keepEarlyMusic = true;
+}
 const MUSIC_VOL = 0.5, MUSIC_FADE = 6;
 
 function setMusicTrack(index, playNow = false) {
@@ -6500,6 +6516,7 @@ const musicLife = {};                  // keepMediaAlive's state for the level m
 
 function resetMusicPlaylist() {
   if (!musicEl) return;
+  musicLevel = null;
   musicEl.pause();
   musicVol = 0;
   musicStarted = false;
@@ -8248,7 +8265,7 @@ function drawLevelEntry() {
     const h = Math.min(bars, CUT.barH);
     drawSubtitleScroll(ctx, entrySubs(), entrySubT(),
       { x: 0, y: VIEW_H - bars + (bars - h) / 2, w: VIEW_W, h },
-      { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad });
+      { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad, ghost: false });
   }
   /* 3 s into the line: the top-right hint (request 349) and, LOWER-CENTRE, the
    * tap cue that shows the motion it is asking for (request 353). The cue also
@@ -18882,7 +18899,10 @@ const REACH_OLODO_SUBS = [
 ];
 // The bar's type: two lines fit the 92 px bar — the one being said, the one before.
 // Scroll/lead/fade timing is the shared SUB_SCROLL (frontend.js).
-const SUBS = { font: 22, lineH: 34, maskPad: 4 };   // lineH for the ~26 px really drawn (request 563)
+// request 597: twice the size (was 22 / 34). The 92-px bar now holds the line being said; the one
+// before it dissolves as it scrolls up (drawSubtitleScroll caps its fade to the bar's slack), and a
+// line too long for the screen is set a little smaller on its own.
+const SUBS = { font: 44, lineH: 66, maskPad: 4 };
 /* Seconds into the line. The AUDIO clock while the voice is really playing, so
  * a dropped or stalled frame cannot pull the text off the voice; the scene's own
  * accumulated dt otherwise (audio context suspended, or a headless test). */
@@ -18898,7 +18918,7 @@ function drawBossSubtitles() {
   // the bottom letterbox bar, masked just under its top line (drawSubtitleScroll)
   drawSubtitleScroll(ctx, REACH_OLODO_SUBS, reachOlodoSubT(),
     { x: 0, y: VIEW_H - depth, w: VIEW_W, h: depth },
-    { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad });
+    { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad, ghost: false });
 }
 let fightBanner = 0;             // "FIGHT!" lingers this long after control returns
 
@@ -19316,7 +19336,10 @@ function endMission() {
   paused = false;
   stopDarkiVoice();
   queuedVoice = null;
-  resetMusicPlaylist();                // â€¦so the next startMusic() is not a no-op
+  // request 597: a Level 02 score started on START MISSION is THIS mission's — keep it playing
+  if (keepEarlyMusic && musicStarted) keepEarlyMusic = false;
+  else { keepEarlyMusic = false; resetMusicPlaylist(); }
+  // â€¦so the next startMusic() is not a no-op
 }
 // The dropped ledger, a world-space prop: falls, lies on the tarmac, then lifts
 // into Darki's hand and fades. `gone` retires it from the draw list.
@@ -21677,7 +21700,7 @@ function drawL2Scene() {
   if (!subs || depth < 6) return;
   drawSubtitleScroll(ctx, subs, l2VoiceT(),
     { x: 0, y: VIEW_H - depth, w: VIEW_W, h: depth },
-    { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad });
+    { font: uiFont(600, SUBS.font), lineH: SUBS.lineH, maskPad: SUBS.maskPad, ghost: false });
 }
 
 function update(dt) {
@@ -23630,6 +23653,7 @@ function drawPlayer() {
   if (rageLight) {
     const fi = frames[player.frame] ? player.frame : 0;
     drawBeadGlow(animationSprite, fi, frame.width, frame.height, -anchor, imgY);
+    drawBeadGlow(animationSprite, fi, frame.width, frame.height, -anchor, imgY, 'blades');   // the machete (request 597)
     drawNeckGlow(animationSprite, fi, frame.width, frame.height, -anchor, imgY);
   } else if (!player.rageActive) neckSparks.length = 0;   // (not on the reflection pass: that would reset them every frame)
   ctx.restore();
@@ -23675,16 +23699,33 @@ const BEAD_GLOW = {
   trailLife: 0.42, trailMax: 48, trailCore: 0.7, trailHalo: 0.75, trailMinMove: 1.5,
 };
 const beadTrail = [];
-function beadFrameFor(spr, fi) {
+/* THE MACHETE BURNS TOO (request 597): "while raging with the machete, the machete should show some
+ * glows and trails like the beads". The blade is painted into the machete sheets, so it is found
+ * offline like the beads (deploy/gen-blades.js -> sprites/blades/<sheet>.png) and drawn through the
+ * very same path: kind 'blades' picks that mask, its own trail and BLADE_GLOW's gentler numbers (a
+ * blade is a far bigger patch of light than a few beads). Light only — added over him, never a fade. */
+const BLADE_GLOW = {
+  // a glow on the steel, not a lightsaber: the core is drawn twice (as the beads'), so 0.32 lands ~0.6
+  saturate: 1.25, haloRes: 1 / 7, bloomRes: 1 / 16, core: 0.22, hot: 0, halo: 0.45, haloPasses: 4, bloom: 0.4, bloomSpread: 1.12,
+  spread: 1.05, pulseHz: 2.2,
+  trailLife: 0.42, trailMax: 48, trailCore: 0.5, trailHalo: 0.6, trailMinMove: 1.5,
+};
+const bladeTrail = [];
+const GLOW_KINDS = {
+  beads: { dir: 'sprites/beads/', test: /^darki-/, cfg: BEAD_GLOW, trail: beadTrail },
+  blades: { dir: 'sprites/blades/', test: /^darki-(machete-|pull-machete)/, cfg: BLADE_GLOW, trail: bladeTrail },
+};
+function beadFrameFor(spr, fi, kind = 'beads') {
   if (!spr?.crop || !spr.src) return null;
   const base = spr.src.split('/').pop().replace(/-mobile(?=\.png$)/, '');
-  if (!/^darki-/.test(base)) return null;
-  let B = spr.beads;
+  const K = GLOW_KINDS[kind];
+  if (!K.test.test(base)) return null;
+  let B = spr[kind];
   if (!B) {
-    B = spr.beads = { frames: [], img: new Image(), ok: false };
+    B = spr[kind] = { frames: [], img: new Image(), ok: false };
     B.img.onload = () => { B.ok = true; };
     B.img.onerror = () => { B.failed = true; };
-    B.img.src = 'sprites/beads/' + base;
+    B.img.src = K.dir + base;
   }
   if (!B.ok) return null;
   if (B.frames[fi] !== undefined) return B.frames[fi];
@@ -23726,23 +23767,23 @@ function beadFrameFor(spr, fi) {
   B.frames[fi] = m;
   return m;
 }
-let beadGlowDrawn = 0;
+let beadGlowDrawn = 0, bladeGlowDrawn = 0;
 /* Fetch the bead mask of every sheet he can be drawn from, the moment rage ignites, so the first
  * swing of each move already burns (the masks load lazily otherwise and missed a few frames). */
 function preloadBeadMasks() {
   const anims = new Set(['idle', 'combatidle', 'walk', 'combatWalk', 'jump', 'rush']);
   for (const k of Object.keys(ATTACKS)) anims.add(ATTACKS[k].anim ?? k);
-  for (const a of anims) { try { beadFrameFor(spriteFor(a), 0); neckFrameFor(spriteFor(a), 0); } catch {} }
+  for (const a of anims) { try { beadFrameFor(spriteFor(a), 0); beadFrameFor(spriteFor(a), 0, 'blades'); neckFrameFor(spriteFor(a), 0); } catch {} }
 }
-let beadTrailDrawn = 0;
-function drawBeadGlow(spr, fi, w, h, x, y) {
-  const m = beadFrameFor(spr, fi);
+let beadTrailDrawn = 0, bladeTrailDrawn = 0;
+function drawBeadGlow(spr, fi, w, h, x, y, kind = 'beads') {
+  const m = beadFrameFor(spr, fi, kind);
   const now = performance.now() / 1000;
   const zoomPx = tune.zoom * baseScale();
+  const B = GLOW_KINDS[kind].cfg, beadTrail = GLOW_KINDS[kind].trail;   // (the blade has its own trail)
   // ---- the trail: earlier samples, oldest first, in world space ----
-  while (beadTrail.length && now - beadTrail[0].t > BEAD_GLOW.trailLife) beadTrail.shift();
+  while (beadTrail.length && now - beadTrail[0].t > B.trailLife) beadTrail.shift();
   const here = ctx.getTransform();
-  const B = BEAD_GLOW;
   if (beadTrail.length) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -23759,7 +23800,7 @@ function drawBeadGlow(spr, fi, w, h, x, y) {
       ctx.drawImage(e.m.halo, e.x, e.y, e.w, e.h);
       ctx.globalAlpha = B.trailCore * k;
       ctx.drawImage(e.m.core, e.x, e.y, e.w, e.h);
-      beadTrailDrawn++;
+      if (kind === 'blades') bladeTrailDrawn++; else beadTrailDrawn++;
     }
     ctx.restore();
   }
@@ -23791,7 +23832,7 @@ function drawBeadGlow(spr, fi, w, h, x, y) {
   ctx.globalAlpha = B.hot * (0.75 + 0.25 * pulse);
   ctx.drawImage(m.hot, x, y, w, h);
   ctx.restore();
-  beadGlowDrawn++;
+  if (kind === 'blades') bladeGlowDrawn++; else beadGlowDrawn++;
 }
 
 /* ============================================== THE PENDANT AND THE NECKLACE (request 571)
@@ -26746,6 +26787,7 @@ window.__ror = {
   get impactFrames() { return IMPACT.frames; },
   actorOrder() { return actorList().map((a) => (a.splash ? "splash:" + a.splash : a.blood ? "blood:" + a.blood : a.solid ? "solid" : a.draw === drawPlayer ? "player" : "other")); },
   get beadGlow() { return { drawn: beadGlowDrawn, trail: beadTrailDrawn, samples: beadTrail.length }; },
+  get bladeGlow() { return { drawn: bladeGlowDrawn, trail: bladeTrailDrawn, samples: bladeTrail.length }; },
   get keyScreens() { return { lit: l2KeyScreens.map((k, i) => +l2KeyLevel(i).toFixed(2)), on: l2KeyScreens.map((k) => k.on), events: l2KeyLitEvents,
     world: L2_KEYSCREENS.map((s) => ({ x: l2X(s.x), y: l2Y(s.y) })) }; },
   get impactScale() { return { scale: IMPACT.scale, big: IMPACT.bigScale, lastAlpha: IMPACT.lastAlpha, lastDrawnAlpha: impactLastAlphaSeen }; },
@@ -27057,7 +27099,8 @@ window.__ror = {
   get musicVol() { return musicVol; },
   get rageSparks() { return { on: rageSparks.on, playing: !!rageSparks.node, ready: !!rageSparks.buf, starts: rageSparks.starts }; },
   tickRageSparks() { updateRageSparks(); },
-  kickMusic() { startMusic(); },                 // test: begin the loop
+  kickMusic() { startMusic(); },
+  get musicLevel() { return musicLevel; },                 // test: begin the loop
   resetMusicPlaylist() { resetMusicPlaylist(); },   // test: as the main menu does (request 567)
   tickMusic(dt) { updateMusic(dt); },            // test: advance the fade
   get rage() { return player.rage; },
@@ -28395,6 +28438,7 @@ function loop(ts) {
   if (frontEnd && !frontEnd.active) keepAwake('video', false);   // the front end's reason ends with it
   updateRageSparks();                  // request 570: the crackle follows rage (and stops in menus)
   if (frontEnd?.active) {
+    updateMusic(dt);                   // request 597: Level 02's score fades in from the START MISSION press
     frontEnd.pollGamepad();
     frontEnd.update(dt);
     frontEnd.draw();
@@ -28896,6 +28940,7 @@ function fontState() {
       isWorldReady: () => worldReady && levelArtReady(),
       worldProgress: () => Math.min(1, worldLoaded / WORLD_STEPS),
       worldError: () => (worldError ? worldError.message : null),
+      onMissionStart: ({ level, settings }) => startMissionMusic(level, settings),   // request 597
       onGameplayStart: ({ difficulty, settings, transitionFrame, gameplayStartDuration, playIntroVoice, stopIntroVoice: stopVo, introVoiceTime: voT, level }) => {
         introVoiceTime = voT ?? null;
         applyLevel(level ?? frontEnd?.level ?? 1);   // Level 02's world, or Level 01's street (request 399)

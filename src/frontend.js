@@ -418,6 +418,9 @@ const INTRO_SUBS_L2 = [
  * Returns false when there is nothing to draw (before the first line, or after
  * the last has faded), so callers can skip their own furniture with it. */
 export const SUB_SCROLL = { lead: 0.22, scroll: 0.30, linger: 0.7, fade: 0.4 };
+/* The video cutscenes' subtitle type, before the SUBTITLE SIZE option scales it: doubled from 20
+ * (request 597: "double the size of the subtitle"). */
+const INTRO_SUB_PX = 40;
 /* KEEP A MUSIC BED ALIVE (request 347). The menu ambience and the level music
  * are <audio> elements that were only ever told to play at the moment a screen
  * or a fight began. On Android the WebView pauses them behind our back — the
@@ -704,8 +707,19 @@ export function drawSubtitleScroll(ctx, lines, t, band, o) {
    * BEFORE its glyph tops can touch the clip, and a rising line fades in the same way at the bottom,
    * so the band only ever shows whole words. */
   const fh = +(/([\d.]+)px/.exec(o.font)?.[1] ?? 20);
-  const top = band.y + pad, bot = band.y + band.h, ramp = Math.max(4, o.lineH * 0.45);
+  /* DOUBLE-SIZE TYPE (request 597). At twice the size a line nearly fills the 92-px bars, so the fade
+   * ramp is capped by the slack the band really has round one line: the line being said always sits
+   * at full strength, and the one before it still dissolves before its glyphs can touch the clip. */
+  const slack = (band.h - pad - fh) / 2;
+  const top = band.y + pad, bot = band.y + band.h, ramp = Math.max(2, Math.min(o.lineH * 0.45, slack > 2 ? slack : 2));
   const matte = (y) => Math.max(0, Math.min(1, (y - fh * 0.5 - top) / ramp, (bot - (y + fh * 0.5)) / ramp));
+  // a line wider than the band is set smaller, on its own, rather than running off the screen
+  const fitW = band.w - 24;
+  const fontAt = (k) => (k >= 1 ? o.font : o.font.replace(/([\d.]+)px/, (_, n) => (+n * k).toFixed(1) + 'px'));
+  /* NO BOX BEHIND THE WORDS (request 597: the faint dark placeholders are gone). Over a moving video the
+   * words carry their own dark edge instead, so they stay readable on any frame. */
+  const outline = o.outline ? Math.max(2, fh * 0.16) : 0;
+  if (outline) { ctx.lineJoin = 'round'; ctx.miterLimit = 2; }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (t < line.at - S.lead) continue;                // never shown before it starts to rise
@@ -713,17 +727,36 @@ export function drawSubtitleScroll(ctx, lines, t, band, o) {
     if (y < band.y - o.lineH || y > band.y + band.h + o.lineH) continue;
     const m = matte(y);
     if (m <= 0) continue;
-    const widths = line.words.map(([w]) => ctx.measureText(w).width);
-    let x = band.x + band.w / 2 - (widths.reduce((a, b) => a + b, 0) + space * (widths.length - 1)) / 2;
+    ctx.font = o.font;
+    let widths = line.words.map(([w]) => ctx.measureText(w).width);
+    let sp = space, total = widths.reduce((a, b) => a + b, 0) + sp * (widths.length - 1);
+    if (total > fitW) {
+      const k = fitW / total;
+      ctx.font = fontAt(k);
+      widths = line.words.map(([w]) => ctx.measureText(w).width);
+      sp = ctx.measureText(' ').width;
+      total = widths.reduce((a, b) => a + b, 0) + sp * (widths.length - 1);
+    }
+    let x = band.x + band.w / 2 - total / 2;
     const said = i < now;                              // scrolled past: dimmed
+    /* NO GHOST TEXT (request 597, "remove the faint dark subtitle placeholders"): with `ghost: false` a
+     * word appears only once it is spoken, and a line already said is not left behind in grey. */
+    if (o.ghost === false && said) continue;
     line.words.forEach(([w, at], k) => {
       const lit = said || t >= at;
+      if (o.ghost === false && !lit) { x += widths[k] + sp; return; }
       ctx.globalAlpha = alpha * m * (said ? 0.5 : lit ? 1 : 0.32);
+      if (outline) {
+        ctx.lineWidth = outline;
+        ctx.strokeStyle = 'rgba(0,0,0,0.88)';
+        ctx.strokeText(w, x, y);
+      }
       ctx.fillStyle = lit && !said ? '#ffffff' : '#cfd8ea';
       ctx.fillText(w, x, y);
-      x += widths[k] + space;
+      x += widths[k] + sp;
     });
   }
+  ctx.font = o.font;
   ctx.restore();
   return true;
 }
@@ -1403,6 +1436,9 @@ const ICONS = {
 
 export function createFrontEnd({
   canvas, ctx, onGameplayStart, onMainMenu,
+  /* Request 597: fired the moment a mission is committed — the START MISSION press, or Level 02's
+   * read ending by itself — so game.js can start Level 02's score on the press, not after the bars. */
+  onMissionStart,
   /* Fired when CONTROLS/OPTIONS were opened FROM the pause menu and the player
    * has backed out of them. Distinct from onGameplayStart: the fight is still
    * frozen and still paused, so this must not restart music or clear inputs —
@@ -2771,6 +2807,7 @@ export function createFrontEnd({
      * cut's latch makes the second a no-op. */
     if (isL2() && phase === 'levelTitle' && !pendingGameplay) {
       if (barCut.active) return;
+      onMissionStart?.({ level: currentLevel, settings: { ...settings } });   // the read ended by itself (request 597)
       stopBriefing();
       briefDeferred = false;
       barCut.start(() => {
@@ -2939,6 +2976,7 @@ export function createFrontEnd({
     const leaving = phase === 'levelTitle' && selection === BRIEF_BACK;
     // START MISSION is the "match start" moment (request 540)
     const starting = phase === 'levelTitle' && !leaving;
+    if (starting) onMissionStart?.({ level: currentLevel, settings: { ...settings } });   // request 597: on the press itself
     runGated(confirmNow, leaving ? navBack : starting ? navStart : navForward);
   }
 
@@ -6090,7 +6128,7 @@ export function createFrontEnd({
      * cannot drift into each other. */
     if (isTouchUI()) {
       const bandH = settings.subtitles
-        ? Math.round(readablePx(Math.round(20 * settings.subtitleSize) * PIXEL_FIT.body) * 1.4) * 2 + 10 : 0;
+        ? Math.round(readablePx(Math.round(INTRO_SUB_PX * settings.subtitleSize) * PIXEL_FIT.body) * 1.4) * 2 + 10 : 0;
       drawTapCue(ctx, W, H, introFallbackT, { inset: 32 + bandH });
     }
     ctx.textBaseline = 'alphabetic';
@@ -6101,22 +6139,18 @@ export function createFrontEnd({
        * the lower row, the one before it scrolling up and out under the band's
        * top edge, words lighting as they are spoken. */
       const time = introTime();
-      const fs = Math.round(20 * settings.subtitleSize);
+      const fs = Math.round(INTRO_SUB_PX * settings.subtitleSize);   // request 597: twice the old 20
       const lineH = Math.round(readablePx(fs * PIXEL_FIT.body) * 1.4);   // off the size really drawn (request 563)
-      const bh = lineH * 2 + 10, bw = Math.min(W - 80, 980);
+      const bh = lineH * 2 + 10, bw = W - 80;
       const band = { x: (W - bw) / 2, y: H - 20 - bh, w: bw, h: bh };
       const subs = introSubs();
       const first = subs[0], last = subs[subs.length - 1];
       if (time >= first.at - SUB_SCROLL.lead && time < last.end + SUB_SCROLL.linger + SUB_SCROLL.fade) {
-        ctx.fillStyle = settings.highContrast ? '#000' : 'rgba(3,5,8,0.62)';
-        roundRectPath(ctx, band.x, band.y, band.w, band.h, 5);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(233,182,84,0.22)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        /* No panel behind them any more (request 597: "remove the faint dark subtitle placeholders"):
+         * the words sit straight on the video, each with its own dark edge (outline). */
         // the current line sits in the band's lower row; the row above it is the line before
         drawSubtitleScroll(ctx, subs, time, band,
-          { font: pixelFont(600, fs), lineH, cy: band.y + band.h - 5 - lineH / 2 });
+          { font: pixelFont(600, fs), lineH, cy: band.y + band.h - 5 - lineH / 2, outline: true, ghost: false });
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
@@ -6175,7 +6209,9 @@ export function createFrontEnd({
   const briefY = {};
   /* The dossier's scrolling window (request 563): the type it is set in, and where it is scrolled to. */
   // request 577: larger (was 15 / 27)
-  const BRIEF_TYPE = { size: 18, px: readablePx(18 * PIXEL_FIT.body), lineH: 31, matte: 24 };
+  // request 597: doubled (was 18 / 31 / 24) — the column scrolls with the narrator, so the larger read
+  // simply takes more lines of the same window
+  const BRIEF_TYPE = { size: 36, px: readablePx(36 * PIXEL_FIT.body), lineH: 62, matte: 48 };
   const briefScroll = { y: 0, headY: 0, contentH: 0, at: 0 };
 
   /* GO BACK first, START MISSION second — and the ORDER OF THIS LIST IS THE
