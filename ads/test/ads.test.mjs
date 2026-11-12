@@ -47,7 +47,7 @@ function jpeg(w, h) {
 const b3 = BOARDS.find((b) => b.id === 'board-3');
 const size3 = uploadSize(b3);
 const form = (o = {}) => ({ slot: 'board-3', business: 'Mama Put Kitchen Ltd', brand: 'Mama Put', name: 'Ada Obi', email: 'ada@example.com',
-  phone: '0800', link: 'https://mamaput.example.com', start: today(), months: 2, art: png(size3.w, size3.h), ...o });
+  phone: '0800', link: 'https://mamaput.example.com', start: today(), months: 2, art: png(size3.w, size3.h), agree: true, ...o });
 
 // ---------- helpers
 check('addMonths keeps the day, clamps month ends', addMonths('2026-01-31', 1) === '2026-02-28' && addMonths('2026-10-23', 2) === '2026-12-23' && addMonths('2026-11-15', 3) === '2027-02-15');
@@ -63,7 +63,12 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   const page = await call(env, '/b/board-3');
   const text = await page.text();
   check('board page renders with the upload size', page.status === 200 && text.includes(`"upload":{"w":${size3.w},"h":${size3.h}}`));
-  check('landing page renders', (await call(env, '/')).status === 200);
+  const land = await call(env, '/'); const landText = await land.text();
+  check('landing page renders, links the policy, no 18+ wording', land.status === 200 && landText.includes('href="/policy"') && !landText.includes('18+'));
+  const pol = await call(env, '/policy'); const polText = await pol.text();
+  check('policy page renders the bans and the all-ages rule', pol.status === 200 && /Betting and gambling/.test(polText) && /Alcohol/.test(polText) && /all ages/.test(polText));
+  check('board page asks for policy agreement', text.includes('id="agree"') && text.includes('href="/policy"'));
+  check('admin page links the policy', (await (await call(env, '/admin', { headers: admin })).text()).includes('href="/policy"'));
   check('an unknown board is a 404 page', (await call(env, '/b/board-9')).status === 404);
 }
 
@@ -72,6 +77,7 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   const env = mkEnv();
   const post = (o) => call(env, '/api/bookings', { method: 'POST', body: form(o), headers: { 'Content-Type': 'application/json' } });
   check('bad email refused', (await post({ email: 'nope' })).status === 400);
+  check('a booking without policy agreement refused', (await post({ agree: undefined })).status === 400 && (await post({ agree: 'yes' })).status === 400);
   check('wrong-shaped artwork refused', (await post({ art: png(1000, 1000) })).status === 400);
   check('too-small artwork refused', (await post({ art: png(300, Math.round(300 * size3.h / size3.w)) })).status === 400);
   check('a file that is not an image refused', (await post({ art: 'data:image/png;base64,' + Buffer.from('hello world, not a png').toString('base64') })).status === 400);

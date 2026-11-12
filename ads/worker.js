@@ -4,6 +4,7 @@
  *   GET  /                    every board, its size, price and when it is free
  *   GET  /b/:board            one board: details, template, artwork upload + in-game preview, booking form
  *   GET  /status/:token       the advertiser's private page: review/payment state, dates, views and taps
+ *   GET  /policy              the advertising policy (pages.js POLICY); bookings must send agree:true
  *   POST /api/bookings        a booking with its artwork (JSON, artwork as a data URL)
  *   POST /api/pay/:token      Paystack checkout for a booking (only when PAYSTACK_SECRET is set)
  *   POST /api/paystack        Paystack webhook (signature-checked) -> booking paid
@@ -25,7 +26,7 @@
  * ones per pass, weighted by shares, so each gets about its share of the views.
  * The board's price is for the WHOLE board; a share costs its fraction. */
 import { BOARDS, boardById, uploadSize, ART_SCALE, SAFE_MARGIN } from './boards.js';
-import { landingPage, boardPage, statusPage, adminPage } from './pages.js';
+import { landingPage, boardPage, statusPage, adminPage, policyPage } from './pages.js';
 
 const DAY = 86400000;
 const MAX_ART_B64 = 1_600_000;       // ~1.2 MB of image; D1 rows top out at 2 MB
@@ -155,6 +156,7 @@ async function createBooking(req, env) {
   if (!b) return json({ error: 'Unknown board.' }, 400);
   const board = (await boardRows(env)).find((x) => x.id === b.id);
   if (!board.bookable) return json({ error: 'This board is not open for booking.' }, 409);
+  if (body.agree !== true) return json({ error: 'Please confirm your advert follows the advertising policy (/policy).' }, 400);
   const f = {
     business: str(body.business, 80), brand: str(body.brand, 30), name: str(body.name, 80),
     email: str(body.email, 120), phone: str(body.phone, 30), link: str(body.link, 300), note: str(body.note, 600),
@@ -355,6 +357,7 @@ export default {
 
       // advertisers
       if (M === 'GET' && p === '/') return html(landingPage({ boards: await boardsPublic(env), gameOrigin: env.GAME_ORIGIN }));
+      if (M === 'GET' && p === '/policy') return html(policyPage());
       if (M === 'GET' && p === '/api/boards') return json({ today: today(), boards: await boardsPublic(env), payments: !!env.PAYSTACK_SECRET });
       if (M === 'GET' && (m = /^\/b\/(board-\d+)$/.exec(p))) {
         const all = await boardsPublic(env);

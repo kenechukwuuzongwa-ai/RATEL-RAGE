@@ -37,6 +37,75 @@ const shell = (title, body) => `<!doctype html><html lang="en"><head><meta chars
 const naira = `const naira=(n)=>'\\u20a6'+Number(n).toLocaleString('en-NG');`;
 const el = `const $=(s)=>document.querySelector(s);const mk=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Object.entries(a)){if(x==='text')e.textContent=y;else if(x==='cls')e.className=y;else e.setAttribute(x,y)}for(const c of k)e.append(c);return e};const D=JSON.parse($('#data').textContent);`;
 
+/* The advertising policy (request 590). The game is for everyone (request 580), so every
+ * advert must suit players of any age. This is the one source: /policy renders it, the
+ * booking form links to it and asks the advertiser to agree, the admin page links to it. */
+export const POLICY = {
+  version: '1',
+  updated: '12 November 2026',
+  intro: 'It is played by people of all ages, so every advert on its billboards must be suitable for everyone. '
+    + 'We check every advert, and the page its tap link opens, before it goes live. If an advert does not meet this policy, we do not approve it.',
+  allowed: [
+    'Food, restaurants and soft drinks (no alcohol)',
+    'Shops, markets, fashion and beauty',
+    'Phones, electronics, telecoms and internet services',
+    'Apps and games suitable for all ages',
+    'Music, films, shows and events suitable for all ages',
+    'Schools, courses and training',
+    'Local services: transport, repairs, printing, cleaning and the like',
+    'Sports clubs, gyms and sportswear',
+    'Banks and licensed payment or savings services',
+    'Charities and community causes that do not campaign politically',
+  ],
+  banned: [
+    ['Betting and gambling', 'sports betting, casinos, lotteries, raffles you pay to enter, betting tips or predictions'],
+    ['Alcohol', 'drinks, drinks brands and bars promoted for their alcohol'],
+    ['Tobacco, vapes and drugs', 'cigarettes, e-cigarettes, shisha, cannabis and any other drug'],
+    ['Sexual content', 'sexual or suggestive images, adult services and dating or hook-up services'],
+    ['Weapons', 'guns, knives, ammunition and fireworks'],
+    ['Get-rich-quick schemes', 'investment or "double your money" offers, crypto or forex trading and signals, pyramid schemes, and loan apps without a licence'],
+    ['Politics', 'parties, candidates, campaigns and election messages'],
+    ['Health claims', 'medicines, herbal or miracle cures, and slimming products'],
+    ['Hate and shock', 'anything attacking a person or group for their tribe, religion, sex or disability, and violent, bloody or frightening images'],
+    ['Lies and scams', 'false claims, fake giveaways, fake prizes, and pages that ask for passwords, PINs or bank details'],
+    ['Other people\'s property', 'brands, logos, characters, photos or faces you do not own or have permission to use'],
+    ['Anything illegal', 'anything against Nigerian law, or the law where the advert is aimed'],
+  ],
+  artwork: [
+    'The artwork must be yours, or you must have the right to use it.',
+    'It must not look like part of the game: no fake buttons, fake warnings, or "tap to win" messages.',
+    'Say who you are: your brand or business name must be on the advert.',
+  ],
+  link: [
+    'It must open your own website or page, and match what the advert shows.',
+    'It must not start a download by itself, open pop-ups, or lead to anything this policy bans.',
+    'It must not collect personal details from children.',
+    'If the page changes and breaks this policy after you are live, the advert comes down.',
+  ],
+  terms: [
+    'Every advert is reviewed before it goes live, usually within 2 working days. If we reject it, we tell you why on your status page.',
+    'If you have already paid and we do not approve your advert, we refund you in full.',
+    'We may take down a live advert that breaks this policy, or that players report and we find breaks it. Refunds for the unused time are at our discretion.',
+    'You are responsible for your advert and for any approval it needs under Nigerian advertising law (for example, ARCON vetting).',
+    'We may update this policy. Approved bookings keep the version they agreed to, unless the law requires a change.',
+  ],
+};
+
+export function policyPage() {
+  const li = (a) => a.map((t) => `<li>${esc(t)}</li>`).join('');
+  return shell('Advertising policy - Ratel Rage', `
+<header><a href="/" class="small">All boards</a><h1>Advertising policy</h1><p>Version ${esc(POLICY.version)}, updated ${esc(POLICY.updated)}</p></header>
+<main style="max-width:780px">
+<div class="card"><b>Ratel Rage is a game for everyone.</b> ${esc(POLICY.intro)}</div>
+<h2 style="margin-top:22px">Welcome</h2><ul>${li(POLICY.allowed)}</ul>
+<h2>Not allowed</h2><ul>${POLICY.banned.map(([h, t]) => `<li><b>${esc(h)}:</b> ${esc(t)}</li>`).join('')}</ul>
+<h2>Your artwork</h2><ul>${li(POLICY.artwork)}</ul>
+<h2>Your tap link</h2><ul>${li(POLICY.link)}</ul>
+<h2>Review, refunds and changes</h2><ul>${li(POLICY.terms)}</ul>
+<p class="small dim">Not sure whether your advert fits? Say so in the booking's "Anything we should know" box, and we'll tell you during the review.</p>
+</main>`);
+}
+
 export function landingPage({ boards, gameOrigin, notFound = false }) {
   return shell('Advertise in Ratel Rage', `
 <header><h1>Advertise in Ratel Rage</h1><p>Put your brand on a billboard inside the game. Players fight past it on every run.</p></header>
@@ -45,7 +114,7 @@ export function landingPage({ boards, gameOrigin, notFound = false }) {
 Each board is shared by up to three advertisers who take turns on it; take all of its shares and it is yours alone.
 We check every advert before it goes live; once it is approved and paid, it appears on that board for every player. Your private status page shows views and taps.</div>
 <div class="grid" id="boards"></div>
-<p class="small dim" style="margin-top:24px">Play the game: <a id="play"></a>. Adverts must be suitable for an 18+ audience; no real brands without the owner's permission; no gambling or alcohol until our legal review is done.</p>
+<p class="small dim" style="margin-top:24px">Play the game: <a id="play"></a>. Ratel Rage is for players of all ages, so every advert must suit everyone: no betting, alcohol, tobacco, adult content or politics. Read the <a href="/policy">advertising policy</a> before you book.</p>
 </main>${data({ boards, gameOrigin })}<script>${el}${naira}
 $('#play').textContent=D.gameOrigin;$('#play').href=D.gameOrigin;
 for(const b of D.boards){
@@ -97,6 +166,7 @@ export function boardPage({ board, today, gameOrigin, payments, artScale }) {
     <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
     <p><b id="total"></b></p>
     <p class="small dim">We review every advert before it goes live (usually within 2 working days). ${payments ? 'After booking you can pay securely with Paystack.' : 'After review we send you an invoice; your advert goes live once it is paid.'}</p>
+    <label style="font-weight:400"><input type="checkbox" id="agree" required> My advert and its tap link follow the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>. The game is for players of all ages.</label>
     <p class="err" id="err"></p>
     <button class="btn" id="send" type="submit">Send booking</button>
   </form>
@@ -147,8 +217,9 @@ $('#tpl').onclick=()=>{const c=document.createElement('canvas');c.width=W;c.heig
 redraw();
 $('#f').onsubmit=async(e)=>{e.preventDefault();$('#err').textContent='';
   if(!img){$('#err').textContent='Add your artwork first.';return}
+  if(!$('#agree').checked){$('#err').textContent='Please confirm your advert follows the advertising policy.';return}
   let q=.92,dataUrl=art.toDataURL('image/jpeg',q);while(dataUrl.length>1500000&&q>.5){q-=.1;dataUrl=art.toDataURL('image/jpeg',q)}
-  const body={slot:B.id,art:dataUrl,months:Number($('#months').value),shares:Number($('#shares').value),start:$('#start').value,website:$('#website').value};
+  const body={slot:B.id,art:dataUrl,months:Number($('#months').value),shares:Number($('#shares').value),start:$('#start').value,website:$('#website').value,agree:$('#agree').checked};
   for(const k of ['business','brand','name','email','phone','link','note'])body[k]=$('#'+k).value;
   $('#send').disabled=true;$('#send').textContent='Sending...';
   try{const r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -190,7 +261,8 @@ bi.onload=draw;ai.onload=draw;bi.onerror=draw;bi.src=D.gameOrigin+'/'+B.art;ai.s
 
 export function adminPage({ gameOrigin }) {
   return shell('Ratel Rage ads - admin', `
-<header><h1>Billboard admin</h1><p>Review, approve, mark paid. A board shows an advert only when it is approved, paid and inside its dates.</p></header>
+<header><h1>Billboard admin</h1><p>Review, approve, mark paid. A board shows an advert only when it is approved, paid and inside its dates.</p>
+<p class="small">Before approving, check the artwork <b>and open its tap link</b> against the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>. The game is for all ages: no betting, alcohol, tobacco, sexual content, weapons, get-rich-quick schemes, politics, health claims or other people's brands.</p></header>
 <main><div class="card"><h2>Boards</h2><table id="boards"></table></div>
 <h2 style="margin-top:22px">Bookings</h2><p class="small"><label style="display:inline"><input type="checkbox" id="all"> show closed (rejected / cancelled / ended)</label></p>
 <div id="list"></div><p class="err" id="err"></p></main>

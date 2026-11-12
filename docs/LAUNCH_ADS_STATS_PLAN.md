@@ -71,7 +71,7 @@ The advertiser flow:
 2. Upload artwork: an automatic check against the board's pixel size and safe area, a template download, and an "as it looks in the game" preview.
 3. Choose dates and budget.
 4. Pay: Paystack or Flutterwave (NGN), Stripe (cards).
-5. **Moderation queue.** Nothing goes live without the owner's approval, checked against a written ad policy (allowed, 18+ only, banned).
+5. **Moderation queue.** Nothing goes live without the owner's approval, checked against a written ad policy (allowed, banned). Built in request 590: `/policy` on the ads server, all ages only, see `ADS.md`.
 6. Results dashboard: views, taps, spend.
 
 ---

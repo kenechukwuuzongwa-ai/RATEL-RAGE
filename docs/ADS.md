@@ -14,6 +14,19 @@ Built 2026-10-23 (request 446). The plan it follows is `LAUNCH_ADS_STATS_PLAN.md
    - send the booking
 3. They get a private status page (`/status/<token>`). It shows review and payment state, dates, the artwork on the board, and views and taps once it is live.
 
+## Advertising policy (request 590)
+
+The game is for everyone (request 580, no age gate), so every advert must suit players of any age.
+
+- **Where:** `/policy` on the ads server. The text lives in one place, `POLICY` in `ads/pages.js`. Change it there, bump `version` and `updated`, and redeploy.
+- **Agreement:** the booking form has a required box: "My advert and its tap link follow the advertising policy". The server refuses bookings that don't send `agree: true`. The booking's `created` date plus the policy version history shows what each advertiser agreed to.
+- **Welcome:** food and soft drinks, shops and fashion, phones and telecoms, all-ages apps, games, music, films and events, schools and courses, local services, sports, banks and licensed payment services, and charities that don't campaign politically.
+- **Not allowed:** betting and gambling, alcohol, tobacco, vapes and drugs, sexual content and dating services, weapons and fireworks, get-rich-quick schemes (investment offers, crypto/forex trading, pyramid schemes, unlicensed loan apps), politics, health claims (medicines, miracle cures, slimming products), hate and shock images, lies and scams, other people's brands, and anything illegal.
+- **Artwork:** the advertiser's own, with their brand name on it, and nothing that looks like part of the game (no fake buttons, fake warnings or "tap to win").
+- **Tap link:** opens the advertiser's own page, matching the advert. No automatic downloads, no pop-ups, and no collecting children's details.
+- **Review terms:** if a paid advert isn't approved, the advertiser gets a full refund. A live advert that breaks the policy comes down, and a refund for the unused time is at the owner's discretion. The advertiser is responsible for any legal approval their advert needs, such as ARCON vetting.
+- **On /admin:** a reminder at the top tells you to check the artwork **and open the tap link** against the policy before approving.
+
 ## What you do (the owner)
 
 **https://rr-ads.kenechukwuuzongwa.workers.dev/admin**. The user name can be anything; the password is the `ADMIN_PASSWORD` secret.
