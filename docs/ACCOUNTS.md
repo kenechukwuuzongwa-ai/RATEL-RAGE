@@ -25,9 +25,12 @@ empty, the game behaves exactly as before: progress is kept on the device
   `deploy/dist/supabase-config.js` only. It refuses a `sb_secret_` key, and `--no-accounts`
   leaves accounts off. The source `supabase-config.js` stays empty, so the editor and the
   APK remain device-only. No secret key value is anywhere in the build (checked).
+* **Email (request 585):** custom SMTP through Resend (`smtp.resend.com:465`, user `resend`, a send-only
+  API key stored only in Supabase). Sender `RATEL RAGE <no-reply@ratelrage.com>`; ratelrage.com is verified
+  in Resend (DKIM/SPF records in Cloudflare DNS). Email rate limit raised from 2 to 100 an hour. Proven
+  with a sign-up to Resend's test inbox `delivered@resend.dev` (that test user was then deleted).
 * **Still to do before heavy traffic:**
   - Google provider (§3.6);
-  - custom SMTP (the built-in sender allows only 2 emails an hour);
   - CAPTCHA support in `account.js`, then switch it on;
   - a contact address on `privacy.html`.
 * **Live checks run:** `_chromakey/_brand/liveauth.js` (11/11: guest sign-up, save/load,
