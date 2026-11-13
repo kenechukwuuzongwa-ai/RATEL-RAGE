@@ -25129,9 +25129,8 @@ function drawCutscene() {
   ctx.textBaseline = 'top';
 }
 
-// The ending now speaks the same language as the front end: its shared smoked
-// glass, information gold, orange rule, condensed display face and circular
-// network graph. The street remains underneath as the evidence layer.
+// The ending speaks the front end's language: smoked glass, the green accent, Uni Sans, one centred
+// column like the SIGN IN view (request 617). The street remains underneath as the evidence layer.
 function drawOutro() {
   const ui = frontEnd?.ui;
   if (!ui) return;
@@ -25163,75 +25162,100 @@ function drawOutro() {
   ctx.textBaseline = 'alphabetic';
   ctx.globalAlpha = Math.min(1, c * 1.25);
 
-  /* Header: the exact information hierarchy used by the menu and pause screen,
-   * replacing the old skewed CASE CLOSED plate. */
+  /* THE RESULT, CENTRED (request 617: "remodel this view ... centralized like the sign in view, our new UI,
+   * colour theme and fonts; the evidence discovered should form new rows under the mission complete rows").
+   *
+   * One column on the screen's centre line, the SIGN IN view's composition: the headline block on top,
+   * ONE card holding the whole result — MISSION COMPLETE with the score and rank, the run's rows, then the
+   * recovered evidence as more rows in the same grid — and under it the one action, ANALYZE EVIDENCE, in
+   * the shared green selection look. Dim white type, green accents, sharp corners, Uni Sans. */
+  const cx = VIEW_W / 2;
+  const COL = 560, x0 = Math.round(cx - COL / 2), x1 = x0 + COL;
+  const PAD = 26, lx = x0 + PAD, rx = x1 - PAD;
+  const dimWhite = (a) => `rgba(255,255,255,${a})`;
+
+  // the headline block
   const head = ease(Math.min(1, summaryT / 0.46));
   ctx.save();
   ctx.globalAlpha *= head;
-  ctx.translate((1 - head) * -20, 0);
-  ctx.textAlign = 'left';
+  ctx.translate(0, (1 - head) * -12);
+  ctx.textAlign = 'center';
   ui.setFont(700, 11, 4);
-  ctx.fillStyle = C.orange;                          // green kicker (request 615)
-  /* Both strings come out of the story data through the identity resolver, so
-   * the card cannot drift from the level table and cannot render a development
-   * tag â€” see the fiction firewall in story.js. */
-  const OC = outroCard(), LV = LEVELS[activeLevel === 2 ? 2 : 1];
-  ctx.fillText(`${LV.code}  |  ${LV.title}`, 58, 123);
-  ui.setDisplay(700, 47, 1.7);
-  ctx.fillStyle = C.paper;
-  ctx.fillText(OC.headline(), 56, 174);
   ctx.fillStyle = C.orange;
-  ctx.fillRect(58, 190, 78, 3);
-  ui.setFont(500, 12.5, 0.2);
-  ctx.fillStyle = C.muted;
-  ctx.fillText(OC.line, 58, 213);
+  /* Both strings come out of the story data through the identity resolver, so the card cannot drift from
+   * the level table and cannot render a development tag — see the fiction firewall in story.js. */
+  const OC = outroCard(), LV = LEVELS[activeLevel === 2 ? 2 : 1];
+  const kicker = `${LV.code}  |  ${LV.title}`;
+  ctx.fillText(kicker, cx + ('letterSpacing' in ctx ? 2 : 0), 58);
+  const headline = OC.headline();
+  ui.fitFont(700, 47, 1.7, headline, COL + 160, true);
+  ctx.fillStyle = C.paper;
+  ctx.fillText(headline, cx, 108);
+  ctx.fillStyle = C.orange;
+  ctx.fillRect(Math.round(cx - 39), 122, 78, 3);
+  ui.setFont(500, 12, 0.2);
+  ctx.fillStyle = dimWhite(0.5);
+  ctx.fillText(OC.line, cx, 146);
   ctx.restore();
 
   const drawPanel = (i, box, draw) => {
     const u = panelIn(i);
     if (u <= 0) return;
     const e = ease(u);
-    const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    const bcx = box.x + box.w / 2, bcy = box.y + box.h / 2;
     ctx.save();
     ctx.globalAlpha *= Math.min(1, u * 1.8);
-    ctx.translate(cx, cy + (1 - e) * 15);
-    ctx.scale(0.94 + 0.06 * e, 0.94 + 0.06 * e);
-    ctx.translate(-cx, -cy);
+    ctx.translate(bcx, bcy + (1 - e) * 15);
+    ctx.scale(0.96 + 0.04 * e, 0.96 + 0.04 * e);
+    ctx.translate(-bcx, -bcy);
     draw();
     ctx.restore();
   };
 
-  const status = { x: 58, y: 238, w: 410, h: 334 };
-  drawPanel(0, status, () => {
-    ui.glass(status.x, status.y, status.w, status.h, 10,
-      { tint: 'rgba(9,13,20,0.76)', border: 'rgba(95,184,126,0.28)' });
-    ui.icon('check', status.x + 29, status.y + 29, 16, C.green, 0.95);
+  /* THE CARD. Its rows share one grid: label left in dim white, value right. */
+  const card = { x: x0, y: 164, w: COL, h: 416 };
+  const ROW = 26;
+  drawPanel(0, card, () => {
+    ui.glass(card.x, card.y, card.w, card.h, 0, { tint: 'rgba(8,12,18,0.78)', border: dimWhite(0.10) });
+    ctx.fillStyle = C.orange;                                   // the card's green spine
+    ctx.fillRect(card.x, card.y, 3, card.h);
     ctx.textAlign = 'left';
-    ui.setFont(700, 10.5, 2.8);
-    ctx.fillStyle = C.green;
-    ctx.fillText('MISSION COMPLETE', status.x + 47, status.y + 33);
-    ctx.fillStyle = 'rgba(255,255,255,0.09)';
-    ctx.fillRect(status.x + 22, status.y + 51, status.w - 44, 1);
 
-    /* THE SCORECARD (request 338): the run's numbers, the total they make and
-     * its rank — frozen when MC_Olodo went down (run.final). */
+    // MISSION COMPLETE · best, and the score with its rank
+    ui.icon('check', lx + 8, card.y + 30, 16, C.orange, 1);
+    ui.setFont(700, 11, 3);
+    ctx.fillStyle = C.orange;
+    ctx.fillText('MISSION COMPLETE', lx + 26, card.y + 34);
+    /* THE SCORECARD (request 338): the run's numbers, the total they make and its rank — frozen when
+     * MC_Olodo went down (run.final). */
     const F = run.final || computeScore();
+    ui.setFont(700, 9, 1.2);
+    ctx.fillStyle = F.isBest ? C.orangeSoft : dimWhite(0.42);
+    ctx.fillText(F.isBest ? 'NEW PERSONAL BEST' : `BEST  ${(F.best?.score ?? 0).toLocaleString('en-US')}`, lx + 26, card.y + 56);
     const shown = Math.round(F.total * ease(Math.max(0, Math.min(1, (summaryT - SCORE_COUNT.at) / SCORE_COUNT.dur))));
-    ctx.textAlign = 'right';
-    ui.setDisplay(800, 40, 1);
-    ctx.fillStyle = C.paper;
-    ctx.fillText(shown.toLocaleString('en-US'), status.x + status.w - 86, status.y + 104);
-    ui.setFont(700, 9, 2.4);
-    ctx.fillStyle = C.muted;
-    ctx.fillText('SCORE', status.x + status.w - 86, status.y + 70);
+    // the rank in a square tile, the score beside it
+    const tile = 52, tx = rx - tile, ty = card.y + 16;
+    ctx.fillStyle = 'rgba(54,214,126,0.10)';
+    ctx.fillRect(tx, ty, tile, tile);
+    ctx.strokeStyle = 'rgba(54,214,126,0.55)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tx + 0.5, ty + 0.5, tile - 1, tile - 1);
     ctx.textAlign = 'center';
-    ui.setDisplay(900, 54, 0);
-    ctx.fillStyle = F.rank === 'S' ? C.gold : F.rank === 'A' ? C.orange : C.paper;
-    ctx.fillText(F.rank, status.x + status.w - 46, status.y + 108);
+    ui.setDisplay(900, 46, 0);
+    ctx.fillStyle = F.rank === 'S' || F.rank === 'A' ? C.orange : C.paper;
+    ctx.fillText(F.rank, tx + tile / 2, ty + tile / 2 + 15);
+    ctx.textAlign = 'right';
+    ui.setFont(700, 9, 2.4);
+    ctx.fillStyle = dimWhite(0.42);
+    ctx.fillText('SCORE', tx - 16, card.y + 30);
+    ui.setDisplay(800, 36, 1);
+    ctx.fillStyle = C.paper;
+    ctx.fillText(shown.toLocaleString('en-US'), tx - 16, card.y + 64);
     ctx.textAlign = 'left';
-    ui.setFont(700, 9, 0.8);                 // tighter: the lifted type ran into SCORE (request 563)
-    ctx.fillStyle = F.isBest ? C.green : C.muted;
-    ctx.fillText(F.isBest ? 'NEW PERSONAL BEST' : `BEST  ${(F.best?.score ?? 0).toLocaleString('en-US')}`, status.x + 24, status.y + 82);
+    ctx.fillStyle = dimWhite(0.09);
+    ctx.fillRect(lx, card.y + 84, COL - PAD * 2, 1);
+
+    // the run's rows
     const rows = [
       ['TIME', fmtTime(F.time)],
       ['ENEMIES DEFEATED', String(F.kos)],
@@ -25240,106 +25264,98 @@ function drawOutro() {
       ['DAMAGE TAKEN', String(Math.round(F.dmgTaken))],
       ['DIFFICULTY', chosenDifficulty],
     ];
-    let y = status.y + 140;
+    let y = card.y + 106;
     for (const [label, value] of rows) {
       ui.setFont(700, 9.5, 1.8);
-      ctx.fillStyle = C.muted;
-      ctx.fillText(label, status.x + 24, y);
+      ctx.fillStyle = dimWhite(0.5);
+      ctx.fillText(label, lx, y);
       ctx.textAlign = 'right';
-      ui.setFont(650, 12.5, 0.45);
-      ctx.fillStyle = label === 'BEST COMBO' ? C.gold : C.paper;
-      ctx.fillText(value, status.x + status.w - 24, y);
+      ui.setFont(650, 12, 0.45);
+      ctx.fillStyle = label === 'BEST COMBO' ? C.orange : dimWhite(0.9);
+      ctx.fillText(value, rx, y);
       ctx.textAlign = 'left';
-      ctx.fillStyle = 'rgba(255,255,255,0.055)';
-      ctx.fillRect(status.x + 24, y + 11, status.w - 48, 1);
-      y += 29;
+      ctx.fillStyle = dimWhite(0.05);
+      ctx.fillRect(lx, y + 9, COL - PAD * 2, 1);
+      y += ROW;
     }
 
-    ui.setFont(700, 8.5, 2.1);
-    // the case number and the place share one line: tighten until they clear each other (request 563)
+    // THE EVIDENCE: more rows in the same grid, under its own section line
+    y += 10;
+    ui.setFont(700, 10, 3);
+    ctx.fillStyle = C.orange;
+    ctx.fillText(OC.bagTitle, lx, y);
+    ctx.textAlign = 'right';
+    ui.setFont(700, 8.5, 2);
+    ctx.fillStyle = dimWhite(0.42);
+    ctx.fillText(OC.bagCount, rx, y);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = dimWhite(0.09);
+    ctx.fillRect(lx, y + 10, COL - PAD * 2, 1);
+    y += 32;
+    OC.items.forEach(([ico, title, note], i) => {
+      const u = Math.max(0, Math.min(1, (summaryT - 0.45 - i * 0.22) / 0.5));
+      if (u > 0) {
+        ctx.save();
+        ctx.globalAlpha *= ease(u);
+        ctx.translate((1 - ease(u)) * -12, 0);
+        ui.icon(ico, lx + 8, y - 4, 15, C.orangeSoft, 0.9);
+        ui.setFont(700, 11, 1.5);
+        ctx.fillStyle = dimWhite(0.9);
+        ctx.fillText(title, lx + 26, y);
+        const tw = ctx.measureText(title).width;
+        ui.setFont(500, 10, 0.2);
+        ctx.fillStyle = dimWhite(0.42);
+        ctx.fillText(note, lx + 26 + tw + 12, y);
+        ctx.textAlign = 'right';
+        ui.setFont(700, 8.5, 1.8);
+        ctx.fillStyle = C.orange;
+        ctx.fillText('UNANALYSED', rx, y);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = dimWhite(0.05);
+        ctx.fillRect(lx, y + 10, COL - PAD * 2, 1);
+        ctx.restore();
+      }
+      y += 30;
+    });
+
+    // the file line, at the foot of the card
     for (const [px, tr] of [[8.5, 1.2], [7.5, 0.4], [6.5, 0]]) {
       ui.setFont(700, px, tr);
-      if (ctx.measureText(OC.no).width + ctx.measureText(OC.where).width + 16 <= status.w - 48) break;
+      if (ctx.measureText(OC.no).width + ctx.measureText(OC.where).width + 16 <= COL - PAD * 2) break;
     }
-    ctx.fillStyle = C.dim;
-    ctx.fillText(OC.no, status.x + 24, status.y + status.h - 22);
+    ctx.fillStyle = dimWhite(0.28);
+    ctx.fillText(OC.no, lx, card.y + card.h - 16);
     ctx.textAlign = 'right';
-    ctx.fillText(OC.where, status.x + status.w - 24, status.y + status.h - 22);
+    ctx.fillText(OC.where, rx, card.y + card.h - 16);
     ctx.textAlign = 'left';
   });
 
-  /* THE BAG, NOT THE BOARD.
-   *
-   * This panel used to be the network graph and the next target. It cannot be:
-   * the player has just this second won the fight, and the whole point of the
-   * beat that follows is that they do not yet know what Olodo was carrying.
-   * What belongs here is the haul â€” sealed, unread, three items and a prompt.
-   * The analysis, the connections and the name are all on the other side of X.
-   */
-  const bag = { x: 486, y: 238, w: 736, h: 334 };
-  drawPanel(1, bag, () => {
-    ui.glass(bag.x, bag.y, bag.w, bag.h, 10,
-      { tint: 'rgba(9,13,20,0.76)', border: 'rgba(233,182,84,0.22)' });
-    ctx.textAlign = 'left';
-    ui.setFont(700, 10.5, 3.0);
-    ctx.fillStyle = C.gold;
-    ctx.fillText(OC.bagTitle, bag.x + 28, bag.y + 35);
-    ctx.textAlign = 'right';
-    ui.setFont(700, 9, 2.0);
-    ctx.fillStyle = C.muted;
-    ctx.fillText(OC.bagCount, bag.x + bag.w - 28, bag.y + 35);
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(255,255,255,0.09)';
-    ctx.fillRect(bag.x + 28, bag.y + 51, bag.w - 56, 1);
-
-    ui.setFont(500, 12, 0.15);
-    ctx.fillStyle = C.text;
-    ctx.fillText(OC.bagLine, bag.x + 28, bag.y + 78);
-
-    const items = OC.items;
-    let y = bag.y + 112;
-    items.forEach(([ico, title, note], i) => {
-      const u = Math.max(0, Math.min(1, (summaryT - 0.45 - i * 0.22) / 0.5));
-      if (u <= 0) return;
-      ctx.save();
-      ctx.globalAlpha *= ease(u);
-      ctx.translate((1 - ease(u)) * -14, 0);
-      ui.roundRectPath(ctx, bag.x + 28, y, bag.w - 56, 60, 6);
-      ctx.fillStyle = 'rgba(233,182,84,0.05)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(233,182,84,0.16)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ui.icon(ico, bag.x + 60, y + 30, 18, C.gold, 0.85);
-      ui.setFont(700, 12.5, 1.6);
-      ctx.fillStyle = C.paper;
-      ctx.fillText(title, bag.x + 88, y + 26);
-      ui.setFont(500, 11, 0.2);
-      ctx.fillStyle = C.muted;
-      ctx.fillText(note, bag.x + 88, y + 45);
-      ctx.textAlign = 'right';
-      ui.setFont(700, 8.6, 1.8);
-      ctx.fillStyle = C.gold;
-      ctx.fillText('UNANALYSED', bag.x + bag.w - 46, y + 34);
-      ctx.textAlign = 'left';
-      ctx.restore();
-      y += 70;
-    });
-  });
-
-  /* The one thing the player has to do. It does not appear until the card has
-   * finished arriving â€” a prompt racing the panels it sits under reads as the
-   * screen hurrying you past something you were still reading. */
+  /* THE ONE ACTION. It does not appear until the card has finished arriving — a prompt racing the panel
+   * it sits under reads as the screen hurrying you past something you were still reading. Drawn in the
+   * shared green selection look (it is the focused, only choice); a tap anywhere or ENTER takes it. */
   const footer = ease(Math.max(0, Math.min(1, (summaryT - 1.28) / 0.62)));
-  ctx.save();
-  ctx.globalAlpha *= footer * (0.68 + 0.32 * (0.5 + 0.5 * Math.sin(mobClock * 2.7)));
-  ctx.textAlign = 'center';
-  ui.setFont(700, 12, 3.4);
-  ctx.fillStyle = C.gold;
-  ctx.fillText(isTouchUI() ? 'TAP TO ANALYZE' : 'PRESS ENTER TO ANALYZE', VIEW_W / 2, 612);   // request 538
-  ctx.restore();
-  ctx.textAlign = 'left';
-  ui.drawControlBar([{ icon: 'cross', label: 'ANALYZE EVIDENCE' }]);
+  if (footer > 0) {
+    const by = card.y + card.h + 14, bh = 50;
+    ctx.save();
+    ctx.globalAlpha *= footer;
+    ctx.translate(0, (1 - footer) * 10);
+    ui.glass(x0, by, COL, bh, 0, { tint: 'rgba(8,12,18,0.74)', border: 'rgba(0,0,0,0)', shadow: true });
+    ui.focusOverlay?.(x0, by, COL, bh, 0.8 + 0.2 * (0.5 + 0.5 * Math.sin(mobClock * 2.7)));
+    ui.icon('play', lx + 8, by + bh / 2, 15, C.orangeSoft, 1);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ui.setFont(700, 14, 2.4);
+    ctx.fillStyle = dimWhite(0.94);
+    ctx.fillText('ANALYZE EVIDENCE', lx + 30, by + bh / 2 + 1);
+    ctx.textAlign = 'right';
+    ui.setFont(600, 9.5, 2.4);
+    ctx.fillStyle = dimWhite(0.42);
+    ctx.fillText(isTouchUI() ? 'TAP' : 'ENTER', rx, by + bh / 2 + 1);   // a key or a tap, never a console button (request 577)
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+  ui.drawControlBar([]);
 
   ui.drawGrain(0.55);
   ctx.restore();

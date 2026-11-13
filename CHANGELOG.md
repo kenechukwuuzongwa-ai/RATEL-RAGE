@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-13 — MC OLODO DEFEATED card remodelled, centred (v145, request 617)
+
+- drawOutro: one centred column like SIGN IN. Kicker LEVEL 01 | THE STREET TAX and headline centred; ONE card with MISSION COMPLETE, best, score and a square rank tile; the run rows; then EVIDENCE RECOVERED and its items as rows in the same grid (UNANALYSED in green); the case line at the foot.
+- ANALYZE EVIDENCE is a green-look row under the card (TAP / ENTER hint); green accents, dim white type, sharp corners, Uni Sans. Level 02's card uses the same layout.
+Checks: _chromakey/req617/outro.js (boss killed, card held); no page errors.
+
 ## 2026-11-13 — HUD: green SCORE word, RECOVERING inside the HP bar, green combo gauge (v144, request 616)
 
 - SCORE label in a green version of the hit counter's ink; the figure keeps the counter's yellow-to-red.
