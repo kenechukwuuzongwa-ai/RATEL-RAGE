@@ -5642,21 +5642,20 @@ export function createFrontEnd({
      * This reads `titlePromptAt()`; it does not work it out a second time. */
     const promptFrom = titlePromptAt();
     const pK = easeOut((phaseT - promptFrom) / TITLE.promptIn);
-    /* EQUIDISTANT (request 626): the prompt hangs as far under STREETS OF JUSTICE as STREETS OF JUSTICE
-     * hangs under the mark — the same clear gap (subGap less the tagline's cap height) above the prompt's top. */
-    const tagCap = 11, tagGap = TITLE.subGap - tagCap;
-    const promptTop = logoBottom + TITLE.subGap + tagGap;
+    /* MIDWAY (request 627): the prompt's centre sits halfway between STREETS OF JUSTICE (its baseline) and
+     * the top of the loading bar, so the clear space above and below it is the same. */
+    const promptMid = Math.round((logoBottom + TITLE.subGap + Math.round(TITLE.barY * H)) / 2);
     /* ON A PHONE, THE ANIMATED TAP CUE (request 357) — the same code-drawn element
      * the skippable sections carry, on the prompt's row, beating ONCE per cycle
      * because one tap enters. A controller glyph means nothing under a thumb. */
     if (isTouchUI()) {
-      // no plate behind it (request 626); its 34 px ring's top on promptTop
-      drawTapCue(ctx, W, H, phaseT, { hintAt: promptFrom, text: 'TAP TO ENTER', taps: 1, cy: promptTop + 17, plain: true });
+      // no plate behind it (request 626); ring and words centred on promptMid (request 627)
+      drawTapCue(ctx, W, H, phaseT, { hintAt: promptFrom, text: 'TAP TO ENTER', taps: 1, cy: promptMid, plain: true });
       if (tapCueState.drawn)
         hitboxes.push({ x: tapCueState.x, y: tapCueState.y, w: tapCueState.w, h: tapCueState.h, index: 0, id: 'title:enter' });
     } else if (pK > 0) {
       const breathe = 0.80 + Math.sin(clock * 2.0) * 0.20;
-      const py = promptTop + 8;                       // the line's middle, its cap top on promptTop (request 626)
+      const py = promptMid;                           // the line's middle, midway (request 627)
       ctx.save();
       ctx.globalAlpha = pK;
       ctx.textBaseline = 'middle';

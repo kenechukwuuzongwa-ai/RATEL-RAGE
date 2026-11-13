@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-13 — Title prompt midway (v151, request 627)
+
+- Title: TAP TO ENTER (and desktop PRESS ENTER TO START) centred halfway between the STREETS OF JUSTICE baseline and the top of the loading bar.
+Checks: _chromakey/req626/screens.js ONLY=title, desktop + TOUCH; no page errors.
+
 ## 2026-11-13 — Title spacing, red underlines, briefing sheen, hit-style gameplay text, thin '|' lines (v150, request 626)
 
 - Title: LOADING % 32 px under the bar (was 20); TAP TO ENTER has no plate (drawTapCue `plain`) and sits as far under STREETS OF JUSTICE as that sits under the mark (desktop PRESS ENTER TO START too).
