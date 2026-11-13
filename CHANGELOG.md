@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-13 — Level summary entrance choreography (v147, request 622)
+
+- Top block drops in from above the frame and settles; the card (centre piece) scales 72% -> 100% from its centre with a small overshoot, then one light sweep crosses it; the run rows cascade in, then the evidence rows; the grade stamps onto its tile when the score count lands (the stamp sound's moment, with a tile flash); ANALYZE EVIDENCE rises in from below the frame.
+Checks: _chromakey/req622/frames.js (canvas frames at 0.05-2.4 s, entrance_sheet.png); no page errors.
+
 ## 2026-11-13 — Results card: yellow score, grade and kicker; deep-red UNANALYSED (v146, request 619)
 
 - MC OLODO DEFEATED card: the score figure, the grade letter (and its tile) and LEVEL 01 | THE STREET TAX are yellow; UNANALYSED is deep red (#c0182a). Fewer greens.

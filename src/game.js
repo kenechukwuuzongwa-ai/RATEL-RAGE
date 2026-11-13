@@ -25155,8 +25155,20 @@ function drawOutro() {
   const cardDur = OUTRO.phases.find((p) => p[0] === 'card')?.[1] ?? 0.85;
   // the panels wait for the bars to meet before they arrive over the black
   const summaryT = (name === 'card' ? outro.t : name === 'file' ? cardDur + outro.t : 0) - OUTRO.closeDur;
-  const panelIn = (i) => Math.max(0, Math.min(1, (summaryT - 0.08 - i * 0.14) / 0.56));
-  const ease = (v) => 1 - Math.pow(1 - Math.max(0, Math.min(1, v)), 3);
+  /* THE ENTRANCE (request 622: "scale in the centre piece and transition in the end pieces from the ends of
+   * the frame"). One score sheet, in seconds of summaryT, cut against the score count-up and its stamp sound:
+   *   0.00  the headline block drops in from ABOVE the top edge and settles
+   *   0.06  the card — the centre piece — scales up from the middle with a small overshoot
+   *   0.50  one band of light crosses the card as it lands
+   *   0.40  its rows cascade in, top to bottom; the evidence rows follow at 0.74
+   *   0.30  the score counts up (SCORE_COUNT); when it lands the grade STAMPS onto its tile
+   *   1.00  ANALYZE EVIDENCE rises in from BELOW the bottom edge */
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  const ease = (v) => 1 - Math.pow(1 - clamp01(v), 3);
+  const easeOutBack = (v, k = 1.4) => { v = clamp01(v); return 1 + (k + 1) * Math.pow(v - 1, 3) + k * Math.pow(v - 1, 2); };
+  const span = (at, dur) => clamp01((summaryT - at) / dur);      // a beat's 0..1 progress
+  const MOTION = { head: [0, 0.6], card: [0.06, 0.56], sweep: [0.5, 0.55], rows: 0.4, rowGap: 0.045, rowDur: 0.26,
+    evid: 0.74, evidGap: 0.09, btn: [1.0, 0.6] };
 
   ctx.save();
   ctx.textBaseline = 'alphabetic';
@@ -25175,10 +25187,10 @@ function drawOutro() {
   const dimWhite = (a) => `rgba(255,255,255,${a})`;
 
   // the headline block
-  const head = ease(Math.min(1, summaryT / 0.46));
+  const hu = span(...MOTION.head);
   ctx.save();
-  ctx.globalAlpha *= head;
-  ctx.translate(0, (1 - head) * -12);
+  ctx.globalAlpha *= clamp01(hu * 3);
+  ctx.translate(0, (1 - easeOutBack(hu, 1.1)) * -190);     // starts wholly above the frame, settles with a dip
   ctx.textAlign = 'center';
   ui.setFont(700, 11, 4);
   ctx.fillStyle = C.gold;                                    // yellow (request 619)
@@ -25199,16 +25211,31 @@ function drawOutro() {
   ctx.restore();
 
   const drawPanel = (i, box, draw) => {
-    const u = panelIn(i);
+    const u = span(...MOTION.card);
     if (u <= 0) return;
-    const e = ease(u);
+    const sc = 0.72 + 0.28 * easeOutBack(u, 1.6);             // 72% -> a ~3% overshoot -> 100%
     const bcx = box.x + box.w / 2, bcy = box.y + box.h / 2;
     ctx.save();
-    ctx.globalAlpha *= Math.min(1, u * 1.8);
-    ctx.translate(bcx, bcy + (1 - e) * 15);
-    ctx.scale(0.96 + 0.04 * e, 0.96 + 0.04 * e);
+    ctx.globalAlpha *= clamp01(u * 2.6);
+    ctx.translate(bcx, bcy);
+    ctx.scale(sc, sc);
     ctx.translate(-bcx, -bcy);
     draw();
+    // the landing: one soft band of light crossing the card, left to right
+    const sw = span(...MOTION.sweep);
+    if (sw > 0 && sw < 1) {
+      const band = 220, gx = box.x - band + ease(sw) * (box.w + band * 2);
+      const g = ctx.createLinearGradient(gx - band / 2, box.y, gx + band / 2, box.y + box.h * 0.35);
+      g.addColorStop(0, 'rgba(255,255,255,0)');
+      g.addColorStop(0.5, `rgba(255,255,255,${(0.10 * Math.sin(sw * Math.PI)).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.save();
+      ctx.beginPath(); ctx.rect(box.x, box.y, box.w, box.h); ctx.clip();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = g;
+      ctx.fillRect(box.x, box.y, box.w, box.h);
+      ctx.restore();
+    }
     ctx.restore();
   };
 
@@ -25244,7 +25271,23 @@ function drawOutro() {
     ctx.textAlign = 'center';
     ui.setDisplay(900, 46, 0);
     ctx.fillStyle = C.gold;
-    ctx.fillText(F.rank, tx + tile / 2, ty + tile / 2 + 15);
+    const stampAt = SCORE_COUNT.at + SCORE_COUNT.dur + SCORE_COUNT.stampAfter;
+    const st = span(stampAt, 0.24);
+    if (st > 0) {
+      const ss = 1 + 0.9 * (1 - easeOutBack(st, 1.8));       // drops from ~1.9x, slams a hair past 1, settles
+      ctx.save();
+      ctx.globalAlpha *= clamp01(st * 3);
+      ctx.translate(tx + tile / 2, ty + tile / 2);
+      ctx.scale(ss, ss);
+      ctx.translate(-(tx + tile / 2), -(ty + tile / 2));
+      ctx.fillText(F.rank, tx + tile / 2, ty + tile / 2 + 15);
+      ctx.restore();
+      const fl = 1 - span(stampAt + 0.2, 0.4);                // the tile flashes as it lands
+      if (st >= 1 && fl > 0) {
+        ctx.fillStyle = `rgba(233,182,84,${(0.32 * fl).toFixed(3)})`;
+        ctx.fillRect(tx, ty, tile, tile);
+      }
+    }
     ctx.textAlign = 'right';
     ui.setFont(700, 9, 2.4);
     ctx.fillStyle = dimWhite(0.42);
@@ -25266,7 +25309,13 @@ function drawOutro() {
       ['DIFFICULTY', chosenDifficulty],
     ];
     let y = card.y + 106;
-    for (const [label, value] of rows) {
+    for (let ri = 0; ri < rows.length; ri++) {
+      const [label, value] = rows[ri];
+      const ru = span(MOTION.rows + ri * MOTION.rowGap, MOTION.rowDur);
+      if (ru <= 0) { y += ROW; continue; }
+      ctx.save();
+      ctx.globalAlpha *= ease(ru);
+      ctx.translate((1 - ease(ru)) * -14, 0);
       ui.setFont(700, 9.5, 1.8);
       ctx.fillStyle = dimWhite(0.5);
       ctx.fillText(label, lx, y);
@@ -25277,11 +25326,16 @@ function drawOutro() {
       ctx.textAlign = 'left';
       ctx.fillStyle = dimWhite(0.05);
       ctx.fillRect(lx, y + 9, COL - PAD * 2, 1);
+      ctx.restore();
       y += ROW;
     }
 
     // THE EVIDENCE: more rows in the same grid, under its own section line
     y += 10;
+    const eu = ease(span(MOTION.evid, 0.26));
+    ctx.save();
+    ctx.globalAlpha *= eu;
+    ctx.translate((1 - eu) * -14, 0);
     ui.setFont(700, 10, 3);
     ctx.fillStyle = C.orange;
     ctx.fillText(OC.bagTitle, lx, y);
@@ -25292,9 +25346,10 @@ function drawOutro() {
     ctx.textAlign = 'left';
     ctx.fillStyle = dimWhite(0.09);
     ctx.fillRect(lx, y + 10, COL - PAD * 2, 1);
+    ctx.restore();
     y += 32;
     OC.items.forEach(([ico, title, note], i) => {
-      const u = Math.max(0, Math.min(1, (summaryT - 0.45 - i * 0.22) / 0.5));
+      const u = span(MOTION.evid + 0.08 + i * MOTION.evidGap, 0.28);
       if (u > 0) {
         ctx.save();
         ctx.globalAlpha *= ease(u);
@@ -25324,7 +25379,7 @@ function drawOutro() {
       ui.setFont(700, px, tr);
       if (ctx.measureText(OC.no).width + ctx.measureText(OC.where).width + 16 <= COL - PAD * 2) break;
     }
-    ctx.fillStyle = dimWhite(0.28);
+    ctx.fillStyle = `rgba(255,255,255,${(0.28 * ease(span(MOTION.evid + 0.3, 0.3))).toFixed(3)})`;
     ctx.fillText(OC.no, lx, card.y + card.h - 16);
     ctx.textAlign = 'right';
     ctx.fillText(OC.where, rx, card.y + card.h - 16);
@@ -25334,12 +25389,12 @@ function drawOutro() {
   /* THE ONE ACTION. It does not appear until the card has finished arriving — a prompt racing the panel
    * it sits under reads as the screen hurrying you past something you were still reading. Drawn in the
    * shared green selection look (it is the focused, only choice); a tap anywhere or ENTER takes it. */
-  const footer = ease(Math.max(0, Math.min(1, (summaryT - 1.28) / 0.62)));
-  if (footer > 0) {
+  const bu = span(...MOTION.btn);
+  if (bu > 0) {
     const by = card.y + card.h + 14, bh = 50;
     ctx.save();
-    ctx.globalAlpha *= footer;
-    ctx.translate(0, (1 - footer) * 10);
+    ctx.globalAlpha *= clamp01(bu * 2.5);
+    ctx.translate(0, (1 - easeOutBack(bu, 1.2)) * (VIEW_H - by + 12));   // from below the frame
     ui.glass(x0, by, COL, bh, 0, { tint: 'rgba(8,12,18,0.74)', border: 'rgba(0,0,0,0)', shadow: true });
     ui.focusOverlay?.(x0, by, COL, bh, 0.8 + 0.2 * (0.5 + 0.5 * Math.sin(mobClock * 2.7)));
     ui.icon('play', lx + 8, by + bh / 2, 15, C.orangeSoft, 1);
