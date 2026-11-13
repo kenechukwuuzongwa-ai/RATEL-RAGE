@@ -24685,11 +24685,30 @@ function drawPixelHud() {
   const fl = hpFlashAmt();
   if (fl > 0) { ctx.globalAlpha = fl * 0.85; ctx.fillStyle = '#fff'; ctx.fillRect(Math.round(bx), Math.round(yHp), Math.round(P.barW * Math.max(hpF, 0.02)), P.barH); ctx.globalAlpha = 1; }
   // out of the fight and healing
+  /* RECOVERING sits INSIDE the HP bar (request 616), right-aligned over the bar's empty end (healing means
+   * the bar is not full), green with a dark keyline so it reads over the yellow fill too. Its old row, under
+   * the bars, now belongs to the grab-combo gauge (hudUnderBars, read by drawHud). */
+  hudUnderBars.x = bx;
+  hudUnderBars.y = (serverRow ? ySrv + P.barH : yHp + P.barH) + 12;
   if (run.regen) {
-    ctx.font = pixelFont(400, 15);
+    ctx.save();
+    ctx.font = pixelFont(400, 13);
+    ctx.textAlign = 'right';
     ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now * 5);
-    pixText('+ RECOVERING', bx, (serverRow ? ySrv + P.barH : yHp + P.barH) + 18, '#7dffa0');
-    ctx.globalAlpha = 1;
+    const tx = bx + P.barW - 8, ty = yHp + P.barH / 2 + 1;
+    /* TWO-TONE, like a progress label: dark green where it crosses the yellow fill, bright green over the
+     * bar's empty end, split exactly at the fill's edge so every letter reads. */
+    const edge = Math.round(bx) + Math.round(P.barW * hpF);
+    const part = (x0, x1, col) => {
+      if (x1 <= x0) return;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0, yHp, x1 - x0, P.barH); ctx.clip();
+      ctx.fillStyle = col; ctx.fillText('+ RECOVERING', tx, ty);
+      ctx.restore();
+    };
+    part(Math.round(bx), edge, '#0d4a26');
+    part(edge, Math.round(bx + P.barW), '#7dffa0');
+    ctx.restore();
   }
 
   /* ---- THE SERVER, directly under Darki's health (request 562).
@@ -24721,7 +24740,7 @@ function drawPixelHud() {
   if (Math.abs(target - hudScoreShown) < 1) hudScoreShown = target;
   ctx.textAlign = 'center';
   // both lines of the score in the hit counter's look (request 611)
-  hitStyleText('SCORE', VIEW_W / 2, oy + 10, 19, { baseline: 'middle' });
+  hitStyleText('SCORE', VIEW_W / 2, oy + 10, 19, { baseline: 'middle', green: true });   // the word is green, the figure keeps the counter's ink (request 616)
   hitStyleText(String(Math.round(hudScoreShown)).padStart(7, '0'), VIEW_W / 2, oy + 38, 34, { baseline: 'middle' });
 
   /* ---- THE OTHER END: the boss on Darki's row, the man under it */
@@ -24770,6 +24789,7 @@ function drawPixelHud() {
   ctx.restore();
 }
 let hudRightBottom = 90;
+const hudUnderBars = { x: PHUD.side + PHUD.port + PHUD.gap + 4, y: PHUD.top + 6 + PHUD.thinH + 14 + PHUD.barH + 12 };   // request 616
 
 /* ---- THE HIT COUNTER (request 552): the reference's — chunky bold pixel type, yellow running
  * to red down the letters, a dark outline and a hard shadow, right-aligned on the right under
@@ -24785,8 +24805,15 @@ const hitCtr = { last: 0, breakT: 0, t: 0 };
  * red down the letters (white-hot crowns with `hot`). Sizes scale off the counter's own 74 px.
  * `baseline: 'middle'` centres the caps on y (the HUD rows are laid out on middles). */
 const HIT_INK = '#140604';
-function hitInkFill(top, bottom, hot = false) {
+function hitInkFill(top, bottom, hot = false, green = false) {
   const g = ctx.createLinearGradient(0, top, 0, bottom);
+  if (green) {                                       // the UI's green accent, same shape of ramp (request 616)
+    g.addColorStop(0, '#e8ffef');
+    g.addColorStop(0.3, '#8cf0b4');
+    g.addColorStop(0.65, '#36d67e');
+    g.addColorStop(1, '#16864a');
+    return g;
+  }
   g.addColorStop(0, hot ? '#fffbe2' : '#ffe24a');
   g.addColorStop(hot ? 0.3 : 0.25, hot ? '#ffd23c' : '#ffc12e');
   g.addColorStop(0.62, '#ff7a1a');
@@ -24805,7 +24832,7 @@ function hitStyleText(text, x, y, px, o = {}) {
   ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
   ctx.fillStyle = HIT_INK; ctx.fillText(text, x + 5 * k, y + 5 * k);
   ctx.strokeStyle = HIT_INK; ctx.lineWidth = Math.max(2, 7 * k); ctx.strokeText(text, x, y);
-  ctx.fillStyle = hitInkFill(y - asc, y + 2 * k, o.hot);
+  ctx.fillStyle = hitInkFill(y - asc, y + 2 * k, o.hot, o.green);
   ctx.fillText(text, x, y);
   ctx.restore();
   return asc;
@@ -24903,13 +24930,15 @@ function drawHud() {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   drawPixelHud();
-  const px = PHUD.side, py = PHUD.top + PHUD.port + 30;
+  // request 616: under Darki's bars, where RECOVERING used to sit, lined up with them
+  const px = hudUnderBars.x, py = hudUnderBars.y;
   /* The manual grab-combo's own gauge, under Darki's row while it owns the input: it names
    * the fist that sustains by alternation, and flips to MASH once a same-button streak has
    * taken over. (This is that move's prompt, not the retired stamina bar.) */
   if (player.attack === 'contCombo') {
     const f = Math.max(0, player.mcStamina / MCOMBO.stamina);
-    pixBar(px, py, PHUD.barW, 8, f, f, f > 0.35 ? '#5ad1ff' : '#ff8b3d', '#bfefff', '#2a7fa8');
+    const low = f <= 0.35 && Math.sin(mobClock * 14) > 0;     // running out: the green blinks darker
+    pixBar(px, py, PHUD.barW, 8, f, f, low ? '#1f9a55' : '#36d67e', '#c9f7da', '#16864a');
     const mashing = player.mcRepeat > MCOMBO.mashRepeats;
     const prompt = player.mcSection === 'finish' ? '—'
       : mashing ? `MASH ${player.mcFist === 0 ? 'LMB' : 'RMB'}`
@@ -24918,7 +24947,7 @@ function drawHud() {
     ctx.save();
     ctx.font = pixelFont(400, 14);
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    pixText(`COMBO  ${player.mcStamina.toFixed(1)}s  ${lap}  next: ${prompt}`, px, py + 22, '#dff3ff');
+    pixText(`COMBO  ${player.mcStamina.toFixed(1)}s  ${lap}  next: ${prompt}`, px, py + 22, '#9ff0c2');
     ctx.restore();
   }
 

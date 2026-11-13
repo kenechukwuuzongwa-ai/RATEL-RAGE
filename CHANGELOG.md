@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-13 — HUD: green SCORE word, RECOVERING inside the HP bar, green combo gauge (v144, request 616)
+
+- SCORE label in a green version of the hit counter's ink; the figure keeps the counter's yellow-to-red.
+- + RECOVERING sits inside Darki's HP bar, right-aligned, two-tone at the fill edge (dark green over the yellow, bright green over the empty end).
+- The grab-combo gauge (was blue, under the portrait) moved to RECOVERING's old row under the bars, lined up with them; bar and text green (blinks darker when nearly out).
+Checks: _chromakey/req616/hudshots.js (regen true, gauge held on screen); no page errors.
+
 ## 2026-11-13 — Green selection look everywhere, portrait email form, | separators (v142, request 615)
 
 - One selection look (focusOverlay): the SIGN IN rows' green wash, green hairline and 3 px edge bar on every menu and pause button, the level select cards, the character card and the pause posts card. The white sheen and glint are gone.
