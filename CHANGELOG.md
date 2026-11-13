@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-13 — Results card: yellow score, grade and kicker; deep-red UNANALYSED (v146, request 619)
+
+- MC OLODO DEFEATED card: the score figure, the grade letter (and its tile) and LEVEL 01 | THE STREET TAX are yellow; UNANALYSED is deep red (#c0182a). Fewer greens.
+
 ## 2026-11-13 — MC OLODO DEFEATED card remodelled, centred (v145, request 617)
 
 - drawOutro: one centred column like SIGN IN. Kicker LEVEL 01 | THE STREET TAX and headline centred; ONE card with MISSION COMPLETE, best, score and a square rank tile; the run rows; then EVIDENCE RECOVERED and its items as rows in the same grid (UNANALYSED in green); the case line at the foot.

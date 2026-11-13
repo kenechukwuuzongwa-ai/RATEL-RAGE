@@ -25181,7 +25181,7 @@ function drawOutro() {
   ctx.translate(0, (1 - head) * -12);
   ctx.textAlign = 'center';
   ui.setFont(700, 11, 4);
-  ctx.fillStyle = C.orange;
+  ctx.fillStyle = C.gold;                                    // yellow (request 619)
   /* Both strings come out of the story data through the identity resolver, so the card cannot drift from
    * the level table and cannot render a development tag — see the fiction firewall in story.js. */
   const OC = outroCard(), LV = LEVELS[activeLevel === 2 ? 2 : 1];
@@ -25235,21 +25235,22 @@ function drawOutro() {
     const shown = Math.round(F.total * ease(Math.max(0, Math.min(1, (summaryT - SCORE_COUNT.at) / SCORE_COUNT.dur))));
     // the rank in a square tile, the score beside it
     const tile = 52, tx = rx - tile, ty = card.y + 16;
-    ctx.fillStyle = 'rgba(54,214,126,0.10)';
+    // the grade and the score in yellow (request 619: 'so many green')
+    ctx.fillStyle = 'rgba(233,182,84,0.10)';
     ctx.fillRect(tx, ty, tile, tile);
-    ctx.strokeStyle = 'rgba(54,214,126,0.55)';
+    ctx.strokeStyle = 'rgba(233,182,84,0.55)';
     ctx.lineWidth = 1;
     ctx.strokeRect(tx + 0.5, ty + 0.5, tile - 1, tile - 1);
     ctx.textAlign = 'center';
     ui.setDisplay(900, 46, 0);
-    ctx.fillStyle = F.rank === 'S' || F.rank === 'A' ? C.orange : C.paper;
+    ctx.fillStyle = C.gold;
     ctx.fillText(F.rank, tx + tile / 2, ty + tile / 2 + 15);
     ctx.textAlign = 'right';
     ui.setFont(700, 9, 2.4);
     ctx.fillStyle = dimWhite(0.42);
     ctx.fillText('SCORE', tx - 16, card.y + 30);
     ui.setDisplay(800, 36, 1);
-    ctx.fillStyle = C.paper;
+    ctx.fillStyle = C.gold;
     ctx.fillText(shown.toLocaleString('en-US'), tx - 16, card.y + 64);
     ctx.textAlign = 'left';
     ctx.fillStyle = dimWhite(0.09);
@@ -25308,7 +25309,7 @@ function drawOutro() {
         ctx.fillText(note, lx + 26 + tw + 12, y);
         ctx.textAlign = 'right';
         ui.setFont(700, 8.5, 1.8);
-        ctx.fillStyle = C.orange;
+        ctx.fillStyle = '#c0182a';                           // deep red (request 619)
         ctx.fillText('UNANALYSED', rx, y);
         ctx.textAlign = 'left';
         ctx.fillStyle = dimWhite(0.05);
