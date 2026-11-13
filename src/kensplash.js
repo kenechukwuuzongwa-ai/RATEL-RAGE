@@ -193,9 +193,12 @@ const MAT = {
   glowRing:   { c: [255, 120, 30], amb: 1,    dif: 0,    spec: 0,    sh: 1,  env: 0, emit: 1 },
   stick:      { c: [30, 31, 35],   amb: 0.38, dif: 0.7,  spec: 0.9,  sh: 30, env: 0.18 },
   stickTop:   { c: [40, 41, 46],   amb: 0.42, dif: 0.65, spec: 0.7,  sh: 22, env: 0.12 },
-  dpad:       { c: [20, 21, 24],   amb: 0.45, dif: 0.6,  spec: 0.5,  sh: 24, env: 0.1 },
-  dpadTop:    { c: [28, 29, 33],   amb: 0.45, dif: 0.6,  spec: 0.6,  sh: 24, env: 0.12 },
-  dpadDish:   { c: [16, 17, 20],   amb: 0.55, dif: 0.4,  spec: 0.2,  sh: 10, env: 0 },
+  /* the D-pad is GLOSS BLACK PLASTIC (request 625: "no reflection or fresnel, it's just black"): `fres` turns
+   * its walls toward the white studio as they go edge-on, and `gloss` lays a softbox reflection across its
+   * cap plus a catch-light on the cap's edge (drawGloss) */
+  dpad:       { c: [22, 23, 27],   amb: 0.45, dif: 0.6,  spec: 0.9,  sh: 18, env: 0.22, fres: 0.85 },
+  dpadTop:    { c: [16, 17, 20],   amb: 0.45, dif: 0.6,  spec: 0.9,  sh: 18, env: 0.1,  fres: 0.1,  gloss: 0.6 },
+  dpadDish:   { c: [10, 10, 12],   amb: 0.55, dif: 0.4,  spec: 0.5,  sh: 14, env: 0,    fres: 0.1,  gloss: 0.35 },
   socket:     { c: [14, 14, 16],   amb: 0.6,  dif: 0.3,  spec: 0.2,  sh: 10, env: 0 },
   button:     { c: [214, 86, 12],  amb: 0.5,  dif: 0.6,  spec: 0.5,  sh: 22, env: 0, emitK: 0.25 },
   buttonTop:  { c: [255, 128, 32], amb: 0.55, dif: 0.55, spec: 0.75, sh: 28, env: 0, emitK: 0.2 },
@@ -204,6 +207,7 @@ const MAT = {
 const LIGHT = norm([-0.78, 0.55, 0.3]);       // key light: above, left, in front (view space)
 const HALF = norm([LIGHT[0], LIGHT[1], LIGHT[2] + 1]);
 const GLOW = [255, 112, 24];
+const STUDIO = [226, 230, 238];               // what a glossy face mirrors: the splash's white, a touch cool
 function shade(mat, n, glow = 0) {
   const m = MAT[mat];
   if (m.emit) return `rgb(${m.c[0]},${m.c[1]},${m.c[2]})`;
@@ -213,8 +217,11 @@ function shade(mat, n, glow = 0) {
   const env = m.env * Math.max(0, n[1]) * 140;
   const k = m.amb + m.dif * d;
   const e = m.emitK || 0;
+  // Fresnel: the more edge-on a face is to the eye (view = +Z), the more of the white studio it mirrors
+  const fr = (m.fres || 0) * Math.pow(1 - Math.max(0, Math.min(1, n[2])), 2.2);
   const ch = (i) => {
     let v = m.c[i] * (k + e) + s + env;
+    if (fr > 0) v = v * (1 - fr) + STUDIO[i] * fr;
     if (glow > 0) v = v * (1 - glow * 0.85) + GLOW[i] * glow * (0.9 + 0.3 * d);
     return Math.max(0, Math.min(255, Math.round(v)));
   };
@@ -282,12 +289,48 @@ export function createKenCube() {
         const n = rot(nm);
         if (n[2] <= 0) continue;
         const pts = m.map((v) => proj(rot([v[0] * grow, v[1] * grow, v[2] * grow]), s, cx, cy));
-        list.push({ pts, z: pts.reduce((a, q) => a + q[2], 0) / pts.length + (f.cap ? 0.002 : 0), col: shade(f.mat, n) });
+        list.push({ pts, z: pts.reduce((a, q) => a + q[2], 0) / pts.length + (f.cap ? 0.002 : 0), col: shade(f.mat, n),
+          gloss: f.cap ? (MAT[f.mat].gloss || 0) * Math.max(0, n[2]) : 0 });
       }
       list.sort((a, b) => a.z - b.z);
-      for (const v of list) fillPoly(g, v.pts, v.col);
+      for (const v of list) { fillPoly(g, v.pts, v.col); if (v.gloss > 0) drawGloss(g, v.pts, v.gloss, s); }
     }
     g.globalAlpha = 1;
+  }
+  /* A glossy cap's reflection (request 625): a soft studio window mirrored across it on the diagonal from the
+   * key light (upper left), a fainter second strip lower down, and a thin catch-light along its outline. */
+  function drawGloss(g, pts, a, s) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+    g.save();
+    g.beginPath();
+    g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.closePath();
+    g.clip();
+    const gr = g.createLinearGradient(x0, y0, x1, y1);
+    const w = (v) => `rgba(236,240,248,${(a * v).toFixed(3)})`;
+    gr.addColorStop(0, w(0.08));
+    gr.addColorStop(0.17, w(0.02));
+    gr.addColorStop(0.25, w(0.95));
+    gr.addColorStop(0.31, w(0.4));
+    gr.addColorStop(0.4, w(0));
+    gr.addColorStop(0.66, w(0));
+    gr.addColorStop(0.71, w(0.3));
+    gr.addColorStop(0.77, w(0));
+    gr.addColorStop(1, w(0));
+    g.fillStyle = gr;
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    // the catch-light: the cap's edge, lit hardest where it faces the key light
+    const rim = g.createLinearGradient(x0, y0, x1, y1);
+    rim.addColorStop(0, `rgba(255,255,255,${(0.85 * a / 0.5).toFixed(3)})`);
+    rim.addColorStop(0.6, `rgba(255,255,255,${(0.25 * a / 0.5).toFixed(3)})`);
+    rim.addColorStop(1, `rgba(255,255,255,${(0.4 * a / 0.5).toFixed(3)})`);
+    g.strokeStyle = rim;
+    g.lineWidth = Math.max(1, s * 0.022);
+    g.lineJoin = 'round';
+    g.stroke();
+    g.restore();
   }
   function fillPoly(g, pts, col) {
     g.beginPath();

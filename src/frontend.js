@@ -19,7 +19,7 @@
 // The cinematic bars, shared with game.js (request 399): Level 2's screen changes.
 import { createBarCut } from './bars.js';
 // The KenCrafts game cube, drawn in code (requests 612-613): the splash no longer shows the filmed cube.
-import { createKenCube } from './kensplash.js?v=ratelrage-mobile-v140';
+import { createKenCube } from './kensplash.js?v=ratelrage-mobile-v149';
 
 /* START-POINT LINKS (request 486): `?start=strongroom` opens straight into Level 02
  * at the keypad checkpoint — its last arena cleared, a few steps short of the

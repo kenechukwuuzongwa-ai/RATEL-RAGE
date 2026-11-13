@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v143';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v149';
 import { createAftermath } from './aftermath.js?v=ratelrage-green615-v2';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -24939,16 +24939,7 @@ function drawHud() {
     const f = Math.max(0, player.mcStamina / MCOMBO.stamina);
     const low = f <= 0.35 && Math.sin(mobClock * 14) > 0;     // running out: the green blinks darker
     pixBar(px, py, PHUD.barW, 8, f, f, low ? '#1f9a55' : '#36d67e', '#c9f7da', '#16864a');
-    const mashing = player.mcRepeat > MCOMBO.mashRepeats;
-    const prompt = player.mcSection === 'finish' ? '—'
-      : mashing ? `MASH ${player.mcFist === 0 ? 'LMB' : 'RMB'}`
-      : (player.mcFist === 0 ? 'RMB' : 'LMB');
-    const lap = `lap ${Math.max(1, player.mcLaps)}/${MCOMBO.laps}`;
-    ctx.save();
-    ctx.font = pixelFont(400, 14);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    pixText(`COMBO  ${player.mcStamina.toFixed(1)}s  ${lap}  next: ${prompt}`, px, py + 22, '#9ff0c2');
-    ctx.restore();
+    // the bar alone: its readout line (COMBO 3.2s lap 1/3 next: RMB) is gone (request 625)
   }
 
   /* NO CONTROLS CRIB ON THE PLAY SCREEN (request 566). The two bottom lines —
@@ -25194,6 +25185,51 @@ function drawSummaryHeadline(text, cx, baseY, C) {
   ctx.restore();
 }
 
+/* THE SCORE'S AND THE GRADE'S SHEEN (request 625): the headline's band of light, on one line of text in the
+ * current ctx font/align (alphabetic baseline). `start` is the summary time of its first pass — the moment the
+ * count lands, the moment the grade stamps — then it comes round every SHEEN_PERIOD. Outside a pass the text is
+ * drawn plain, straight onto ctx; during one it goes through the offscreen so the light stays on the letters. */
+const SHEEN_PERIOD = 3.2, SHEEN_PASS = 0.6;
+const sheenBuf = { c: null, g: null };
+function drawSheenText(text, x, baseY, fill, start) {
+  const sumT = outroSummaryT() ?? 0;
+  const u = sumT > start ? (((sumT - start) % SHEEN_PERIOD) / SHEEN_PASS) : -1;
+  if (!(u > 0 && u < 1)) { ctx.fillStyle = fill; ctx.fillText(text, x, baseY); return; }
+  const mt = ctx.measureText(text);
+  const w = mt.width, asc = mt.actualBoundingBoxAscent || 30, desc = mt.actualBoundingBoxDescent || 0;
+  const al = ctx.textAlign;
+  const left = al === 'center' ? x - w / 2 : (al === 'right' || al === 'end') ? x - w : x;
+  const pad = 4 + asc * 0.25, top = baseY - asc - pad, hgt = asc + desc + pad * 2, wid = w + pad * 2;
+  const m = ctx.getTransform(), k = Math.max(1, Math.hypot(m.a, m.b));
+  if (!sheenBuf.c) { sheenBuf.c = document.createElement('canvas'); sheenBuf.g = sheenBuf.c.getContext('2d'); }
+  const c = sheenBuf.c, g = sheenBuf.g;
+  const bw = Math.ceil(wid * k), bh = Math.ceil(hgt * k);
+  if (c.width < bw || c.height < bh) { c.width = Math.max(c.width, bw); c.height = Math.max(c.height, bh); }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, c.width, c.height);
+  g.setTransform(k, 0, 0, k, 0, 0);
+  g.font = ctx.font;
+  if ('letterSpacing' in g) g.letterSpacing = 'letterSpacing' in ctx ? ctx.letterSpacing : '0px';
+  g.textAlign = 'left';
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = fill;
+  g.fillText(text, pad, baseY - top);
+  const band = Math.max(28, hgt * 1.4), bx = -band + u * (wid + band * 2);
+  const sg = g.createLinearGradient(bx - band / 2, 0, bx + band / 2, hgt * 0.6);
+  sg.addColorStop(0, 'rgba(255,255,255,0)');
+  sg.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+  sg.addColorStop(1, 'rgba(255,255,255,0)');
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = sg;
+  g.fillRect(0, 0, wid, hgt);
+  g.globalCompositeOperation = 'source-over';
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(c, 0, 0, bw, bh, left - pad, top, bw / k, bh / k);
+  ctx.restore();
+}
+
 function drawOutro() {
   const ui = frontEnd?.ui;
   if (!ui) return;
@@ -25342,7 +25378,7 @@ function drawOutro() {
       ctx.translate(tx + tile / 2, ty + tile / 2);
       ctx.scale(ss, ss);
       ctx.translate(-(tx + tile / 2), -(ty + tile / 2));
-      ctx.fillText(F.rank, tx + tile / 2, ty + tile / 2 + 15);
+      drawSheenText(F.rank, tx + tile / 2, ty + tile / 2 + 15, C.gold, stampAt + 0.3);   // sheen once it has landed (request 625)
       ctx.restore();
       const fl = 1 - span(stampAt + 0.2, 0.4);                // the tile flashes as it lands
       if (st >= 1 && fl > 0) {
@@ -25355,8 +25391,8 @@ function drawOutro() {
     ctx.fillStyle = dimWhite(0.42);
     ctx.fillText('SCORE', tx - 16, card.y + 30);
     ui.setDisplay(800, 36, 1);
-    ctx.fillStyle = C.gold;
-    ctx.fillText(shown.toLocaleString('en-US'), tx - 16, card.y + 64);
+    // the count's sheen: first pass as the total lands, then every SHEEN_PERIOD (request 625)
+    drawSheenText(shown.toLocaleString('en-US'), tx - 16, card.y + 64, C.gold, SCORE_COUNT.at + SCORE_COUNT.dur - 0.05);
     ctx.textAlign = 'left';
     ctx.fillStyle = dimWhite(0.09);
     ctx.fillRect(lx, card.y + 84, COL - PAD * 2, 1);

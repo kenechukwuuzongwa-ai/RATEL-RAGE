@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-13 — Glossy splash D-pad, score/grade sheen, combo bar text gone (v149, request 625)
+
+- KenCrafts cube D-pad: gloss black plastic. Fresnel term in shade() (`fres`: edge-on faces mirror the white studio) and drawGloss() on its cap (softbox reflection streaks + edge catch-light). kensplash.js.
+- Level summary: the score and the grade get the headline's sheen (drawSheenText): score as the count lands, grade after it stamps, then every 3.2 s.
+- Grab-combo gauge: the readout line under the bar (COMBO 3.2s lap 1/3 next: RMB) removed; the bar stays.
+- ANALYZE EVIDENCE: present at 1.0 s+ on desktop and Android-emulated phone (frames to 12 s); not reproduced.
+Checks: _chromakey/req622/frames.js -> req625/final; req625/cubezoom.js; req625/sheen/strip.png; no page errors.
+
 ## 2026-11-13 — Summary headline: red italic DEFEATED + sheen (v148, request 623)
 
 - MC OLODO DEFEATED: DEFEATED is red (#e3242b) in the real Uni Sans Heavy Italic cut ('RR Uni Heavy Italic', frontend/fonts/uni-sans-heavy-italic.otf, unmodified, gitignored like Heavy); MC OLODO has a faint metal falloff; a light band sweeps the whole line every 3.2 s once it lands (drawSummaryHeadline in game.js).
