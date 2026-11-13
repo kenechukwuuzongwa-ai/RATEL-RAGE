@@ -170,9 +170,43 @@ const figureH = (feet) => GROUND.k * (feet - GROUND.horizon);
  *   Tiny5 is ~0.85x Montserrat's width and 0.90x its cap height at the same px -> x1.10
  *   brings the caps level and still leaves the line ~6% narrower than before;
  *   Silkscreen Bold is 1.15-1.40x WIDER than Montserrat Black -> x0.85 for headlines. */
-export const FONT = "'RR Pixel', monospace";
-export const FONT_BOLD = "'RR Pixel Bold', 'RR Pixel', monospace";
+/* REQUEST 602 — UNI SANS, EVERYWHERE. 'RR Uni' (body) and 'RR Uni Heavy' (headlines) lead both
+ * stacks (styles.css declares them over frontend/fonts/uni-sans-*.woff2|otf). The pixel faces stay
+ * BEHIND them as the fallback: until the Uni Sans files are in frontend/fonts the game renders
+ * exactly as before instead of dropping to monospace. calibrateFontFit() (called at boot, after
+ * the faces load) re-derives PIXEL_FIT from MEASURED widths, so every box tuned for the pixel
+ * faces keeps its text inside it whichever face actually loaded. */
+export const FONT = "'RR Uni', 'RR Pixel', monospace";
+export const FONT_BOLD = "'RR Uni Heavy', 'RR Pixel Bold', 'RR Pixel', monospace";
 export const PIXEL_FIT = { body: 1.1, bold: 0.85 };
+const PIXEL_FIT_BASE = { body: 1.1, bold: 0.85 };
+/* Is a face of this family actually LOADED (not merely declared, or declared and 404'd)?
+ * document.fonts.check() answers true for a face in 'error', so the set is walked instead. */
+export function fontFaceLoaded(family) {
+  try {
+    for (const f of document.fonts) {
+      if (f.family.replace(/["']/g, '') === family && f.status === 'loaded') return true;
+    }
+  } catch { /* no FontFaceSet */ }
+  return false;
+}
+export const uniSansReady = () => fontFaceLoaded('RR Uni Heavy');
+/* Width-match Uni Sans to the pixel faces the layouts were last tuned on (request 602). A mixed
+ * sample, because the free Uni Sans cuts are CAPS faces: their lowercase is not the pixel face's. */
+const FIT_SAMPLE = 'Rage of Ratels — Lagos Hit 0123456789 SCORE';
+export function calibrateFontFit() {
+  const out = { uniBody: fontFaceLoaded('RR Uni'), uniBold: fontFaceLoaded('RR Uni Heavy') };
+  PIXEL_FIT.body = PIXEL_FIT_BASE.body;
+  PIXEL_FIT.bold = PIXEL_FIT_BASE.bold;
+  try {
+    const g = document.createElement('canvas').getContext('2d');
+    const w = (fam) => { g.font = `400 100px ${fam}`; return g.measureText(FIT_SAMPLE).width; };
+    const clampFit = (v) => Math.min(1.6, Math.max(0.55, v));
+    if (out.uniBody) PIXEL_FIT.body = +clampFit(PIXEL_FIT_BASE.body * w("'RR Pixel'") / w("'RR Uni'")).toFixed(3);
+    if (out.uniBold) PIXEL_FIT.bold = +clampFit(PIXEL_FIT_BASE.bold * w("'RR Pixel Bold'") / w("'RR Uni Heavy'")).toFixed(3);
+  } catch { /* keep the base fit */ }
+  return { ...out, fit: { ...PIXEL_FIT } };
+}
 /* The one place a weight + px becomes a canvas/CSS font string. `bold` forces the display face. */
 /* SMALL TYPE IS LIFTED, NOT JUST CONVERTED (request 563). The layouts were tuned for Montserrat,
  * where 9-15 px still read. Tiny5 is a 5-pixel face: at those sizes on a phone (the 720-high canvas
@@ -493,7 +527,7 @@ export function drawSkipHint(ctx, W, t, y = 28, panel = false) {
     const w = ctx.measureText(SKIP_TAP.text).width + 28;
     ctx.fillStyle = 'rgba(4,6,9,0.62)';
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x - w + 14, y - 15, w, 30, 15); else ctx.rect(x - w + 14, y - 15, w, 30);
+    ctx.rect(x - w + 14, y - 15, w, 30);           // sharp corners (request 603)
     ctx.fill();
   }
   ctx.fillStyle = '#f4f1e8';
@@ -576,7 +610,7 @@ export function drawTapCue(ctx, W, H, t, o = {}) {
    * use, so the cue reads as part of the HUD and not as a video overlay. */
   ctx.globalAlpha = alpha;
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(x, y, w, h, h / 2); else ctx.rect(x, y, w, h);
+  ctx.rect(x, y, w, h);                            // sharp corners (request 603)
   if (!corner) {
     ctx.fillStyle = 'rgba(4,6,9,0.74)';
     ctx.fill();
@@ -1161,15 +1195,13 @@ const image = (src) => new Promise((resolve, reject) => {
   img.src = url;
 });
 
-function roundRectPath(c, x, y, w, h, r = 8) {
-  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+/* SHARP CORNERS, EVERYWHERE (request 603: "make all corners sharp corners and not rounded
+ * including menu ui buttons"). Every panel, plate, button, bar and card in the menus, the
+ * aftermath board and the HUD is pathed through here, so the radius each call site still passes
+ * is deliberately IGNORED: one place decides the corner, and it is square. */
+function roundRectPath(c, x, y, w, h, r = 0) {   // eslint-disable-line no-unused-vars
   c.beginPath();
-  c.moveTo(x + rr, y);
-  c.arcTo(x + w, y, x + w, y + h, rr);
-  c.arcTo(x + w, y + h, x, y + h, rr);
-  c.arcTo(x, y + h, x, y, rr);
-  c.arcTo(x, y, x + w, y, rr);
-  c.closePath();
+  c.rect(x, y, w, h);
 }
 
 function loadSettings() {
@@ -3918,8 +3950,8 @@ export function createFrontEnd({
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.lineWidth = weight * 24 / size;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.lineCap = 'square';                        // sharp corners and ends (request 603)
+    ctx.lineJoin = 'miter';
     fn(ctx);
     ctx.restore();
   }
@@ -4057,8 +4089,8 @@ export function createFrontEnd({
       ctx.globalAlpha = f;
       ctx.strokeStyle = C.cream;
       ctx.lineWidth = 1.9;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      ctx.lineCap = 'square';                      // a sharp chevron (request 603)
+      ctx.lineJoin = 'miter';
       const ax = x + w - 20, ay = y + h / 2, k = 4.6;
       ctx.beginPath();
       ctx.moveTo(ax - k * 0.62, ay - k);
@@ -4709,7 +4741,7 @@ export function createFrontEnd({
     ctx.translate(cx, cy);
     ctx.scale(sc, sc);
     ctx.beginPath();
-    ctx.arc(0, 0, CLOSE.r, 0, Math.PI * 2);
+    ctx.rect(-CLOSE.r, -CLOSE.r, CLOSE.r * 2, CLOSE.r * 2);   // a square button, not a disc (request 603)
     ctx.fillStyle = 'rgba(10,14,22,0.66)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(232,238,248,0.34)';
@@ -4718,7 +4750,7 @@ export function createFrontEnd({
     const k = 7;
     ctx.strokeStyle = C.paper;
     ctx.lineWidth = 2.2;
-    ctx.lineCap = 'round';
+    ctx.lineCap = 'square';
     ctx.beginPath();
     ctx.moveTo(-k, -k); ctx.lineTo(k, k);
     ctx.moveTo(k, -k); ctx.lineTo(-k, k);
@@ -4928,7 +4960,10 @@ export function createFrontEnd({
     const vw = splashVideo.videoWidth, vh = splashVideo.videoHeight;
     const scale = Math.max(W / vw, H / vh);
     const dw = Math.round(vw * scale), dh = Math.round(vh * scale);
-    ctx.drawImage(splashVideo, Math.round((W - dw) / 2), Math.round((H - dh) / 2), dw, dh);
+    const ox = Math.round((W - dw) / 2), oy = Math.round((H - dh) / 2);
+    ctx.drawImage(splashVideo, ox, oy, dw, dh);
+    // request 602: the wordmark re-set in Uni Sans over the clip's baked one, in step with it
+    drawKenCraftsType(splashVideo.currentTime, ox, oy, dw / KEN_TYPE.clipW);
 
     /* Measured against the FILE's duration, not against phaseT: a clip that
      * stalled or started late must still fade on its own last half-second
@@ -4949,6 +4984,230 @@ export function createFrontEnd({
       ctx.fillStyle = `rgba(3,4,5,${k.toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
     }
+  }
+
+  /* ---- THE KENCRAFTS WORDMARK, IN UNI SANS (request 602) ----------------------------------
+   *
+   * The studio clip keeps its filmed cube (the parts assembling, the turn, the shrink) exactly as
+   * shot; only its LETTERING is replaced. The wordmark is redrawn here as vector type — paths and
+   * text, built once into a sprite — and moved by the clip's own clock along the path the baked
+   * wordmark takes, measured frame by frame (_chromakey/req603/track.js, gen.js, parts.js):
+   *
+   *   1.83 - 2.17 s  it streaks in from the right, motion-blurred   (STREAK: lead offset, smear)
+   *   2.17 - 2.43 s  first hold, ink box 928,461 - 1704,626        (BIG)
+   *   2.43 - 2.93 s  the lockup shrinks toward the cube            (SHRINK: measured ink boxes)
+   *   2.93 - 4.80 s  held small, ink box 831,507 - 1190,583        (the splash freezes at 4.75)
+   *   4.80 - 5.15 s  dissolves with the cube                        (FADE)
+   *
+   * All in the clip's 1920x1080 pixels. Each frame a patch of the clip's own flat backdrop
+   * (#fdfdfd, measured) covers the baked lettering — never the cube: its right edge is tracked
+   * too (CUBE) and the patch stops short of it. The new type is then laid into the same box.
+   * Only when Uni Sans has actually loaded: without it the clip plays untouched, original type. */
+  const KEN_TYPE = {
+    clipW: 1920, clipH: 1080,
+    bg: [253, 253, 253],
+    big: [928, 461, 1704, 626],
+    small: [831, 507, 1190, 583],
+    line1: 'kenCrafts', split: 3,                  // 'ken' silver | 'Crafts' orange
+    sub: 'INTERACTIVE STUDIO',                     // the clip's own read INTERRACTIVE (typo)
+    // inside the BIG box, clip px — parts.js on the 2.2 s frame
+    l1: { x0: 928, x1: 1704, top: 461, base: 558 },
+    s1: { x0: 1050, x1: 1594, mid: 606 },
+    rules: { l0: 935, r1: 1707, mid: 603.5, h: 8, gap: 20 },
+    skew: 0.2,
+    q: 1.5, pad: 48,                               // sprite resolution and margin, clip px
+    shutter: 0.03, maxSamples: 40,                 // motion blur: seconds of travel averaged
+    STREAK: [[1.833, 836, 562], [1.867, 639, 536], [1.9, 451, 394], [1.933, 313, 300], [1.966, 208, 217],
+      [2.0, 132, 160], [2.033, 76, 132], [2.066, 39, 94], [2.1, 16, 63], [2.133, 4, 38], [2.166, 0, 18], [2.2, 0, 0]],
+    SHRINK: [[2.433, 928, 461, 1704, 626], [2.466, 922, 463, 1679, 623], [2.499, 914, 467, 1641, 619],
+      [2.533, 903, 472, 1586, 615], [2.566, 890, 478, 1517, 609], [2.599, 877, 484, 1449, 603],
+      [2.632, 866, 490, 1387, 598], [2.666, 857, 494, 1336, 594], [2.699, 849, 498, 1295, 591],
+      [2.732, 844, 501, 1263, 589], [2.766, 839, 503, 1237, 587], [2.799, 836, 505, 1219, 586],
+      [2.832, 833, 506, 1205, 585], [2.866, 832, 507, 1197, 584], [2.899, 831, 507, 1192, 584],
+      [2.932, 831, 507, 1190, 583]],
+    CUBE: [[1.8, 1107], [1.833, 1073], [1.867, 1031], [1.9, 994], [1.933, 966], [1.966, 946], [2.0, 926],
+      [2.033, 917], [2.066, 912], [2.1, 911], [2.433, 909], [2.466, 906], [2.499, 899], [2.533, 890],
+      [2.566, 870], [2.599, 856], [2.632, 842], [2.666, 828], [2.699, 820], [2.732, 813], [2.766, 809],
+      [2.799, 806], [2.832, 805], [2.866, 803], [2.899, 802]],
+    FADE: [[4.96, 1], [5.0, 0.95], [5.03, 0.79], [5.063, 0.35], [5.1, 0.15], [5.15, 0]],
+    BG_LIFT: [[4.98, 253], [5.13, 255]],
+    from: 1.82, until: 5.2,
+  };
+  /* Linear lookup in a [t, ...values] table, clamped at both ends. */
+  function lerpTable(tab, t, col = 1) {
+    if (t <= tab[0][0]) return tab[0][col];
+    for (let i = 1; i < tab.length; i++) {
+      if (t <= tab[i][0]) {
+        const a = tab[i - 1], b = tab[i], k = (t - a[0]) / (b[0] - a[0]);
+        return a[col] + (b[col] - a[col]) * k;
+      }
+    }
+    return tab[tab.length - 1][col];
+  }
+  let kenSprite = null;      // { canvas, x0, y0 } in clip px (top-left of the sprite)
+  function buildKenSprite() {
+    const T = KEN_TYPE, q = T.q, pad = T.pad;
+    const bx0 = T.big[0] - pad, by0 = T.big[1] - pad;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil((T.big[2] - T.big[0] + pad * 2) * q);
+    c.height = Math.ceil((T.big[3] - T.big[1] + pad * 2) * q);
+    const g = c.getContext('2d');
+    g.scale(q, q);
+    g.translate(-bx0, -by0);                       // draw in clip px from here on
+    const HEAVY = "'RR Uni Heavy'";
+
+    /* LINE 1 — fitted so its slanted ink spans the measured box, cap centred on the measured cap. */
+    const capMid = (T.l1.top + T.l1.base) / 2;
+    const measure = (px) => {
+      g.font = `400 ${px}px ${HEAVY}`;
+      const m = g.measureText(T.line1);
+      const cap = g.measureText('C').actualBoundingBoxAscent || px * 0.7;
+      return { w: m.width, cap, left: m.actualBoundingBoxLeft || 0 };
+    };
+    let px = 100;
+    for (let i = 0; i < 4; i++) {                  // converges in two passes; four is margin
+      const m = measure(px);
+      px *= (T.l1.x1 - T.l1.x0) / (m.w + T.skew * m.cap);
+    }
+    const m1 = measure(px);
+    const base = capMid + m1.cap / 2;
+    const ken = T.line1.slice(0, T.split), crafts = T.line1.slice(T.split);
+    g.font = `400 ${px}px ${HEAVY}`;
+    const kenW = g.measureText(ken).width;
+    const lx = T.l1.x0 + m1.left;
+    const slant = (fn) => {                        // italic by a true skew about the baseline
+      g.save();
+      g.transform(1, 0, -T.skew, 1, T.skew * base, 0);
+      fn();
+      g.restore();
+    };
+    const depth = Math.max(3, Math.round(px * 0.06));
+    // the soft floor shadow under the whole line, then the extrusion, then the faces
+    slant(() => {
+      g.save();
+      g.shadowColor = 'rgba(40,40,40,0.28)';
+      g.shadowBlur = px * 0.16;
+      g.shadowOffsetY = px * 0.12;
+      g.fillStyle = '#7d7d7d';
+      g.fillText(ken, lx + depth, base + depth);
+      g.fillStyle = '#8a3c05';
+      g.fillText(crafts, lx + kenW + depth, base + depth);
+      g.restore();
+      for (let i = depth; i >= 1; i--) {
+        const k = i / depth;
+        g.fillStyle = `rgb(${Math.round(150 - 60 * k)},${Math.round(150 - 60 * k)},${Math.round(152 - 60 * k)})`;
+        g.fillText(ken, lx + i * 0.8, base + i);
+        g.fillStyle = `rgb(${Math.round(190 - 60 * k)},${Math.round(84 - 34 * k)},${Math.round(14 - 8 * k)})`;
+        g.fillText(crafts, lx + kenW + i * 0.8, base + i);
+      }
+      const top = base - m1.cap;
+      const silver = g.createLinearGradient(0, top, 0, base);
+      silver.addColorStop(0, '#ffffff'); silver.addColorStop(0.55, '#f1f1f1'); silver.addColorStop(1, '#c4c4c6');
+      g.fillStyle = silver;
+      g.fillText(ken, lx, base);
+      const orange = g.createLinearGradient(0, top, 0, base);
+      orange.addColorStop(0, '#ffa23c'); orange.addColorStop(0.5, '#ff7d12'); orange.addColorStop(1, '#e45f00');
+      g.fillStyle = orange;
+      g.fillText(crafts, lx + kenW, base);
+    });
+
+    /* LINE 2 — tracked caps fitted between the rules, light face with a dark keyline. */
+    const chars = [...T.sub];
+    const subW = T.s1.x1 - T.s1.x0;
+    const trackK = 0.42;                           // tracking as a share of the size, as filmed
+    const widthAt = (s) => {
+      g.font = `400 ${s}px ${HEAVY}`;
+      return chars.reduce((a, ch) => a + g.measureText(ch).width, 0) + trackK * s * (chars.length - 1);
+    };
+    let sp = 24;
+    for (let i = 0; i < 4; i++) sp *= subW / widthAt(sp);
+    g.font = `400 ${sp}px ${HEAVY}`;
+    const sCap = g.measureText('I').actualBoundingBoxAscent || sp * 0.7;
+    const sBase = T.s1.mid + sCap / 2;
+    const subLeft = T.s1.x0 + (subW - widthAt(sp)) / 2;
+    g.font = `400 ${sp}px ${HEAVY}`;
+    g.lineJoin = 'round';
+    for (const pass of [0, 1, 2]) {                // 0 drop shadow, 1 keyline, 2 face
+      let x = subLeft;
+      for (const ch of chars) {
+        if (pass === 0) { g.fillStyle = 'rgba(30,30,30,0.35)'; g.fillText(ch, x + 1.2, sBase + 1.6); }
+        else if (pass === 1) { g.strokeStyle = '#34363a'; g.lineWidth = Math.max(1.4, sp * 0.11); g.strokeText(ch, x, sBase); }
+        else { g.fillStyle = '#f3f3f3'; g.fillText(ch, x, sBase); }
+        x += g.measureText(ch).width + trackK * sp;
+      }
+    }
+    const subRight = subLeft + widthAt(sp);
+    g.font = `400 ${sp}px ${HEAVY}`;
+
+    /* THE RULES — orange bars, pointed at the outer end, square at the type. */
+    const R = T.rules, hh = R.h / 2;
+    const rule = (outer, inner) => {
+      const dir = Math.sign(inner - outer), tip = R.h * 1.8;
+      const grad = g.createLinearGradient(0, R.mid - hh, 0, R.mid + hh);
+      grad.addColorStop(0, '#ffa23c'); grad.addColorStop(1, '#e05c00');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(outer, R.mid);
+      g.lineTo(outer + dir * tip, R.mid - hh);
+      g.lineTo(inner, R.mid - hh);
+      g.lineTo(inner, R.mid + hh);
+      g.lineTo(outer + dir * tip, R.mid + hh);
+      g.closePath();
+      g.fill();
+    };
+    rule(R.l0, Math.max(R.l0 + R.h * 3, subLeft - R.gap));
+    rule(R.r1, Math.min(R.r1 - R.h * 3, subRight + R.gap));
+
+    kenSprite = { canvas: c, x0: bx0, y0: by0, px, sp };
+  }
+
+  /* Where the wordmark is at clip time t: its BIG-box origin offset, uniform scale, smear length. */
+  function kenPose(t) {
+    const T = KEN_TYPE, bw = T.big[2] - T.big[0];
+    if (t < 2.2) {
+      return { x: T.big[0] + lerpTable(T.STREAK, t, 1), y: T.big[1], s: 1, trail: lerpTable(T.STREAK, t, 2) };
+    }
+    if (t < T.SHRINK[0][0]) return { x: T.big[0], y: T.big[1], s: 1, trail: 0 };
+    const x0 = lerpTable(T.SHRINK, t, 1), y0 = lerpTable(T.SHRINK, t, 2), x1 = lerpTable(T.SHRINK, t, 3);
+    return { x: x0, y: y0, s: (x1 - x0) / bw, trail: 0 };
+  }
+
+  function drawKenCraftsType(t, ox, oy, k) {
+    const T = KEN_TYPE;
+    if (t < T.from || t > T.until || !uniSansReady()) return;
+    if (!kenSprite) buildKenSprite();
+    const pose = kenPose(t);
+    const bw = T.big[2] - T.big[0], bh = T.big[3] - T.big[1];
+    // 1. cover the baked lettering (box + smear + its shadow), never reaching back into the cube
+    const cubeR = t < 2.95 ? lerpTable(T.CUBE, t, 1) : T.CUBE[T.CUBE.length - 1][1];
+    const left = Math.max(cubeR + 3, pose.x - 14 * pose.s);
+    const right = Math.min(T.clipW, pose.x + (bw + 26) * pose.s + pose.trail);
+    const top = pose.y - 22 * pose.s, bottom = pose.y + (bh + 30) * pose.s;
+    const lift = Math.round(lerpTable(T.BG_LIFT, t, 1));
+    ctx.save();
+    ctx.fillStyle = `rgb(${lift},${lift},${lift})`;
+    if (right > left) ctx.fillRect(ox + left * k, oy + top * k, (right - left) * k, (bottom - top) * k);
+    // 2. the vector wordmark in its pose; a streak is drawn as an even average of copies along it
+    /* Motion blur by TIME SAMPLING: the pose is averaged over a shutter window behind t, so the
+     * streak smears along its path and the shrink blurs as a zoom, as both do in the clip. The
+     * sample count follows the distance travelled, so a still lockup costs one draw. */
+    const fade = t > T.FADE[0][0] ? lerpTable(T.FADE, t, 1) : 1;
+    if (fade > 0) {
+      const sp = kenSprite;
+      const back = kenPose(Math.max(T.from, t - T.shutter));
+      const travel = Math.abs(pose.x - back.x) + Math.abs(pose.s - back.s) * bw;
+      const n = Math.max(1, Math.min(T.maxSamples, Math.ceil(travel * k)));
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      for (let j = 0; j < n; j++) {
+        const p = n > 1 ? kenPose(t - T.shutter * (1 - j / (n - 1))) : pose;
+        const sc = k * p.s / T.q;
+        ctx.globalAlpha = fade / (j + 1);          // running average: every sample weighs 1/n
+        ctx.drawImage(sp.canvas, ox + (p.x + (sp.x0 - T.big[0]) * p.s) * k, oy + (p.y + (sp.y0 - T.big[1]) * p.s) * k,
+          sp.canvas.width * sc, sp.canvas.height * sc);
+      }
+    }
+    ctx.restore();
   }
 
   /* The card this replaced. KEPT, and deliberately: a failed video fetch must
@@ -5911,7 +6170,8 @@ export function createFrontEnd({
           ctx.fillStyle = i === selection ? C.orange : C.gold;
           ctx.fill();
           ctx.beginPath();
-          ctx.arc(sx + sw * f, sy + 3, i === selection ? 5.5 : 4, 0, 7);
+          const kn = i === selection ? 5.5 : 4;           // a square slider knob (request 603)
+          ctx.rect(sx + sw * f - kn, sy + 3 - kn, kn * 2, kn * 2);
           ctx.fillStyle = i === selection ? C.cream : C.gold;
           ctx.fill();
           ctx.textAlign = 'right';

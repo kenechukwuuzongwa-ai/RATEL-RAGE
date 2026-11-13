@@ -149,6 +149,13 @@ gameplay controls hide (`wrap` display none) so the menu is unobstructed.
 ## 4. MEDIA PIPELINE FIXES (all in `src/frontend.js` unless noted)
 
 ### 4.1 The studio splash (KenCraft)
+- **Wordmark in Uni Sans** (request 602): the filmed cube plays as shot; the
+  baked "kenCrafts / INTERRACTIVE STUDIO" lettering is covered each frame with
+  the clip's flat #fdfdfd backdrop and redrawn as vector type in Uni Sans
+  (`drawKenCraftsType` in `src/frontend.js`), moved along the path measured
+  from the clip (streak-in 1.83 s, shrink 2.43-2.93 s, hold, dissolve) with
+  time-sampled motion blur. Spelled INTERACTIVE. Only when Uni Sans has loaded;
+  without the font files the clip plays untouched.
 - **Cover fit**: fills every device aspect (was letterboxing).
 - **No fallback pop**: while the clip is loading the screen stays on its black
   stage; the drawn wordmark appears only on genuine failure.

@@ -63,7 +63,7 @@
     diagEl.style.cssText = 'position:fixed;left:8px;top:8px;z-index:70;'
       + 'font:600 10px/1.5 monospace,monospace;color:#9fe6a0;'
       + 'background:rgba(4,8,14,.75);border:1px solid rgba(120,255,160,.35);'
-      + 'border-radius:8px;padding:6px 9px;pointer-events:none;'
+      + 'border-radius:0;padding:6px 9px;pointer-events:none;'
       + 'max-width:70vw;white-space:pre-wrap;';
     document.body.appendChild(diagEl);
     setInterval(() => {
@@ -424,7 +424,7 @@
     const w = size * (CONTROLS[id]?.pill || 1);
     el.style.width = w + 'px';
     el.style.height = size + 'px';
-    el.style.borderRadius = (CONTROLS[id]?.pill ? size * 0.5 : size * 0.5) + 'px';
+    el.style.borderRadius = '0';   // sharp corners (request 603): the glass-sphere art stays round, any plate is square
     el.style.left = (s.x * window.innerWidth - w / 2) + 'px';
     el.style.top = (s.y * window.innerHeight - size / 2) + 'px';
     el.style.opacity = editing ? Math.max(0.35, s.opacity) : s.opacity;
@@ -453,7 +453,7 @@
     wrap.id = 'ror-touch';
     wrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:60;'
       + 'display:none;user-select:none;-webkit-user-select:none;'
-      + 'font:400 12px/1 "RR Pixel",monospace;color:#eaf0ff;letter-spacing:.06em;'
+      + 'font:400 12px/1 "RR Uni","RR Pixel",monospace;color:#eaf0ff;letter-spacing:.06em;'
       + 'opacity:1;';
     /* IN-GAME CUTSCENES (request 519): the pad is 100% transparent and takes no
      * touches for the whole scene, then dissolves back in once control returns.
@@ -910,15 +910,15 @@
      * and that is off to the right of a centred bar. `parkPanel` moves it back
      * down on the rare occasion the selected control is itself up here. */
     panel.style.cssText = 'position:absolute;left:50%;top:14px;transform:translateX(-50%);'
-      + 'display:none;align-items:center;gap:14px;padding:10px 16px;border-radius:16px;'
+      + 'display:none;align-items:center;gap:14px;padding:10px 16px;border-radius:0;'
       + 'flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 24px);'   // UNDO + CANCEL (request 473) on a narrow phone
       + 'background:rgba(18,24,38,.72);border:1px solid rgba(255,255,255,.22);'
       + 'backdrop-filter:blur(16px) saturate(1.4);'
       + '-webkit-backdrop-filter:blur(16px) saturate(1.4);pointer-events:auto;'
-      + 'box-shadow:0 10px 40px rgba(0,0,0,.45);font:400 11px/1.5 "RR Pixel",monospace;';
+      + 'box-shadow:0 10px 40px rgba(0,0,0,.45);font:400 11px/1.5 "RR Uni","RR Pixel",monospace;';
     const style = document.createElement('style');
     style.textContent = '#ror-hud-panel input[type=range]{width:130px;accent-color:#ffe45e;}'
-      + '#ror-hud-panel button{padding:7px 12px;border-radius:9px;cursor:pointer;'
+      + '#ror-hud-panel button{padding:7px 12px;border-radius:0;cursor:pointer;'
       + 'color:#eaf0ff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);'
       + 'font:inherit;letter-spacing:.06em;}'
       + '#ror-hud-panel .lab{color:#9fb2d8;text-transform:uppercase;}';
@@ -1035,9 +1035,9 @@
     slotsEl = document.createElement('div');
     slotsEl.id = 'ror-hud-slots-sheet';
     slotsEl.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;'
-      + 'flex-direction:column;gap:10px;padding:16px 18px;border-radius:16px;min-width:min(420px,calc(100vw - 32px));'
+      + 'flex-direction:column;gap:10px;padding:16px 18px;border-radius:0;min-width:min(420px,calc(100vw - 32px));'
       + 'background:rgba(18,24,38,.94);border:1px solid rgba(255,255,255,.22);pointer-events:auto;'
-      + 'box-shadow:0 10px 40px rgba(0,0,0,.55);font:400 12px/1.5 "RR Pixel",monospace;color:#eaf0ff;z-index:5;';
+      + 'box-shadow:0 10px 40px rgba(0,0,0,.55);font:400 12px/1.5 "RR Uni","RR Pixel",monospace;color:#eaf0ff;z-index:5;';
     wrap.appendChild(slotsEl);
     slotsEl.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
@@ -1052,15 +1052,15 @@
   function renderSlots(got, status) {
     const rec = got ? got.rec : slotsLocal();
     slotsEl.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">'
-      + '<span style="font-family:&quot;RR Pixel Bold&quot;,monospace;letter-spacing:.08em;color:#ffe45e">LAYOUTS</span>'
+      + '<span style="font-family:&quot;RR Uni Heavy&quot;,&quot;RR Pixel Bold&quot;,monospace;letter-spacing:.08em;color:#ffe45e">LAYOUTS</span>'
       + '<span class="lab" id="ror-hud-slots-status" style="color:#9fb2d8">' + status + '</span></div>'
-      + rec.slots.map((e, i) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.06)">'
+      + rec.slots.map((e, i) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:0;background:rgba(255,255,255,.06)">'
         + '<span style="flex:1">LAYOUT ' + (i + 1) + '<br><span style="color:#9fb2d8">' + (e ? fmtAt(e.at) : 'EMPTY') + '</span></span>'
         + '<button data-save="' + i + '">SAVE</button>'
         + '<button data-load="' + i + '"' + (e ? '' : ' disabled style="opacity:.4"') + '>LOAD</button></div>').join('')
       + '<div style="display:flex;justify-content:flex-end"><button data-close="1">CLOSE</button></div>';
     slotsEl.querySelectorAll('button').forEach((b) => {
-      b.style.cssText += ';padding:7px 12px;border-radius:9px;cursor:pointer;color:#eaf0ff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);font:inherit;letter-spacing:.06em;';
+      b.style.cssText += ';padding:7px 12px;border-radius:0;cursor:pointer;color:#eaf0ff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);font:inherit;letter-spacing:.06em;';
     });
     const st = (t) => { const el = slotsEl.querySelector('#ror-hud-slots-status'); if (el) el.textContent = t; };
     slotsEl.onclick = async (ev) => {

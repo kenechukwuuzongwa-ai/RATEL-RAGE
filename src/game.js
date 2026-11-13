@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v134';
-import { createAftermath } from './aftermath.js?v=ratelrage-board577-v1';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v136';
+import { createAftermath } from './aftermath.js?v=ratelrage-sharp603-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -3260,7 +3260,7 @@ function drawDanfo(x, baseY) {
   const y = baseY;
   ctx.fillStyle = '#e6b400';                       // Lagos danfo yellow
   ctx.beginPath();
-  ctx.roundRect(x, y - 96, 220, 92, 10);
+  ctx.rect(x, y - 96, 220, 92);                    // sharp corners (request 603)
   ctx.fill();
   ctx.fillStyle = '#141414';
   ctx.fillRect(x, y - 62, 220, 12);               // black stripe
@@ -21627,13 +21627,9 @@ function drawLevel2Desk(frontOnly = false) {
 function drawCopyBar(x, y, w, frac, label, alpha = 1) {
   if (alpha <= 0) return;
   const k = w / 928, h = 70 * k, r = h / 2, b = Math.max(1.5, 6 * k);
-  const capsule = (cx, cy, cw, ch) => {
-    const rr = ch / 2;
+  const capsule = (cx, cy, cw, ch) => {   // square-ended now (request 603: sharp corners)
     ctx.beginPath();
-    ctx.moveTo(cx + rr, cy);
-    ctx.lineTo(cx + cw - rr, cy); ctx.arc(cx + cw - rr, cy + rr, rr, -Math.PI / 2, Math.PI / 2);
-    ctx.lineTo(cx + rr, cy + ch); ctx.arc(cx + rr, cy + rr, rr, Math.PI / 2, Math.PI * 1.5);
-    ctx.closePath();
+    ctx.rect(cx, cy, cw, ch);
   };
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -24516,8 +24512,7 @@ function engravedFill(x, y, w, h, r, col, alpha = 1) {
   ctx.save();
   ctx.globalAlpha *= alpha;
   ctx.beginPath();
-  const rr = Math.min(r, w / 2, h / 2);
-  if (ctx.roundRect) ctx.roundRect(x, y, w, h, rr); else ctx.rect(x, y, w, h);
+  ctx.rect(x, y, w, h);                    // sharp corners (request 603); `r` is kept for callers
   ctx.clip();
   ctx.fillStyle = col;
   ctx.fillRect(x, y, w, h);
@@ -25443,15 +25438,10 @@ function drawPauseOverlay() {
  * real link exists) are under it. Hidden outright when there are no posts. Its
  * hit rects live in adDeck.hits (virtual px). */
 const DECK_CARD_H = 214, DECK_GAP = 16, DECK_R = 14;
-function deckRoundRect(x, y, w, h, r) {
-  r = Math.min(r, w / 2, h / 2);
+/* Sharp corners (request 603): the cards, chips and frames of the posts deck are square. */
+function deckRoundRect(x, y, w, h, r) {   // eslint-disable-line no-unused-vars
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
+  ctx.rect(x, y, w, h);
 }
 /* What a card shows, and at what native size: the video once it has a frame,
  * else the artwork, else the board's face. */
@@ -25582,7 +25572,7 @@ function drawAdDeck(ui, px, py, pw, ph) {
   if (card.video && focus) {
     const vx = sx + sw - 26, vy = sy + 26;
     ctx.fillStyle = 'rgba(6,9,16,0.78)';
-    ctx.beginPath(); ctx.arc(vx, vy, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.rect(vx - 15, vy - 15, 30, 30); ctx.fill();   // square (request 603)
     ctx.strokeStyle = C.paper; ctx.fillStyle = C.paper; ctx.lineWidth = 1.8;
     ctx.beginPath(); ctx.moveTo(vx - 8, vy - 3); ctx.lineTo(vx - 4, vy - 3); ctx.lineTo(vx + 1, vy - 8);
     ctx.lineTo(vx + 1, vy + 8); ctx.lineTo(vx - 4, vy + 3); ctx.lineTo(vx - 8, vy + 3); ctx.closePath(); ctx.fill();
@@ -25598,8 +25588,8 @@ function drawAdDeck(ui, px, py, pw, ph) {
     const chip = (dir, cy) => {
       const cx = sx + sw - 26;
       ctx.fillStyle = 'rgba(244,240,230,0.92)';
-      ctx.beginPath(); ctx.arc(cx, cy, 17, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#10141c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.rect(cx - 17, cy - 17, 34, 34); ctx.fill();   // square chip (request 603)
+      ctx.strokeStyle = '#10141c'; ctx.lineWidth = 2.4; ctx.lineCap = 'square'; ctx.lineJoin = 'miter';
       ctx.beginPath(); ctx.moveTo(cx - 6, cy - dir * 3); ctx.lineTo(cx, cy + dir * 3); ctx.lineTo(cx + 6, cy - dir * 3); ctx.stroke();
       adDeck.hits.push({ id: dir < 0 ? 'deck:prev' : 'deck:next', x: cx - 24, y: cy - 24, w: 48, h: 48 });
     };
@@ -28113,7 +28103,7 @@ function initDevPanel() {
   style.textContent = `
     #ror-tune { position: fixed; top: 14px; right: 14px; z-index: 50;
       font: 12px/1.4 ${FONT}; color: #eaf0ff; }
-    #ror-tune .gear { width: 40px; height: 40px; border-radius: 12px; cursor: pointer;
+    #ror-tune .gear { width: 40px; height: 40px; border-radius: 0; cursor: pointer;
       font-size: 18px; color: #eaf0ff; background: rgba(20,28,44,.45);
       border: 1px solid rgba(255,255,255,.25); backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px); box-shadow: 0 6px 20px rgba(0,0,0,.35);
@@ -28121,7 +28111,7 @@ function initDevPanel() {
     #ror-tune .gear:hover { transform: rotate(45deg); }
     #ror-tune .panel { margin-top: 8px; width: 268px; padding: 14px 14px 10px;
       max-height: calc(100vh - 76px); overflow-y: auto;
-      border-radius: 16px; background: rgba(18,24,38,.42);
+      border-radius: 0; background: rgba(18,24,38,.42);
       border: 1px solid rgba(255,255,255,.22); backdrop-filter: blur(16px) saturate(1.4);
       -webkit-backdrop-filter: blur(16px) saturate(1.4);
       box-shadow: 0 10px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.15); }
@@ -28136,10 +28126,10 @@ function initDevPanel() {
     #ror-tune .row span { opacity: .85; }
     #ror-tune input[type=range] { width: 100%; accent-color: #ffe45e; }
     #ror-tune input[type=number] { width: 100%; background: rgba(255,255,255,.1);
-      border: 1px solid rgba(255,255,255,.2); border-radius: 6px; color: #fff;
+      border: 1px solid rgba(255,255,255,.2); border-radius: 0; color: #fff;
       padding: 3px 4px; font: inherit; }
     #ror-tune .foot { display: flex; gap: 7px; margin-top: 8px; }
-    #ror-tune .foot button, #ror-tune .chk { flex: 1; padding: 6px; border-radius: 8px;
+    #ror-tune .foot button, #ror-tune .chk { flex: 1; padding: 6px; border-radius: 0;
       cursor: pointer; color: #eaf0ff; background: rgba(255,255,255,.1);
       border: 1px solid rgba(255,255,255,.22); font: inherit; }
     #ror-tune .chk { display: flex; align-items: center; gap: 6px; justify-content: center; }
@@ -28289,33 +28279,33 @@ function initAssetPanel() {
   style.textContent = `
     #ror-assets { position: fixed; top: 60px; right: 14px; z-index: 50;
       font: 12px/1.4 ${FONT}; color: #eaf0ff; }
-    #ror-assets .gear { height: 34px; padding: 0 12px; border-radius: 10px;
+    #ror-assets .gear { height: 34px; padding: 0 12px; border-radius: 0;
       cursor: pointer; font: inherit; color: #eaf0ff; letter-spacing: .08em;
       background: rgba(20,28,44,.45); border: 1px solid rgba(255,255,255,.25);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
       box-shadow: 0 6px 20px rgba(0,0,0,.35); }
     #ror-assets .panel { margin-top: 8px; width: 292px; padding: 12px 12px 10px;
-      border-radius: 16px; background: rgba(18,24,38,.55);
+      border-radius: 0; background: rgba(18,24,38,.55);
       border: 1px solid rgba(255,255,255,.22); backdrop-filter: blur(16px) saturate(1.4);
       -webkit-backdrop-filter: blur(16px) saturate(1.4);
       box-shadow: 0 10px 40px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.15); }
     #ror-assets h3 { margin: 0 0 9px; font-size: 12px; letter-spacing: .12em;
       text-transform: uppercase; color: #ffe45e; font-weight: 700; }
     #ror-assets .assets { display: flex; gap: 5px; margin-bottom: 9px; }
-    #ror-assets .assetBtn { flex: 1; padding: 6px 2px; border-radius: 8px;
+    #ror-assets .assetBtn { flex: 1; padding: 6px 2px; border-radius: 0;
       cursor: pointer; color: #eaf0ff; font: inherit; font-size: 10px;
       background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); }
     #ror-assets .axis { display: flex; gap: 4px; align-items: center; margin-bottom: 7px; }
     #ror-assets .axis b { width: 74px; font-size: 10px; letter-spacing: .06em;
       text-transform: uppercase; color: #9fb2d8; }
-    #ror-assets .axis button { flex: 1; padding: 5px 0; border-radius: 7px;
+    #ror-assets .axis button { flex: 1; padding: 5px 0; border-radius: 0;
       cursor: pointer; color: #eaf0ff; font: inherit; font-size: 10px;
       background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); }
     #ror-assets .axis input { flex: 2; min-width: 0; background: rgba(255,255,255,.1);
-      border: 1px solid rgba(255,255,255,.2); border-radius: 7px; color: #fff;
+      border: 1px solid rgba(255,255,255,.2); border-radius: 0; color: #fff;
       padding: 4px; font: inherit; text-align: center; }
     #ror-assets .foot { display: flex; gap: 6px; margin-top: 9px; }
-    #ror-assets .foot button { flex: 1; padding: 6px; border-radius: 8px;
+    #ror-assets .foot button { flex: 1; padding: 6px; border-radius: 0;
       cursor: pointer; color: #eaf0ff; font: inherit; font-size: 10px;
       background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); }
     #ror-assets .tip { margin-top: 8px; font-size: 10px; color: #9fb2d8; line-height: 1.5; }
@@ -28865,6 +28855,11 @@ async function loadWorld() {
  * ships unnoticed. */
 // the two pixel faces (request 553); each is one cut for every weight, so one load apiece
 const FONT_FACES = ["40px 'RR Pixel'", "40px 'RR Pixel Bold'"];
+/* Uni Sans (request 602) leads every stack but is OPTIONAL at boot: until its files are in
+ * frontend/fonts the pixel faces above carry the text, so its load is awaited separately and a
+ * missing file is a note, not an error. calibrateFontFit() then sizes whichever face loaded. */
+const UNI_FACES = ["40px 'RR Uni Heavy'", "40px 'RR Uni'"];
+let fontFit = null;
 /* THE FONT MAY NEVER BLOCK BOOT. This ceiling is not belt-and-braces.
  *
  * The first version awaited `document.fonts.ready` unconditionally, and
@@ -28882,7 +28877,10 @@ async function loadFont() {
   try {
     if (!document.fonts) throw new Error('FontFaceSet unavailable');
     const load = (async () => {
-      await Promise.all(FONT_FACES.map((f) => document.fonts.load(f)));
+      await Promise.all([
+        ...FONT_FACES.map((f) => document.fonts.load(f)),
+        ...UNI_FACES.map((f) => document.fonts.load(f).catch(() => [])),
+      ]);
       /* Best-effort, and deliberately NOT the thing being awaited on its own:
        * load() above is what actually starts and finishes the fetches. */
       await document.fonts.ready;
@@ -28905,6 +28903,11 @@ async function loadFont() {
         + 'falls back to monospace. Check frontend/fonts/*.woff2 is being served.');
     }
   }
+  fontFit = calibrateFontFit();
+  if (!fontFit.uniBold) {
+    console.warn('[ratel-ui] Uni Sans is not loaded (request 602) — add frontend/fonts/uni-sans-heavy.woff2 '
+      + '(or .otf); the pixel faces stand in until then.');
+  }
 }
 
 /* Is the text on screen ACTUALLY Montserrat? `document.fonts.check` answers for
@@ -28924,6 +28927,7 @@ function fontState() {
     resolved: Math.abs(mont - a) > 0.5 && Math.abs(mont - b) > 0.5,
     width: +mont.toFixed(2),
     family: FONT,
+    uniSans: fontFit,      // request 602: { uniBody, uniBold, fit } — which Uni Sans faces loaded
   };
 }
 

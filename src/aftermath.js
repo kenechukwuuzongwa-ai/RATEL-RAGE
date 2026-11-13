@@ -589,8 +589,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.lineCap = 'butt';                        // sharp bends and ends on the board's links (request 603)
+    ctx.lineJoin = 'miter';
     if (dash) ctx.setLineDash(dash);
     if (glow) { ctx.shadowColor = color; ctx.shadowBlur = 9; }
     ctx.beginPath();
@@ -1078,8 +1078,8 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       ctx.lineTo(x + dir * 3, y + 5);
       ctx.strokeStyle = C.gold;
       ctx.lineWidth = 1.6;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      ctx.lineCap = 'square';                    // sharp chevrons (request 603)
+      ctx.lineJoin = 'miter';
       ctx.stroke();
     };
     chevron(left + 4, 1);
