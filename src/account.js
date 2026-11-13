@@ -498,8 +498,13 @@
       '.rr-acct-chip.ok .dot{background:#5fd38a}.rr-acct-chip.warn .dot{background:#ffb347}',
       '.rr-acct-chip.nudge{border-color:#ffe45e;box-shadow:0 0 0 0 rgba(255,228,94,.6);animation:rrAcctPulse 1.8s ease-out infinite}',
       '@keyframes rrAcctPulse{0%{box-shadow:0 0 0 0 rgba(255,228,94,.55)}80%,100%{box-shadow:0 0 0 12px rgba(255,228,94,0)}}',
-      '.rr-acct-toast{position:fixed;z-index:65;display:none;max-width:300px;padding:.7em .9em;border-radius:0;background:rgba(8,11,18,.92);',
-      'border:1px solid rgba(255,228,94,.5);color:#fff;font:400 16px/1.45 "RR Uni","RR Pixel",monospace}',
+      /* request 611: the level-cleared nudge is no longer a pop-up box. It is a slim strip on the chip's own
+       * row that slides OUT of the chip, holds a few seconds and folds back into it by itself. */
+      '.rr-acct-toast{position:fixed;z-index:65;display:none;white-space:nowrap;padding:.32em .75em;border-radius:0;',
+      'background:rgba(8,11,18,.82);border:1px solid rgba(255,228,94,.45);border-left:0;color:#ffe45e;cursor:pointer;',
+      'font:400 15px/1.2 "RR Uni","RR Pixel",monospace;letter-spacing:.08em;touch-action:manipulation;',
+      'clip-path:inset(0 100% 0 0);opacity:0;transition:clip-path .45s ease,opacity .45s ease}',
+      '.rr-acct-toast.on{clip-path:inset(0 0 0 0);opacity:1}',
       '.rr-acct-toast button{all:unset;cursor:pointer;color:#ffe45e;font-weight:800;margin-left:.6em}',
       '.rr-acct-overlay{position:fixed;inset:0;z-index:90;display:none;place-items:center;background:rgba(3,4,7,.62);',
       'touch-action:manipulation;-webkit-user-select:text;user-select:text}',
@@ -775,7 +780,28 @@
     render();
     try { var c = document.getElementById('game'); c && c.focus({ preventScroll: true }); } catch (e) {}
   }
-  function hideToast() { if (toast) toast.style.display = 'none'; }
+  var toastFold = 0;
+  function hideToast() {
+    if (!toast) return;
+    clearTimeout(toastFold);
+    toast.classList.remove('on');
+    toast.style.display = 'none';
+  }
+  // fold the strip back into the chip, then take it out of the page once the slide has finished
+  function foldToast() {
+    if (!toast) return;
+    toast.classList.remove('on');
+    clearTimeout(toastFold);
+    toastFold = setTimeout(function () { toast.style.display = 'none'; }, 500);
+  }
+  function seatToast(top) {
+    if (!toast || !chip) return;
+    var cr = chip.getBoundingClientRect();
+    toast.style.top = top + 'px';
+    toast.style.left = Math.round(cr.right) + 'px';
+    toast.style.right = 'auto';
+    toast.style.height = Math.round(cr.height) + 'px';
+  }
 
   // Shown on the menu screens only. Polled (cheap) rather than hooked into
   // frontend.js, so the front end needs no changes to host it.
@@ -800,18 +826,20 @@
     var left = Math.max(8, Math.round(r.left + r.width * 0.02));
     chip.style.top = top + 'px'; chip.style.left = left + 'px'; chip.style.right = 'auto';
     if (S.autoOpen) { S.autoOpen = false; openPanel(); return; }
+    if (toast.style.display === 'block') seatToast(top);          // keep the strip on the chip's row
     if (S.status === 'guest' && jget(ls, NUDGE) && !toastShown && !open) {
       toastShown = true;
-      toast.innerHTML = 'Level cleared! Free account = progress on any device.'
-        + '<button data-t="open">SAVE</button><button data-t="x" aria-label="Dismiss">✕</button>';
-      toast.onclick = function (e) {
-        var t = e.target.getAttribute('data-t');
-        if (t === 'open') openPanel('home');
-        if (t === 'x') { hideToast(); jset(ls, NUDGE + '.off', 1); jdel(ls, NUDGE); render(); }
-      };
-      toast.style.top = Math.max(8, top - 112) + 'px'; toast.style.left = left + 'px'; toast.style.right = 'auto';   // above the chip
+      /* request 611 ("what's this… hide it somehow, in a menu bar that disappears?"): one short line
+       * that slides out of the chip, stays 5 s and folds away; a tap on it opens the save panel. The
+       * chip keeps its SAVE YOUR PROGRESS pulse, so nothing is lost when the strip goes. */
+      toast.textContent = 'LEVEL CLEARED · SAVE IT TO YOUR ACCOUNT ›';
+      toast.onclick = function (e) { e.stopPropagation(); hideToast(); openPanel('home'); };
+      seatToast(top);
       toast.style.display = 'block';
-      setTimeout(hideToast, 9000);
+      void toast.offsetWidth;                                     // start the slide from folded
+      toast.classList.add('on');
+      clearTimeout(toastFold);
+      toastFold = setTimeout(foldToast, 5000);
     }
   }
 

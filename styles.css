@@ -28,7 +28,7 @@
  * never point a src at a file that is not deployed.
  * OTF only, never converted to WOFF2: the Fontfabric Free Font EULA forbids modifying the files
  * (frontend/fonts/UniSans-Fontfabric-FFF-EULA.pdf) and asks for a credit + link to fontfabric.com
- * on the site — the credits screen, privacy.html and quit.html carry it.
+ * on the site — the in-game credits screen and privacy.html carry it (request 611 took it off quit.html).
  * Each is declared for 100-900 so a weight request never synthesises a fake bold. */
 @font-face {
   font-family: 'RR Uni Heavy';

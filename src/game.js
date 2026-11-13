@@ -24720,11 +24720,9 @@ function drawPixelHud() {
   hudScoreShown += (target - hudScoreShown) * Math.min(1, dt * 7);
   if (Math.abs(target - hudScoreShown) < 1) hudScoreShown = target;
   ctx.textAlign = 'center';
-  // the bold pixel face for both lines of the score (request 563)
-  ctx.font = pixelFont(900, 19);
-  pixText('SCORE', VIEW_W / 2, oy + 10, '#f4f1ea');
-  ctx.font = pixelFont(900, 34);
-  pixText(String(Math.round(hudScoreShown)).padStart(7, '0'), VIEW_W / 2, oy + 38, P.hp);
+  // both lines of the score in the hit counter's look (request 611)
+  hitStyleText('SCORE', VIEW_W / 2, oy + 10, 19, { baseline: 'middle' });
+  hitStyleText(String(Math.round(hudScoreShown)).padStart(7, '0'), VIEW_W / 2, oy + 38, 34, { baseline: 'middle' });
 
   /* ---- THE OTHER END: the boss on Darki's row, the man under it */
   const RX = VIEW_W - P.side;                      // the right edge everything hangs from
@@ -24781,6 +24779,60 @@ let hudRightBottom = 90;
  * not just vanish — it drops and tumbles away. The score multiplier rides beside it and the
  * milestone word slams in under it. */
 const hitCtr = { last: 0, breakT: 0, t: 0 };
+/* THE HIT-COUNTER LOOK, SHARED (request 611: "make the FIGHT! text flash same font style and look with
+ * the hit counter text, including the score counter, the GO annotation"). One recipe, drawn in the
+ * caller's transform: the bold face, a hard dark shadow, a dark outline, and the fill running yellow to
+ * red down the letters (white-hot crowns with `hot`). Sizes scale off the counter's own 74 px.
+ * `baseline: 'middle'` centres the caps on y (the HUD rows are laid out on middles). */
+const HIT_INK = '#140604';
+function hitInkFill(top, bottom, hot = false) {
+  const g = ctx.createLinearGradient(0, top, 0, bottom);
+  g.addColorStop(0, hot ? '#fffbe2' : '#ffe24a');
+  g.addColorStop(hot ? 0.3 : 0.25, hot ? '#ffd23c' : '#ffc12e');
+  g.addColorStop(0.62, '#ff7a1a');
+  g.addColorStop(1, '#ff2414');
+  return g;
+}
+function hitStyleText(text, x, y, px, o = {}) {
+  ctx.save();
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.font = pixelFont(900, px);
+  ctx.textAlign = o.align ?? 'center';
+  ctx.textBaseline = 'alphabetic';
+  const asc = ctx.measureText(text).actualBoundingBoxAscent || px * 0.7;
+  if (o.baseline === 'middle') y += asc / 2;
+  const k = px / 74;
+  ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
+  ctx.fillStyle = HIT_INK; ctx.fillText(text, x + 5 * k, y + 5 * k);
+  ctx.strokeStyle = HIT_INK; ctx.lineWidth = Math.max(2, 7 * k); ctx.strokeText(text, x, y);
+  ctx.fillStyle = hitInkFill(y - asc, y + 2 * k, o.hot);
+  ctx.fillText(text, x, y);
+  ctx.restore();
+  return asc;
+}
+/* GO's arrow in the same ink, as a SHAPE: Uni Sans has no arrow glyph, and a glyph from a fallback face
+ * would be a second typeface on screen. Points right, its tip at (x, y), `h` tall. */
+function hitStyleArrow(x, y, h) {
+  const shaft = h * 0.34, len = h * 1.15, head = h * 0.62;
+  const path = (dx, dy) => {
+    ctx.beginPath();
+    ctx.moveTo(x + dx, y + dy);
+    ctx.lineTo(x - head + dx, y - h / 2 + dy);
+    ctx.lineTo(x - head + dx, y - shaft / 2 + dy);
+    ctx.lineTo(x - len + dx, y - shaft / 2 + dy);
+    ctx.lineTo(x - len + dx, y + shaft / 2 + dy);
+    ctx.lineTo(x - head + dx, y + shaft / 2 + dy);
+    ctx.lineTo(x - head + dx, y + h / 2 + dy);
+    ctx.closePath();
+  };
+  const k = h / 52;
+  ctx.save();
+  ctx.lineJoin = 'miter'; ctx.miterLimit = 4;
+  path(5 * k, 5 * k); ctx.fillStyle = HIT_INK; ctx.fill();
+  path(0, 0); ctx.strokeStyle = HIT_INK; ctx.lineWidth = Math.max(2, 7 * k); ctx.stroke();
+  ctx.fillStyle = hitInkFill(y - h / 2, y + h / 2); ctx.fill();
+  ctx.restore();
+}
 function drawHitCounter() {
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
   const dt = Math.min(0.1, Math.max(0, mobClock - (hitCtr.t || mobClock))); hitCtr.t = mobClock;
@@ -24807,19 +24859,10 @@ function drawHitCounter() {
     ctx.scale(pop, pop);
     if (run.popT > 0.12) ctx.translate((Math.random() - 0.5) * 4, 0);
     const x = tw / 2, y = 22;
-    // shadow, outline
-    ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
-    ctx.fillStyle = '#140604'; ctx.fillText(text, x + 5, y + 5);
-    ctx.strokeStyle = '#140604'; ctx.lineWidth = 7; ctx.strokeText(text, x, y);
-    // the fill: yellow to red, hotter as the chain grows
+    // shadow, outline and the yellow-to-red fill (hotter as the chain grows) — the shared recipe
     const hot = show >= 10, hotter = show >= 20;
-    const g = ctx.createLinearGradient(0, y - 50, 0, y + 2);
-    g.addColorStop(0, hot ? '#fffbe2' : '#ffe24a');
-    g.addColorStop(hot ? 0.3 : 0.25, hot ? '#ffd23c' : '#ffc12e');
-    g.addColorStop(0.62, '#ff7a1a');
-    g.addColorStop(1, '#ff2414');
-    ctx.fillStyle = g;
-    ctx.fillText(text, x, y);
+    hitStyleText(text, x, y, 74, { align: 'right', hot });
+    ctx.font = pixelFont(900, 74);
     if (hotter) {                                    // the heat shimmer
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha *= 0.28 + 0.18 * Math.sin(mobClock * 31);
@@ -24828,19 +24871,15 @@ function drawHitCounter() {
     }
     ctx.restore();
     if (!breaking) {
-      // the window left, as a thin pixel bar under the number
-      const left = Math.max(0, run.comboT / run.comboWin);
-      const bw = 150;
-      ctx.fillStyle = '#140604'; ctx.fillRect(Math.round(rx - bw - 2), Math.round(by + 10), bw + 4, 8);
-      ctx.fillStyle = left > 0.35 ? '#ffc12e' : (Math.sin(mobClock * 20) > 0 ? '#ff2414' : '#ff7a1a');
-      ctx.fillRect(Math.round(rx - bw * left), Math.round(by + 12), Math.round(bw * left), 4);
-      // the multiplier the streak is earning
+      /* NO TIMEOUT BAR (request 611: "remove the hit combo timeout bar under the hitcounter"). The
+       * chain's window still runs (run.comboT); it is just no longer drawn. The multiplier the streak
+       * is earning keeps its place under the count, right-aligned with it. */
       const mul = comboMul(show);
       if (mul > 1) {
         ctx.save();
         ctx.font = pixelFont(400, 18);
         ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-        pixText(`x${mul.toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`, rx - bw - 12, by + 14, '#ffe27c', '#140604');
+        pixText(`x${mul.toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`, rx, by + 14, '#ffe27c', '#140604');
         ctx.restore();
       }
     }
@@ -24958,25 +24997,12 @@ function drawWaveHud() {
      * that has to be read during a fight is a number that pulls the eye off it.
      * The state branch stays so the wave HUD's shape is unchanged. */
   } else if (waveState === 'cleared') {
-    const pulse = 0.5 + 0.5 * Math.sin(mobClock * 6);
-    ctx.textAlign = 'right';
-    ctx.font = display(900, 44);
-    ctx.fillStyle = `rgba(255,228,94,${0.55 + 0.45 * pulse})`;
-    const gy = VIEW_H / 2;
-    ctx.fillText('GO', VIEW_W - 74, gy);
-    ctx.font = display(900, 46 + pulse * 8);
-    ctx.fillText('→', VIEW_W - 20, gy + 2);
+    drawGoPrompt();
   } else if (waveState === 'l2defense' || (waveState === 'l2ending' && l2m.ePhase === 'hold')) {
     drawL2MissionHud();                  // the transfer and the workstation (request 454)
   } else if (waveState === 'complete' && activeLevel === 2) {
     /* The last arena is down, the level is not: GO on to the strong-room keypad. */
-    const pulse = 0.5 + 0.5 * Math.sin(mobClock * 6);
-    ctx.textAlign = 'right';
-    ctx.font = display(900, 44);
-    ctx.fillStyle = `rgba(255,228,94,${0.55 + 0.45 * pulse})`;
-    ctx.fillText('GO', VIEW_W - 74, VIEW_H / 2);
-    ctx.font = display(900, 46 + pulse * 8);
-    ctx.fillText('→', VIEW_W - 20, VIEW_H / 2 + 2);
+    drawGoPrompt();
   } else if (waveState === 'complete') {
     ctx.textAlign = 'center';
     ctx.font = display(900, 56);
@@ -24989,14 +25015,21 @@ function drawWaveHud() {
   if (fightBanner > 0) {                 // overlays the live street; never a separate cutscene
     const k = Math.min(1, fightBanner / 0.25);
     ctx.save();
-    ctx.textAlign = 'center';
     ctx.globalAlpha = k;
-    ctx.font = uiFont(900, 64 + (1 - k) * 26);
-    ctx.fillStyle = '#ffe45e';
-    ctx.fillText('FIGHT!', VIEW_W / 2, VIEW_H / 2 + 8);
+    hitStyleText('FIGHT!', VIEW_W / 2, VIEW_H / 2 + 8, 64 + (1 - k) * 26);   // the hit counter's look (request 611)
     ctx.restore();
   }
   ctx.textAlign = 'left';
+}
+/* GO → when the gate opens, in the hit counter's look (request 611); it breathes with the old pulse. */
+function drawGoPrompt() {
+  const pulse = 0.5 + 0.5 * Math.sin(mobClock * 6);
+  const gy = VIEW_H / 2;
+  ctx.save();
+  ctx.globalAlpha = 0.55 + 0.45 * pulse;
+  hitStyleText('GO', VIEW_W - 82, gy, 44, { align: 'right' });
+  hitStyleArrow(VIEW_W - 20, gy - 16, 40 + pulse * 8);
+  ctx.restore();
 }
 
 // The entrance's furniture: letterbox bars, the name plate that slams in on the
@@ -25060,9 +25093,7 @@ function drawCutscene() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.globalAlpha = f;
-    ctx.font = display(900, 52 + f * 30);
-    ctx.fillStyle = '#ffe45e';
-    ctx.fillText('FIGHT!', VIEW_W / 2, VIEW_H / 2 + 8);
+    hitStyleText('FIGHT!', VIEW_W / 2, VIEW_H / 2 + 8, 52 + f * 30);   // the hit counter's look (request 611)
     ctx.restore();
   }
   ctx.textAlign = 'left';
@@ -27251,6 +27282,10 @@ window.__ror = {
   // mid-grab would otherwise leave `grabbedEnemy` dangling into the next one.
   clearGrab() { endAttack(); },
   tko() { const e = enemies.find((x) => !x.benched && x.hp > 0); if (e) onEnemyDefeated(Object.assign(e, { hp: 0 })); return waveState; },
+  // harness only (request 611): land `n` 1-damage blows so the hit counter can be shot without a brawl
+  testHits(n = 12) { for (let i = 0; i < n; i++) registerHit(1); return run.combo; },
+  // harness only (request 611): re-show the FIGHT! banner
+  testFightBanner() { fightBanner = 1.1; return fightBanner; },
   leftJab() { input.leftJabPressed = true; },
   kick() { input.kickPressed = true; },        // RMB (high kick, or back kick if back held)
   highKick() { input.left = input.right = false; input.kickPressed = true; },
