@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-14 — Story intro label names the operation (v153, request 629)
+
+- Story intro top-left: LEVEL 01 | THE STREET TAX and LEVEL 02 | OPERATION CLEAN SWEEP (the dossier title) instead of STORY INTRO.
+Checks: _chromakey/req629/intro.js (both levels; clear of the ENTER SKIP hint); no page errors.
+
 ## 2026-11-14 — Level 02 summary text kept inside its cards (v152, request 628)
 
 - Mission card: Level 02's evidence notes shortened (UNCHECKED / UNTRACED / ENCRYPTED, count 3 ARCHIVES · SEALED); the count and each note now fit the gap they are given (fitRow in game.js: smaller, then tighter tracking, then an ellipsis), so nothing runs under UNANALYSED or off the card.

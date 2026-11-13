@@ -6471,7 +6471,8 @@ export function createFrontEnd({
     ctx.textBaseline = 'middle';
     setFont(700, 10.5, 3);
     ctx.fillStyle = C.orange;
-    fillSplit(ctx, `${dossier().code ?? 'LEVEL 01'}  |  STORY INTRO`, 28, 24);   // request 626
+    // the level's operation name, not STORY INTRO (request 629): LEVEL 01 | THE STREET TAX, LEVEL 02 | OPERATION CLEAN SWEEP
+    fillSplit(ctx, `${dossier().code ?? 'LEVEL 01'}  |  ${dossier().title ?? 'THE STREET TAX'}`, 28, 24);   // request 626
     ctx.textAlign = 'right';
     ctx.fillStyle = C.muted;
     /* NAME THE CONTROL THE PLAYER HAS. On a phone there is no X and no Square,
