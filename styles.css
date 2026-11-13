@@ -19,25 +19,25 @@
 /* REQUEST 602 — UNI SANS EVERYWHERE (Fontfabric). 'RR Uni' is body text, 'RR Uni Heavy' headlines.
  * Both lead every stack; the pixel faces below are only the fallback while the files are absent.
  * Drop the files into frontend/fonts as:
- *   uni-sans-heavy.woff2 (or .otf)    — required (the free "Uni Sans Heavy CAPS" cut is fine)
- *   uni-sans-regular.woff2 (or .otf)  — optional; body text uses Heavy without it
+ *   uni-sans-heavy.otf    — installed (Fontfabric's free "Uni Sans Heavy", shipped UNMODIFIED)
+ *   uni-sans-regular.otf  — optional; body text uses Heavy without it
+ * OTF only, never converted to WOFF2: the Fontfabric Free Font EULA forbids modifying the files
+ * (frontend/fonts/UniSans-Fontfabric-FFF-EULA.pdf) and asks for a credit + link to fontfabric.com
+ * on the site — the credits screen, privacy.html and quit.html carry it.
  * Each is declared for 100-900 so a weight request never synthesises a fake bold. */
 @font-face {
   font-family: 'RR Uni Heavy';
   font-style: normal;
   font-weight: 100 900;
   font-display: block;
-  src: url('frontend/fonts/uni-sans-heavy.woff2') format('woff2'),
-       url('frontend/fonts/uni-sans-heavy.otf') format('opentype');
+  src: url('frontend/fonts/uni-sans-heavy.otf') format('opentype');
 }
 @font-face {
   font-family: 'RR Uni';
   font-style: normal;
   font-weight: 100 900;
   font-display: block;
-  src: url('frontend/fonts/uni-sans-regular.woff2') format('woff2'),
-       url('frontend/fonts/uni-sans-regular.otf') format('opentype'),
-       url('frontend/fonts/uni-sans-heavy.woff2') format('woff2'),
+  src: url('frontend/fonts/uni-sans-regular.otf') format('opentype'),
        url('frontend/fonts/uni-sans-heavy.otf') format('opentype');
 }
 @font-face {

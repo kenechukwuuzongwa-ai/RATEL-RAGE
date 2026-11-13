@@ -27,3 +27,8 @@ deploy/.webp-cache/
 .claude/
 # front-end harness screenshots
 /menu_[0-9][0-9]_*.png
+
+# Uni Sans (Fontfabric Free Font EULA): served on the site via @font-face, but the licence forbids
+# redistributing the files, and this repo is public - keep them local (request 608).
+frontend/fonts/uni-sans-*.otf
+frontend/fonts/UniSans-Fontfabric-FFF-EULA.pdf

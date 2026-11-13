@@ -7016,6 +7016,10 @@ export function createFrontEnd({
     setFont(700, 11, 4);
     ctx.fillStyle = C.gold;
     fillCentred('ABUJA, NIGERIA', cx, 392 + dy);
+    // the Uni Sans licence's credit (request 608): Fontfabric, with its site
+    setFont(600, 9, 2.4);
+    ctx.fillStyle = C.muted;
+    fillCentred('TYPEFACE: UNI SANS BY FONTFABRIC — WWW.FONTFABRIC.COM', cx, 430 + dy);
     endScreen();
     drawControlBar([MENU_HINTS[2]]);
     drawGrain();
