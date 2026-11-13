@@ -20,7 +20,12 @@
  * Both lead every stack; the pixel faces below are only the fallback while the files are absent.
  * Drop the files into frontend/fonts as:
  *   uni-sans-heavy.otf    — installed (Fontfabric's free "Uni Sans Heavy", shipped UNMODIFIED)
- *   uni-sans-regular.otf  — optional; body text uses Heavy without it
+ *   uni-sans-regular.otf  — NOT installed, so it is NOT referenced: body text uses Heavy too.
+ * VERSIONED URLs (request 610): a font URL that does not exist yet is answered by Cloudflare Pages
+ * with the site's index.html (200) and /frontend/* is cacheable for a day, so the first version
+ * of this file, asked for before the .otf was deployed, got HTML cached at that address (edge and
+ * browser) and every browser saw the pixel fallback. Bump ?v= whenever a font file changes, and
+ * never point a src at a file that is not deployed.
  * OTF only, never converted to WOFF2: the Fontfabric Free Font EULA forbids modifying the files
  * (frontend/fonts/UniSans-Fontfabric-FFF-EULA.pdf) and asks for a credit + link to fontfabric.com
  * on the site — the credits screen, privacy.html and quit.html carry it.
@@ -30,15 +35,14 @@
   font-style: normal;
   font-weight: 100 900;
   font-display: block;
-  src: url('frontend/fonts/uni-sans-heavy.otf') format('opentype');
+  src: url('frontend/fonts/uni-sans-heavy.otf?v=uni137b') format('opentype');
 }
 @font-face {
   font-family: 'RR Uni';
   font-style: normal;
   font-weight: 100 900;
   font-display: block;
-  src: url('frontend/fonts/uni-sans-regular.otf') format('opentype'),
-       url('frontend/fonts/uni-sans-heavy.otf') format('opentype');
+  src: url('frontend/fonts/uni-sans-heavy.otf?v=uni137b') format('opentype');
 }
 @font-face {
   font-family: 'RR Pixel';
