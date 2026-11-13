@@ -3952,6 +3952,31 @@ export function createFrontEnd({
     ctx.restore();
   }
 
+  /* THE SELECTION LOOK (request 615: "use the same green overlay/outline used in sign in view across all
+   * similar buttons and selection cards in the menu and pause menu"). A green wash running in from the
+   * left, a green hairline and a 3 px green edge bar, all eased by the focus value `f`. `p` is the
+   * press (brightens the wash), `extra` a share of wash without outline (the row under a focused row). */
+  function focusOverlay(x, y, w, h, f, p = 0, extra = 0) {
+    const s = f + extra;
+    if (s <= 0.01) return;
+    ctx.save();
+    const g = ctx.createLinearGradient(x, y, x + w, y);
+    g.addColorStop(0, `rgba(54,214,126,${((0.20 + 0.06 * p) * s).toFixed(3)})`);
+    g.addColorStop(0.55, `rgba(54,214,126,${(0.05 * s).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(54,214,126,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, w, h);
+    if (f > 0.01) {
+      ctx.strokeStyle = `rgba(54,214,126,${(0.6 * f).toFixed(3)})`;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.globalAlpha *= f;
+      ctx.fillStyle = C.orange;
+      ctx.fillRect(x, y, 3, h);
+    }
+    ctx.restore();
+  }
+
   function icon(name, cx, cy, size, color, alpha = 1, weight = 1.65) {
     const fn = ICONS[TOUCH_ICON[name] ?? name];     // never a console glyph (request 577)
     if (!fn) return;
@@ -4025,30 +4050,6 @@ export function createFrontEnd({
     const base = disabled ? 'rgba(8,11,17,0.42)' : 'rgba(13,18,27,0.62)';
     ctx.fillStyle = base;
     ctx.fillRect(x, y, w, h);
-    if (!disabled && (f > 0.01 || lean > 0.01)) {
-      /* A faint SHEEN over the whole face rather than an orange frame: a broad
-       * diagonal wash (bright at the leading corner, never quite gone at the
-       * far one), plus a slow glint band crossing it. */
-      const s = f + 0.25 * lean;
-      const g = ctx.createLinearGradient(x, y, x + w, y + h);
-      g.addColorStop(0, `rgba(255,255,255,${(0.17 + 0.06 * p) * s})`);
-      g.addColorStop(0.45, `rgba(255,248,236,${0.075 * s})`);
-      g.addColorStop(1, `rgba(255,248,236,${0.02 * s})`);
-      ctx.fillStyle = g;
-      ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = `rgba(255,255,255,${0.04 * s + 0.05 * p})`;
-      ctx.fillRect(x, y, w, h * 0.5);
-      if (f > 0.01) {
-        const u = ((clock * 0.38) % 1.7) - 0.35;          // glint position across the row
-        const gx = x + u * w, bw = w * 0.42;
-        const gl = ctx.createLinearGradient(gx - bw / 2, y, gx + bw / 2, y + h);
-        gl.addColorStop(0, 'rgba(255,255,255,0)');
-        gl.addColorStop(0.5, `rgba(255,255,255,${0.10 * f * breathe})`);
-        gl.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = gl;
-        ctx.fillRect(x, y, w, h);
-      }
-    }
     if (grainPattern && !disabled) {
       ctx.globalAlpha = 0.22 + 0.20 * f;
       ctx.fillStyle = grainPattern;
@@ -4057,15 +4058,13 @@ export function createFrontEnd({
     }
     ctx.restore();
 
-    /* A hairline that only lightens with focus — no coloured selector frame.
-     * Selection never depends on colour alone: the row's size, offset and
-     * sheen carry it. */
+    /* The resting hairline, then the shared green selection look over it (request 615). Selection never
+     * depends on colour alone: the row's size and offset carry it too. */
     roundRectPath(ctx, x, y, w, h, r);
-    ctx.strokeStyle = disabled
-      ? 'rgba(120,140,170,0.10)'
-      : `rgba(${lerp(150, 255, f)},${lerp(176, 250, f)},${lerp(214, 240, f)},${lerp(0.14, 0.30, f)})`;
+    ctx.strokeStyle = disabled ? 'rgba(120,140,170,0.10)' : 'rgba(150,176,214,0.14)';
     ctx.lineWidth = 1;
     ctx.stroke();
+    if (!disabled) focusOverlay(x, y, w, h, f, p, 0.25 * lean);
 
     const tint = disabled
       ? C.dim
@@ -4091,7 +4090,7 @@ export function createFrontEnd({
     if (o.value) {
       ctx.textAlign = 'right';
       setFont(600, 14, 0.6);
-      ctx.fillStyle = f > 0.4 ? C.gold : C.muted;
+      ctx.fillStyle = f > 0.4 ? C.orange : C.muted;
       ctx.fillText(o.value, x + w - 20 - (disabled ? 0 : 22 * f), y + h / 2 + 0.5);   // clear of the chevron (request 543)
     }
 
@@ -4123,6 +4122,7 @@ export function createFrontEnd({
       ctx.restore();
     }
 
+    if (o.glimmer) glimmer(x, y, w, h, r, o.glimmer);
     ctx.restore();
 
     if (index !== undefined) hitboxes.push({ x, y, w, h, index, id });
@@ -4652,7 +4652,7 @@ export function createFrontEnd({
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     setFont(700, 11.5, 4.4);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;                       // green (request 615)
     ctx.fillText('STREETS OF JUSTICE', L.tagline.x, L.tagline.y);
 
     setFont(600, 10.5, 2.2);
@@ -4802,7 +4802,7 @@ export function createFrontEnd({
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     setFont(700, 11, 4);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;                       // the kicker is green (request 615)
     ctx.fillText(kicker, 58, 58);
     setDisplay(700, 40, 1.4);
     ctx.fillStyle = C.paper;
@@ -5904,7 +5904,7 @@ export function createFrontEnd({
     glass(506, 186, 420, 232, 10);
     ctx.textAlign = 'left';
     setDisplay(700, 52, 2);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;                       // green (request 615)
     ctx.fillText(['01', '02', '03', '04'][selection], 538, 258);
     setDisplay(700, 28, 1.6);
     ctx.fillStyle = C.paper;
@@ -5956,10 +5956,8 @@ export function createFrontEnd({
       const x = 56 + i * 102, y = 498, w = 92, h = 76;
       const s = getFx(`roster:${i}`);
       s.target = i === 0 ? 1 : 0;
-      glass(x, y, w, h, 8, {
-        tint: i === 0 ? 'rgba(12,28,20,0.72)' : 'rgba(9,13,20,0.64)',
-        border: i === 0 ? `rgba(54,214,126,${0.55 + Math.sin(clock * 2.1) * 0.14})` : C.edgeSoft,
-      });
+      glass(x, y, w, h, 8, { tint: 'rgba(9,13,20,0.64)', border: C.edgeSoft });
+      if (i === 0) focusOverlay(x, y, w, h, s.focus);
       if (i === 0) {
         if (avatarCanvas) {
           ctx.save();
@@ -6084,7 +6082,7 @@ export function createFrontEnd({
 
     ctx.textAlign = 'left';
     setFont(700, 13, 3.4);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;
     ctx.fillText('MOVEMENT', 84, 210);
     mobileStick(194, 340, 184);
     setDisplay(800, 21, 1.8);
@@ -6098,7 +6096,7 @@ export function createFrontEnd({
     mobileActionCard(340, 466, 236, 106, 'pause', 'PAUSE', ['TAP']);
 
     setFont(700, 13, 3.4);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;
     ctx.fillText('COMBAT', 696, 210);
     mobileActionCard(696, 228, 242, 154, 'jab', 'JAB / CHAIN',
       ['TAP', 'DOUBLE-TAP TO COMBO']);
@@ -6169,7 +6167,7 @@ export function createFrontEnd({
       const item = currentItems()[selection].label;
       ctx.textAlign = 'left';
       setDisplay(700, 20, 2.6);
-      ctx.fillStyle = C.gold;
+      ctx.fillStyle = C.orange;
       ctx.fillText(item, 538, 224);
       setFont(500, 13, 0.2);
       ctx.fillStyle = C.text;
@@ -6254,14 +6252,11 @@ export function createFrontEnd({
     /* The big card is the FOCUSED operation: what confirming opens. */
     const s = getFx('lvl:0');
     s.target = 1;
-    glass(56, 172, 720, 372, 10, {
-      border: `rgba(54,214,126,${0.42 + Math.sin(clock * 2.1) * 0.12})`,
-    });
-    ctx.fillStyle = C.orange;
-    ctx.fillRect(56, 172, 4, 372);
+    glass(56, 172, 720, 372, 10);
+    focusOverlay(56, 172, 720, 372, s.focus);
     ctx.textAlign = 'left';
     setDisplay(700, 68, 2);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;
     ctx.fillText(`0${focused}`, 92, 250);
     setFont(700, 11, 3.4);
     ctx.fillText(D.place, 92, 278);
@@ -6270,7 +6265,7 @@ export function createFrontEnd({
     ctx.fillText(D.title, 92, 330);
     setFont(600, 12.5, 1.4);
     ctx.fillStyle = C.muted;
-    ctx.fillText(`${focused === 1 ? 'BOSS' : 'TARGET'}  /  ${D.target}`, 92, 362);
+    ctx.fillText(`${focused === 1 ? 'BOSS' : 'TARGET'}  |  ${D.target}`, 92, 362);
     setFont(700, 11, 2.4);
     ctx.fillStyle = C.green;
     ctx.fillText(focused === 1 && levelUnlocked(2) ? '●  COMPLETED  ·  REPLAY' : '●  AVAILABLE', 92, 400);
@@ -6298,15 +6293,12 @@ export function createFrontEnd({
       const on = focused === n;
       const fx = getFx(`lvl:${index}`);
       fx.target = on ? 1 : 0;
-      glass(800, y, 424, 110, 9, {
-        tint: on ? 'rgba(28,18,10,0.62)' : 'rgba(9,13,20,0.56)',
-        border: on ? `rgba(54,214,126,${0.42 + Math.sin(clock * 2.1) * 0.12})` : 'rgba(233,182,84,0.28)',
-      });
-      if (on) { ctx.fillStyle = C.orange; ctx.fillRect(800, y, 4, 110); }
+      glass(800, y, 424, 110, 9, { tint: 'rgba(9,13,20,0.56)' });
+      focusOverlay(800, y, 424, 110, fx.focus);
       const Dn = DOSSIERS[n];
       ctx.textAlign = 'left';
       setDisplay(700, 26, 2.4);
-      ctx.fillStyle = C.gold;
+      ctx.fillStyle = C.orange;
       ctx.fillText(`0${n}`, 826, y + 50);
       setFont(700, 12, 1.6);
       ctx.fillStyle = C.paper;
@@ -6328,7 +6320,7 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    fillCentred(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 238);
+    fillCentred(isL2() ? 'LAGOS  |  02' : 'LAGOS  |  01', W / 2, 238);
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
     fillCentred(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 306);
@@ -6373,15 +6365,15 @@ export function createFrontEnd({
       ctx.fillStyle = shade;
       ctx.fillRect(dx, dy, dw, dh);
     }
-    ctx.fillStyle = 'rgba(4,6,9,0.86)';
-    ctx.fillRect(0, 0, W, 46);
-    ctx.fillStyle = C.orange;
-    ctx.fillRect(0, 45, W, 2);
+    // request 615: no dark bar and no green line across the top of the video
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.75)';
+    ctx.shadowBlur = 6;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     setFont(700, 10.5, 3);
-    ctx.fillStyle = C.gold;
-    ctx.fillText(`${dossier().code ?? 'LEVEL 01'}  /  STORY INTRO`, 28, 24);
+    ctx.fillStyle = C.orange;
+    ctx.fillText(`${dossier().code ?? 'LEVEL 01'}  |  STORY INTRO`, 28, 24);
     ctx.textAlign = 'right';
     ctx.fillStyle = C.muted;
     /* NAME THE CONTROL THE PLAYER HAS. On a phone there is no X and no Square,
@@ -6393,6 +6385,7 @@ export function createFrontEnd({
      * announced 3 s in (drawSkipHint), in the header band's right slot. */
     // touch: the lower-centre tap cue is the only skip prompt (request 567, no repetition)
     if (!isTouchUI()) ctx.fillText('ENTER   SKIP', W - 28, 24);   // a key, never a console button (request 577)
+    ctx.restore();
     /* Request 353: the tap cue sits LOWER-CENTRE, above whatever the foot of
      * this screen already holds — the subtitle band, when subtitles are on. Its
      * height is taken from the band's own geometry (the block below), so the two
@@ -6523,8 +6516,8 @@ export function createFrontEnd({
         id: a.id, x: a.x, y, w: a.w, h,
         label: a.label, icon: a.icon,
         focused: selection === i, index: i,
+        glimmer: BRIEF_GLIMMER[i],          // inside the button's transform: the sheen stays on it
       });
-      glimmer(a.x, y, a.w, h, 7, BRIEF_GLIMMER[i]);
     });
   }
 
@@ -6602,7 +6595,7 @@ export function createFrontEnd({
     const p = BRIEF.profile;
     ctx.textAlign = 'left';
     setFont(700, 10, 3);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;
     ctx.fillText('PROFILE', p.x, p.y + 18);
     hairline(p.x, p.y + 28, p.w);
 
@@ -6610,7 +6603,7 @@ export function createFrontEnd({
     let y = p.y + 56;
     for (let i = 0; i < dossier().profile.length; i++) {
       const [label, value, tone] = dossier().profile[i];
-      ctx.fillStyle = 'rgba(233,182,84,0.38)';
+      ctx.fillStyle = 'rgba(54,214,126,0.38)';
       ctx.fillRect(p.x, y - 4, 3, 3);
       setFont(700, 9.5, 1.5);
       ctx.fillStyle = 'rgba(195,202,214,0.60)';
@@ -6655,7 +6648,7 @@ export function createFrontEnd({
       const bx = px[i + 1] - radius - 3;
       ctx.save();
       ctx.globalAlpha *= u * 0.72;
-      ctx.strokeStyle = i === px.length - 2 ? C.red : C.gold;
+      ctx.strokeStyle = i === px.length - 2 ? C.red : C.orange;
       ctx.lineWidth = 1.35;
       ctx.lineCap = 'round';
       ctx.setLineDash([2, 6]);
@@ -6676,7 +6669,7 @@ export function createFrontEnd({
       const dx = lerp(ellipsisA, ellipsisB, (i + 1) / 5);
       ctx.beginPath();
       ctx.arc(dx, cy, 2.2, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(233,182,84,${(0.30 + 0.42 * u + 0.18 * breathe(time, 2.2, i * 0.14)).toFixed(3)})`;
+      ctx.fillStyle = `rgba(54,214,126,${(0.30 + 0.42 * u + 0.18 * breathe(time, 2.2, i * 0.14)).toFixed(3)})`;
       ctx.fill();
     }
 
@@ -6686,10 +6679,10 @@ export function createFrontEnd({
       if (u <= 0) continue;
       const e = easeOutBack(u, 1.18);
       const r = radius * e;
-      const tone = node.tone === 'alert' ? C.red : node.tone === 'gold' ? C.gold : C.muted;
+      const tone = node.tone === 'alert' ? C.red : node.tone === 'gold' ? C.orange : C.muted;
       ctx.save();
       ctx.globalAlpha *= clamp(u / 0.35, 0, 1);
-      ctx.shadowColor = node.tone === 'alert' ? 'rgba(224,67,44,0.42)' : 'rgba(233,182,84,0.26)';
+      ctx.shadowColor = node.tone === 'alert' ? 'rgba(224,67,44,0.42)' : 'rgba(54,214,126,0.26)';
       ctx.shadowBlur = 8 + 5 * breathe(time, 2.8, i * 0.17);
       ctx.beginPath();
       ctx.arc(px[i], cy, r, 0, Math.PI * 2);
@@ -6785,12 +6778,12 @@ export function createFrontEnd({
     hairline(x, y, w);
     const p = clamp(briefT / (briefVoFor(currentLevel) ?? BRIEF_VO).dur, 0, 1);
     if (p <= 0) return;
-    ctx.fillStyle = 'rgba(233,182,84,0.55)';
+    ctx.fillStyle = 'rgba(54,214,126,0.55)';
     ctx.fillRect(x, y, w * p, 1);
     const hx = x + w * p;
     const g = ctx.createRadialGradient(hx, y + 0.5, 0, hx, y + 0.5, 10);
-    g.addColorStop(0, 'rgba(255,230,191,0.8)');
-    g.addColorStop(1, 'rgba(255,230,191,0)');
+    g.addColorStop(0, 'rgba(227,246,234,0.8)');
+    g.addColorStop(1, 'rgba(227,246,234,0)');
     ctx.fillStyle = g;
     ctx.fillRect(hx - 10, y - 5, 20, 11);
   }
@@ -6809,7 +6802,7 @@ export function createFrontEnd({
     ctx.fillStyle = C.paper;
     ctx.fillText(dossier().code ?? 'LEVEL 01', T.x - 2, T.code);
     setDisplay(700, 32, 1.6);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;
     ctx.fillText(dossier().title ?? 'THE STREET TAX', T.x, T.name);
 
     /* The row: photograph, profile (+ file number), dossier — each scales in, in reading order. */
@@ -6851,7 +6844,7 @@ export function createFrontEnd({
     };
     dossier().body.forEach((t, i) => { add('body', i, t, [500, BRIEF_TYPE.size, 0.1], C.text); y += 10; });
     y += 12;
-    dossier().call.forEach((t, i) => add('call', i, t, [700, BRIEF_TYPE.size, 0.3], C.gold));
+    dossier().call.forEach((t, i) => add('call', i, t, [700, BRIEF_TYPE.size, 0.3], C.orange));
     return { blocks, bandEnd: y - leading(lh) + 8 };
   }
 
@@ -6863,7 +6856,7 @@ export function createFrontEnd({
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
     ctx.fillRect(rx, D.y + 4, 1, D.h - 8);
     setFont(700, 10, 3);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;
     ctx.fillText('DOSSIER', D.x + 18, D.y + 18);
     briefProgressRule(D.x + 18, D.y + 28, D.w - 18);
 
@@ -6945,7 +6938,7 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    fillCentred(isL2() ? 'LAGOS  /  02' : 'LAGOS  /  01', W / 2, 300);
+    fillCentred(isL2() ? 'LAGOS  |  02' : 'LAGOS  |  01', W / 2, 300);
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
     fillCentred(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 368);
@@ -7079,18 +7072,10 @@ export function createFrontEnd({
     ctx.translate(-(x + w / 2), -(y + h / 2));
     // the plate: smoked glass, a green wash running in from the left when it has focus
     glass(x, y, w, h, 0, { tint: `rgba(8,12,18,${(0.62 + 0.12 * f).toFixed(3)})`, shadow: f > 0.5, border: 'rgba(0,0,0,0)' });
-    if (f > 0.01) {
-      const g = ctx.createLinearGradient(x, y, x + w, y);
-      g.addColorStop(0, `rgba(54,214,126,${(0.20 * f).toFixed(3)})`);
-      g.addColorStop(0.55, `rgba(54,214,126,${(0.05 * f).toFixed(3)})`);
-      g.addColorStop(1, 'rgba(54,214,126,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(x, y, w, h);
-    }
-    ctx.strokeStyle = `rgba(${Math.round(lerp(255, 54, f))},${Math.round(lerp(255, 214, f))},${Math.round(lerp(255, 126, f))},${lerp(0.12, 0.6, f).toFixed(3)})`;
+    ctx.strokeStyle = `rgba(255,255,255,${(0.12 * (1 - f)).toFixed(3)})`;
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    if (f > 0.01) { ctx.globalAlpha = f; ctx.fillStyle = C.orange; ctx.fillRect(x, y, 3, h); ctx.globalAlpha = 1; }
+    focusOverlay(x, y, w, h, f, p);
     // the icon tile
     const t = h - 18, tx = x + 12, ty = y + 9;
     ctx.fillStyle = 'rgba(255,255,255,0.055)';
@@ -8474,7 +8459,7 @@ export function createFrontEnd({
    * gameplay owns the frame, and the focus eases would otherwise freeze. */
   const ui = {
     C, W, H, MENU_HINTS, HOLD_DELAY, HOLD_RATE,
-    setFont, setDisplay, fitFont, glass, button, icon, roundRectPath, networkGraph,
+    setFont, setDisplay, fitFont, glass, button, icon, roundRectPath, networkGraph, focusOverlay,
     /* Measured against the CURRENT ctx font, so a caller must `setFont` before
      * asking. Shared rather than re-written over in aftermath.js: both files
      * draw on the same canvas with the same fonts, and two wrap routines drift. */
@@ -8483,8 +8468,7 @@ export function createFrontEnd({
     pressPulse, navForward, navBack, navScroll, navClose, navStart, navSlide, hitTest, pointerPos, isTouchUI, drawCloseButton,
     /* The case file's GO BACK, look and glimmer, for the post view's way out (request 543). */
     drawGoBack(x, y, w = 188, h = 40, focused = false) {
-      button({ id: 'goback:' + x, x, y, w, h, label: 'GO BACK', icon: 'circleBtn', focused });
-      glimmer(x, y, w, h, 7, BRIEF_GLIMMER[0]);
+      button({ id: 'goback:' + x, x, y, w, h, label: 'GO BACK', icon: 'circleBtn', focused, glimmer: BRIEF_GLIMMER[0] });
     },
     uiSfx,                                  // request 453: the synthesised cues above
     get uiSfxCount() { return { ...uiSfxCount }; },

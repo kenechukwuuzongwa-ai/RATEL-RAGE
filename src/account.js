@@ -568,10 +568,11 @@
       '.rr-acct-panel .link{all:unset;cursor:pointer;color:rgba(255,255,255,.55);font-size:13px;letter-spacing:.06em}',
       '.rr-acct-panel .link:hover,.rr-acct-panel .link:focus{color:#7be3a6}',
       '.rr-acct-panel .x{all:unset;float:right;cursor:pointer;font:400 18px/1 "RR Uni","RR Pixel",monospace;color:rgba(255,255,255,.5);padding:2px 4px}',
-      /* PHONE, LANDSCAPE (request 613: the sign-in stays landscape): docked to the top and kept to the room
-       * the keyboard leaves; while typing, the headings step aside for the field and its button. */
-      '.rr-acct-overlay.phone{place-items:start center;padding:6px 0 0}',
-      '.rr-acct-overlay.phone .rr-acct-panel{width:min(400px,70vw);padding:12px 16px 10px}',
+      /* PHONE (request 615: the form turns the screen to PORTRAIT so typing is easy): docked to the top and
+       * kept to the room the keyboard leaves; in landscape (a screen that cannot turn), the headings step aside. */
+      '.rr-acct-overlay.phone{place-items:start center;padding:8px 0 0}',
+      '.rr-acct-overlay.phone .rr-acct-panel{width:min(420px,94vw);padding:16px 18px 14px}',
+      'body.rr-acct-open .rotate-hint{display:none!important}',
       '.rr-acct-overlay.tight .rr-acct-panel>p,.rr-acct-overlay.tight .rr-acct-panel h2{display:none}',
       '.rr-acct-overlay.tight .rr-acct-panel{padding-top:8px}.rr-acct-overlay.tight .rr-acct-panel .btn{margin:.2em 0;padding:.55em}',
     ].join('');
@@ -692,9 +693,11 @@
       if (f) { f.focus(); try { if (sel && sel[0] != null) f.setSelectionRange(sel[0], sel[1]); } catch (e) {} }
     }
   }
-  /* THE PHONE KEYBOARD. The game runs fullscreen in landscape, where Android does not shrink the page
-   * for the keyboard. The sheet STAYS LANDSCAPE (request 613 — it used to turn the screen to portrait):
-   * it docks to the top and, while a field has focus, keeps to the room the keyboard leaves. */
+  /* THE PHONE KEYBOARD. The game runs fullscreen in landscape, where Android does not shrink the page for
+   * the keyboard and a 360 px tall screen leaves almost no room above it. So on a phone the form turns the
+   * screen to PORTRAIT while it is open (request 615; the app through RatelHost.setPortrait, a browser
+   * through the orientation lock) and back to landscape when it closes. The SIGN IN view itself stays
+   * landscape. Docked to the top, the sheet keeps to the room the keyboard leaves. */
   var phoneUi = function () {
     try { return window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600; }
     catch (e) { return false; }
@@ -702,15 +705,24 @@
   var typing = false;
   function dock(on) {
     document.body.classList.toggle('rr-acct-open', on);
-    overlay.classList.toggle('phone', on && phoneUi());
+    var phone = phoneUi();
+    overlay.classList.toggle('phone', on && phone);
+    if (!phone) return;
+    try {
+      if (window.RatelHost && typeof window.RatelHost.setPortrait === 'function') { window.RatelHost.setPortrait(!!on); return; }
+    } catch (e) {}
+    try {
+      if (screen.orientation && screen.orientation.lock) screen.orientation.lock(on ? 'portrait' : 'landscape').catch(function () {});
+    } catch (e) {}
   }
   function fitPanel() {
     if (!open || !panel) return;
     if (!overlay.classList.contains('phone')) { overlay.classList.remove('tight'); panel.style.maxHeight = ''; overlay.style.paddingTop = ''; return; }
     var vv = window.visualViewport;
     var H = window.innerHeight, h = vv ? vv.height : H, top = vv ? vv.offsetTop : 0;
-    overlay.classList.toggle('tight', typing);
-    var room = typing ? Math.min(h, H * 0.42) : h;
+    var portrait = H >= window.innerWidth;
+    overlay.classList.toggle('tight', typing && !portrait);
+    var room = typing ? Math.min(h, H * (portrait ? 0.55 : 0.40)) : h;
     overlay.style.paddingTop = (top + 6) + 'px';
     panel.style.maxHeight = Math.max(120, room - 12) + 'px';
     var f = typing && document.activeElement;

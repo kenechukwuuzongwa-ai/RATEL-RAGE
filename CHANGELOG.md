@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-13 — Green selection look everywhere, portrait email form, | separators (v142, request 615)
+
+- One selection look (focusOverlay): the SIGN IN rows' green wash, green hairline and 3 px edge bar on every menu and pause button, the level select cards, the character card and the pause posts card. The white sheen and glint are gone.
+- START MISSION / GO BACK sheen is drawn inside the button's own transform (button({ glimmer })), so it stays on the focused, stepped-out button.
+- Yellow -> green: STREETS OF JUSTICE (main menu), every screen kicker (NEW GAME...), difficulty number, level select numbers and place, options heading, controls headings, pause kicker and POSTS, results/evidence/outro kickers, and every yellow on the dossier.
+- Video intros: no dark bar or green line across the top (label and ENTER SKIP stay, with a soft shadow).
+- Separators: 'LEVEL 01  |  THE STREET TAX' style everywhere (pause, outro, game over, results, evidence board, loading, level select, intro); the pause kicker now names the level being played.
+- Email / phone sign-in form turns a phone to portrait while open (RatelHost.setPortrait in the app, orientation lock in a browser) and back to landscape on close.
+Checks: _chromakey/req615/shots.js (menu, difficulty, level select, options, character, sign-in, dossier, intro, pause); no page errors.
+
 ## 2026-11-13 — Sign in: EMAIL leads, GOOGLE replaces GMAIL (v141, request 614)
 
 - SIGN IN rows: CONTINUE WITH EMAIL (any address), CONTINUE WITH GOOGLE (Google G mark), CONTINUE WITH FACEBOOK; minor row PHONE and GUEST. gmail.svg removed.

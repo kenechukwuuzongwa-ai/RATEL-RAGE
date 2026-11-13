@@ -780,7 +780,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.translate((1 - e) * -22, 0);
     ctx.textAlign = 'left';
     ui.setFont(700, 11, 4);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;                     // green kicker, as on every screen (request 615)
     ctx.fillText(assertPlayerSafe(eyebrow, 'header.eyebrow'), 58, 76);
     ui.setDisplay(700, 38, 1.7);
     ctx.fillStyle = C.paper;
@@ -1146,7 +1146,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const A = file();
 
     drawAnalysisBackground(ui);
-    header(ui, `${LEVELS[levelId].code}  /  ${LEVELS[levelId].title}`, A.heading, A.subhead,
+    header(ui, `${LEVELS[levelId].code}  |  ${LEVELS[levelId].title}`, A.heading, A.subhead,
       clamp(stateT / 0.5, 0, 1));
 
     /* ---- the detail panel, whichever page is open --------------------- */
@@ -1445,7 +1445,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     const C = ui.C;
     const K = net();
     drawAnalysisBackground(ui);
-    header(ui, `${LEVELS[reached].code}  /  ${LEVELS[reached].title}`, K.heading,
+    header(ui, `${LEVELS[reached].code}  |  ${LEVELS[reached].title}`, K.heading,
       K.subhead ?? 'Higher than the street.', clamp(stateT / 0.5, 0, 1));
 
     /* The chain, bottom of the food chain at the top. Connections first.

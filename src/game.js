@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v141';
-import { createAftermath } from './aftermath.js?v=ratelrage-green613-v1';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v142';
+import { createAftermath } from './aftermath.js?v=ratelrage-green615-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -25142,12 +25142,12 @@ function drawOutro() {
   ctx.translate((1 - head) * -20, 0);
   ctx.textAlign = 'left';
   ui.setFont(700, 11, 4);
-  ctx.fillStyle = C.gold;
+  ctx.fillStyle = C.orange;                          // green kicker (request 615)
   /* Both strings come out of the story data through the identity resolver, so
    * the card cannot drift from the level table and cannot render a development
    * tag â€” see the fiction firewall in story.js. */
   const OC = outroCard(), LV = LEVELS[activeLevel === 2 ? 2 : 1];
-  ctx.fillText(`${LV.code}  /  ${LV.title}`, 58, 123);
+  ctx.fillText(`${LV.code}  |  ${LV.title}`, 58, 123);
   ui.setDisplay(700, 47, 1.7);
   ctx.fillStyle = C.paper;
   ctx.fillText(OC.headline(), 56, 174);
@@ -25390,8 +25390,8 @@ function drawPauseOverlay() {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ui.setFont(700, 11, 4);
-  ctx.fillStyle = C.gold;
-  ctx.fillText('LEVEL 01  /  THE STREET TAX', 58, 58);
+  ctx.fillStyle = C.orange;                          // green kicker, '|' separator (request 615)
+  { const PL = LEVELS[activeLevel === 2 ? 2 : 1]; ctx.fillText(`${PL.code}  |  ${PL.title}`, 58, 58); }
   ui.setDisplay(700, 40, 1.4);
   ctx.fillStyle = C.paper;
   ctx.fillText('PAUSED', 56, 104);
@@ -25522,17 +25522,8 @@ function drawAdDeck(ui, px, py, pw, ph) {
   adDeck.fxT = now;
   adDeck.fx = (adDeck.fx ?? 0) + ((focus ? 1 : 0) - (adDeck.fx ?? 0)) * Math.min(1, fdt * 12);
   const f = adDeck.fx;
-  ui.glass(px, py, pw, ph, 10, f > 0.01 ? { border: `rgba(255,250,240,${0.14 + 0.16 * f})` } : {});
-  if (f > 0.01) {
-    ctx.save();
-    deckRoundRect(px, py, pw, ph, 10); ctx.clip();
-    const g = ctx.createLinearGradient(px, py, px + pw, py + ph);
-    g.addColorStop(0, `rgba(255,255,255,${0.12 * f})`);
-    g.addColorStop(0.45, `rgba(255,248,236,${0.05 * f})`);
-    g.addColorStop(1, `rgba(255,248,236,${0.015 * f})`);
-    ctx.fillStyle = g; ctx.fillRect(px, py, pw, ph);
-    ctx.restore();
-  }
+  ui.glass(px, py, pw, ph, 10);
+  ui.focusOverlay?.(px, py, pw, ph, f);              // the SIGN IN rows' green look (request 615)
   const ix = px + 14, iw = pw - 28;
   const hasDesc = !!card.desc;
   const ty = py + ph - (hasDesc ? 36 : 16);          // title baseline
@@ -25540,7 +25531,7 @@ function drawAdDeck(ui, px, py, pw, ph) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ui.setFont(700, 11, 4);
-  ctx.fillStyle = C.gold;
+  ctx.fillStyle = C.orange;
   ctx.fillText('POSTS', ix, py + 22);
   if (!focus) {
     ui.setFont(600, 10, 1.4);
@@ -25877,7 +25868,7 @@ function drawGameOver() {
   ctx.globalAlpha = fadeIn(0.45);
   ui.setFont(700, 20, 1.2);
   ctx.fillStyle = '#e8d9c4';
-  ctx.fillText(cl ? `${LEVELS[activeLevel].code}  /  ${LEVELS[activeLevel].title}`
+  ctx.fillText(cl ? `${LEVELS[activeLevel].code}  |  ${LEVELS[activeLevel].title}`
     : lost ? "JIMOH'S MEN DESTROYED THE WORKSTATION." : 'A RATEL DOES NOT STAY DOWN.', VIEW_W / 2, 312);
   ui.setFont(500, 14, 0.3);
   ctx.fillStyle = 'rgba(214,200,184,0.75)';
