@@ -25131,6 +25131,69 @@ function drawCutscene() {
 
 // The ending speaks the front end's language: smoked glass, the green accent, Uni Sans, one centred
 // column like the SIGN IN view (request 617). The street remains underneath as the evidence layer.
+/* THE SUMMARY HEADLINE (request 623): "MC OLODO" in the headline face, "DEFEATED" in RED Uni Sans Heavy
+ * ITALIC (the real italic cut, never a synthesised slant), and a sheen that sweeps the whole line. The line is
+ * drawn into a small offscreen at the screen's own resolution so the light can be laid ON the letters only
+ * (source-atop), then put back in one drawImage. Uses the font fitFont just set on ctx. A headline without
+ * " DEFEATED" (Level 02's EVIDENCE SECURED) gets the sheen in the plain face. */
+const headlineBuf = { c: null, g: null };
+function drawSummaryHeadline(text, cx, baseY, C) {
+  const px = parseFloat((/([\d.]+)px/.exec(ctx.font) || [0, 40])[1]);
+  const track = 'letterSpacing' in ctx ? ctx.letterSpacing : '0px';
+  const mainFont = ctx.font, italFont = `400 ${px}px 'RR Uni Heavy Italic', ${FONT_BOLD}`;
+  const split = / DEFEATED$/.test(text);
+  const lead = split ? text.slice(0, -' DEFEATED'.length) : text, tail = split ? 'DEFEATED' : '';
+  const wLead = ctx.measureText(lead).width, wGap = split ? ctx.measureText(' ').width : 0;
+  ctx.font = italFont;
+  const wTail = split ? ctx.measureText(tail).width : 0;
+  ctx.font = mainFont;
+  const total = wLead + wGap + wTail, left = cx - total / 2;
+  const m = ctx.getTransform(), k = Math.max(1, Math.hypot(m.a, m.b));
+  const padX = px * 0.6, hgt = px * 1.5, top = baseY - px * 1.08;
+  if (!headlineBuf.c) { headlineBuf.c = document.createElement('canvas'); headlineBuf.g = headlineBuf.c.getContext('2d'); }
+  const c = headlineBuf.c, g = headlineBuf.g;
+  const bw = Math.ceil((total + padX * 2) * k), bh = Math.ceil(hgt * k);
+  if (c.width < bw || c.height < bh) { c.width = Math.max(c.width, bw); c.height = Math.max(c.height, bh); }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, c.width, c.height);
+  g.setTransform(k, 0, 0, k, 0, 0);
+  if ('letterSpacing' in g) g.letterSpacing = track;
+  g.textAlign = 'left';
+  g.textBaseline = 'alphabetic';
+  const by = baseY - top;
+  g.font = mainFont;
+  // a faint top-to-bottom metal falloff on the white so the light band reads on it (white on white is invisible)
+  const metal = g.createLinearGradient(0, by - px * 0.75, 0, by);
+  metal.addColorStop(0, C.paper);
+  metal.addColorStop(1, '#a9afbb');
+  g.fillStyle = metal;
+  g.fillText(lead, padX, by);
+  if (split) {
+    g.font = italFont;
+    g.fillStyle = '#e3242b';                                   // red (request 623)
+    g.fillText(tail, padX + wLead + wGap, by);
+  }
+  // the sheen: a slanted band of light across the letters, every 3.2 s once the line has landed
+  const sumT = outroSummaryT() ?? 0;
+  const period = 3.2, u = ((sumT - 0.55) % period + period) % period / 0.75;
+  if (sumT > 0.55 && u < 1) {
+    const band = px * 2.2, x = -band + u * (total + padX * 2 + band * 2);
+    const sg = g.createLinearGradient(x - band / 2, 0, x + band / 2, hgt * 0.6);
+    sg.addColorStop(0, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.5, 'rgba(255,255,255,0.75)');
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = sg;
+    g.fillRect(0, 0, total + padX * 2, hgt);
+    g.globalCompositeOperation = 'source-over';
+  }
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(c, 0, 0, bw, bh, left - padX, top, bw / k, bh / k);
+  ctx.restore();
+}
+
 function drawOutro() {
   const ui = frontEnd?.ui;
   if (!ui) return;
@@ -25201,8 +25264,7 @@ function drawOutro() {
   ctx.fillText(kicker, cx + ('letterSpacing' in ctx ? 2 : 0), 58);
   const headline = OC.headline();
   ui.fitFont(700, 47, 1.7, headline, COL + 160, true);
-  ctx.fillStyle = C.paper;
-  ctx.fillText(headline, cx, 108);
+  drawSummaryHeadline(headline, cx, 108, C);
   ctx.fillStyle = C.orange;
   ctx.fillRect(Math.round(cx - 39), 122, 78, 3);
   ui.setFont(500, 12, 0.2);
@@ -28985,7 +29047,7 @@ const FONT_FACES = ["40px 'RR Pixel'", "40px 'RR Pixel Bold'"];
 /* Uni Sans (request 602) leads every stack but is OPTIONAL at boot: until its files are in
  * frontend/fonts the pixel faces above carry the text, so its load is awaited separately and a
  * missing file is a note, not an error. calibrateFontFit() then sizes whichever face loaded. */
-const UNI_FACES = ["40px 'RR Uni Heavy'", "40px 'RR Uni'"];
+const UNI_FACES = ["40px 'RR Uni Heavy'", "40px 'RR Uni'", "40px 'RR Uni Heavy Italic'"];   // + the italic (request 623)
 let fontFit = null;
 /* THE FONT MAY NEVER BLOCK BOOT. This ceiling is not belt-and-braces.
  *

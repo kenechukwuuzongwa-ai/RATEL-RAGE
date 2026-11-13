@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-13 — Summary headline: red italic DEFEATED + sheen (v148, request 623)
+
+- MC OLODO DEFEATED: DEFEATED is red (#e3242b) in the real Uni Sans Heavy Italic cut ('RR Uni Heavy Italic', frontend/fonts/uni-sans-heavy-italic.otf, unmodified, gitignored like Heavy); MC OLODO has a faint metal falloff; a light band sweeps the whole line every 3.2 s once it lands (drawSummaryHeadline in game.js).
+Checks: _chromakey/req622/frames.js with TIMES=0.7,0.85,1.0,1.15,2.4 -> _chromakey/req624/out; no page errors.
+
 ## 2026-11-13 — Level summary entrance choreography (v147, request 622)
 
 - Top block drops in from above the frame and settles; the card (centre piece) scales 72% -> 100% from its centre with a small overshoot, then one light sweep crosses it; the run rows cascade in, then the evidence rows; the grade stamps onto its tile when the score count lands (the stamp sound's moment, with a tile flash); ANALYZE EVIDENCE rises in from below the frame.

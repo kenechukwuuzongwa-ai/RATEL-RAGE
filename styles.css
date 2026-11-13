@@ -37,6 +37,15 @@
   font-display: block;
   src: url('frontend/fonts/uni-sans-heavy.otf?v=uni137b') format('opentype');
 }
+/* REQUEST 623: Uni Sans Heavy ITALIC (same Fontfabric free cut, shipped unmodified, gitignored like Heavy),
+ * for the red DEFEATED on the level summary. A real italic, never a synthesised slant. */
+@font-face {
+  font-family: 'RR Uni Heavy Italic';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('frontend/fonts/uni-sans-heavy-italic.otf?v=uni623') format('opentype');
+}
 @font-face {
   font-family: 'RR Uni';
   font-style: normal;
