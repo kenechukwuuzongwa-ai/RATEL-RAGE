@@ -647,6 +647,19 @@ export const tapCueState = { drawn: false, x: 0, y: 0, w: 0, h: 0, pulse: 0, t: 
 /* The same element serves the title's TAP TO ENTER (request 357), where ONE tap
  * enters: `text` is its caption, `taps: 1` beats once per cycle, `hintAt` is when
  * it arrives on that screen's clock and `cy` pins its centre to the prompt row. */
+/* HOW WIDE A TRACKED LINE REALLY DRAWS (request 628). Canvas letter-spacing goes after every glyph, but
+ * measureText has not reliably counted it, so the width is taken untracked and the spacing added per
+ * glyph here: the same answer whichever way the browser measures. */
+export function trackedWidth(ctx, text) {
+  const ls = 'letterSpacing' in ctx ? ctx.letterSpacing : '0px';
+  const sp = parseFloat(ls) || 0;
+  if (!sp) return ctx.measureText(text).width;
+  ctx.letterSpacing = '0px';
+  const w = ctx.measureText(text).width;
+  ctx.letterSpacing = ls;
+  return w + sp * [...text].length;
+}
+
 export function drawTapCue(ctx, W, H, t, o = {}) {
   /* The clock is recorded even when the cue is hidden, so a reader can always
    * tell "not yet" from "not any more" rather than reading a stale number. */
@@ -3822,7 +3835,14 @@ export function createFrontEnd({
     const set = display ? setDisplay : setFont;
     let k = size;
     set(weight, k, spacing);
-    while (k > 6 && ctx.measureText(text).width > maxW) { k -= 0.5; set(weight, k, spacing); }
+    // the TRACKED width (request 628): plain measureText left the letter-spacing out, so tracked labels
+    // ("NEXT TARGET · IN PREPARATION") were judged to fit and ran into the case photo
+    while (k > 6 && trackedWidth(ctx, text) > maxW) { k -= 0.5; set(weight, k, spacing); }
+    /* …and when the size has hit the readable floor (readablePx) and it STILL does not fit, the tracking
+     * gives instead (request 628: Level 02's "NEXT TARGET · IN PREPARATION" stayed 299 px in a 250 px
+     * column at the floor and ran into the case photo). */
+    let sp = spacing;
+    while (sp > 0 && trackedWidth(ctx, text) > maxW) { sp = Math.max(0, sp - 0.25); set(weight, k, sp); }
     return k;
   }
 

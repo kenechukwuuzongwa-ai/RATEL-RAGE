@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-14 — Level 02 summary text kept inside its cards (v152, request 628)
+
+- Mission card: Level 02's evidence notes shortened (UNCHECKED / UNTRACED / ENCRYPTED, count 3 ARCHIVES · SEALED); the count and each note now fit the gap they are given (fitRow in game.js: smaller, then tighter tracking, then an ellipsis), so nothing runs under UNANALYSED or off the card.
+- fitFont (frontend.js): when the size reaches the readable floor and the text still does not fit, the letter-spacing gives. Fixes "NEXT TARGET · IN PREPARATION" running into Kiwe's case photo on SELECT OPERATION. New trackedWidth() measures a tracked line.
+Checks: _chromakey/req628/frames_l2.js (Level 02 card + analysis + select, probe 249.9 px in a 250 px column), req622/frames.js Level 01 card, req626/screens.js menu/brief/pause; no page errors.
+
 ## 2026-11-13 — Title prompt midway (v151, request 627)
 
 - Title: TAP TO ENTER (and desktop PRESS ENTER TO START) centred halfway between the STREETS OF JUSTICE baseline and the top of the loading bar.

@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx } from './frontend.js?v=ratelrage-mobile-v151';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v152';
 import { createAftermath } from './aftermath.js?v=ratelrage-v150';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -19264,12 +19264,13 @@ const OUTRO_CARD = {
     headline: () => 'EVIDENCE SECURED',
     line: 'Jimoh’s men down. Strong room sealed behind you.',
     no: 'CASE FILE 002', where: 'LAGOS · NPF EVIDENCE WING',
-    bagTitle: 'HARD DRIVE CLONE RECOVERED', bagCount: '1 DRIVE  ·  3 ARCHIVES  ·  SEALED',
+    // short notes, like Level 01's: the long ones ran under UNANALYSED and off the card (request 628)
+    bagTitle: 'HARD DRIVE CLONE RECOVERED', bagCount: '3 ARCHIVES  ·  SEALED',
     bagLine: 'Copied off the NPF evidence server. Unread.',
     items: [
-      ['map', 'CASE RECORDS ARCHIVE', 'Every server file · edits unchecked'],
-      ['users', 'PROPERTY WING LEDGERS', 'Seized-asset movements · untraced'],
-      ['bell', 'OFFICE MESSAGE ARCHIVE', 'Jimoh’s own account · encrypted'],
+      ['map', 'CASE RECORDS ARCHIVE', 'Unchecked'],
+      ['users', 'PROPERTY WING LEDGERS', 'Untraced'],
+      ['bell', 'OFFICE MESSAGE ARCHIVE', 'Encrypted'],
     ],
   },
 };
@@ -25187,6 +25188,26 @@ function drawSummaryHeadline(text, cx, baseY, C) {
  * current ctx font/align (alphabetic baseline). `start` is the summary time of its first pass — the moment the
  * count lands, the moment the grade stamps — then it comes round every SHEEN_PERIOD. Outside a pass the text is
  * drawn plain, straight onto ctx; during one it goes through the offscreen so the light stays on the letters. */
+/* KEEP A LINE IN ITS GAP (request 628): tries each [px, track] in turn until `text` fits `maxW`, then,
+ * at the smallest, cuts it with an ellipsis. `draw(s)` paints it in the chosen font. Nothing to draw
+ * if not even "…" fits. */
+function fitRow(text, maxW, sizes, draw) {
+  const ui = frontEnd?.ui;
+  if (!ui || maxW <= 0) return;
+  for (const [px, tr, wt = 700] of sizes) {
+    ui.setFont(wt, px, tr);
+    if (trackedWidth(ctx, text) <= maxW) { draw(text); return; }
+  }
+  // sizes bottom out at the readable floor, so the tracking gives next, then the ellipsis
+  const [px, tr, wt = 700] = sizes[sizes.length - 1];
+  for (let t = tr - 0.25; t >= 0; t -= 0.25) {
+    ui.setFont(wt, px, t);
+    if (trackedWidth(ctx, text) <= maxW) { draw(text); return; }
+  }
+  let s = text;
+  while (s.length > 1 && trackedWidth(ctx, s.trimEnd() + '…') > maxW) s = s.slice(0, -1);
+  if (trackedWidth(ctx, s.trimEnd() + '…') <= maxW) draw(s.trimEnd() + '…');
+}
 const SHEEN_PERIOD = 3.2, SHEEN_PASS = 0.6;
 const sheenBuf = { c: null, g: null };
 function drawSheenText(text, x, baseY, fill, start) {
@@ -25435,10 +25456,13 @@ function drawOutro() {
     ui.setFont(700, 10, 3);
     ctx.fillStyle = C.orange;
     ctx.fillText(OC.bagTitle, lx, y);
+    const bagW = trackedWidth(ctx, OC.bagTitle);
     ctx.textAlign = 'right';
-    ui.setFont(700, 8.5, 2);
-    ctx.fillStyle = dimWhite(0.42);
-    ctx.fillText(OC.bagCount, rx, y);
+    // the count gives way to the title: smaller, then cut, never over it (request 628)
+    fitRow(OC.bagCount, rx - (lx + bagW + 16), [[8.5, 2], [7.5, 1.2], [6.5, 0.6]], (s) => {
+      ctx.fillStyle = dimWhite(0.42);
+      ctx.fillText(s, rx, y);
+    });
     ctx.textAlign = 'left';
     ctx.fillStyle = dimWhite(0.09);
     ctx.fillRect(lx, y + 10, COL - PAD * 2, 1);
@@ -25454,15 +25478,18 @@ function drawOutro() {
         ui.setFont(700, 11, 1.5);
         ctx.fillStyle = dimWhite(0.9);
         ctx.fillText(title, lx + 26, y);
-        const tw = ctx.measureText(title).width;
-        ui.setFont(500, 10, 0.2);
-        ctx.fillStyle = dimWhite(0.42);
-        ctx.fillText(note, lx + 26 + tw + 12, y);
+        const tw = trackedWidth(ctx, title);
         ctx.textAlign = 'right';
         ui.setFont(700, 8.5, 1.8);
         ctx.fillStyle = '#c0182a';                           // deep red (request 619)
         ctx.fillText('UNANALYSED', rx, y);
+        const sw = trackedWidth(ctx, 'UNANALYSED');
         ctx.textAlign = 'left';
+        // the note keeps to the gap between the title and the status (request 628)
+        fitRow(note, rx - sw - 14 - (lx + 26 + tw + 12), [[10, 0.2, 500], [9, 0.1, 500], [8, 0, 500]], (s) => {
+          ctx.fillStyle = dimWhite(0.42);
+          ctx.fillText(s, lx + 26 + tw + 12, y);
+        });
         ctx.fillStyle = dimWhite(0.05);
         ctx.fillRect(lx, y + 10, COL - PAD * 2, 1);
         ctx.restore();
@@ -25473,7 +25500,7 @@ function drawOutro() {
     // the file line, at the foot of the card
     for (const [px, tr] of [[8.5, 1.2], [7.5, 0.4], [6.5, 0]]) {
       ui.setFont(700, px, tr);
-      if (ctx.measureText(OC.no).width + ctx.measureText(OC.where).width + 16 <= COL - PAD * 2) break;
+      if (trackedWidth(ctx, OC.no) + trackedWidth(ctx, OC.where) + 16 <= COL - PAD * 2) break;
     }
     ctx.fillStyle = `rgba(255,255,255,${(0.28 * ease(span(MOTION.evid + 0.3, 0.3))).toFixed(3)})`;
     ctx.fillText(OC.no, lx, card.y + card.h - 16);
