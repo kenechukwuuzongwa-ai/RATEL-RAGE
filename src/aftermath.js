@@ -1879,7 +1879,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.textAlign = 'left';
 
     ui.roundRectPath(ctx, x, y, w, h, 6);
-    ctx.strokeStyle = on ? 'rgba(255,122,31,0.55)' : 'rgba(150,176,214,0.20)';
+    ctx.strokeStyle = on ? 'rgba(54,214,126,0.55)' : 'rgba(150,176,214,0.20)';
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.restore();
@@ -1928,7 +1928,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
        * one screen that cannot afford atmosphere over legibility. */
       ui.glass(box.x, box.y, box.w, box.h, 12, {
         tint: on ? 'rgba(24,15,6,0.93)' : 'rgba(7,10,16,0.90)',
-        border: on ? `rgba(255,122,31,${0.60 + 0.18 * Math.sin(ui.clock * 2.4)})`
+        border: on ? `rgba(54,214,126,${0.60 + 0.18 * Math.sin(ui.clock * 2.4)})`
           : 'rgba(150,176,214,0.18)',
       });
       ctx.fillStyle = on ? C.orange : 'rgba(150,176,214,0.22)';

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-13 — SIGN IN replaces EXTRAS, green accent, coded KenCrafts splash (v140, request 613)
+
+- Main menu EXTRAS -> SIGN IN (new sign-in icon). A landscape canvas view: the Ratel Rage mark, CONTINUE WITH
+  GMAIL / FACEBOOK / PHONE rows with the providers' own SVG icons (frontend/ui/social), EMAIL and GUEST, one dim
+  legal line linking privacy.html. Provider availability is read from Supabase /auth/v1/settings: rows say SOON
+  until Google / Facebook / phone are switched on there (today only email + guest are on). Signed in: avatar,
+  name, sync state, SET PASSWORD (if needed), SIGN OUT.
+- account.js: the SAVE YOUR PROGRESS chip, the level-cleared strip and the old account window are gone; a small
+  form sheet (email, phone code, links, conflicts) opens over SIGN IN and stays landscape (no portrait flip).
+- Credits: the typeface line removed (the Fontfabric credit stays on privacy.html).
+- The LEVEL 01 mission-briefing page (BEGIN OPERATION) is gone: DIFFICULTY, CHARACTER and LEVEL SELECT 01 go
+  straight to the load screen.
+- UI accent orange -> green (#36d67e / #7be3a6 / #e3f6ea) across menus, pause, results and the evidence board.
+- KenCrafts splash drawn entirely in code once Uni Sans is loaded: white fill, the kensplash.js cube rendered at
+  the screen's device resolution, the Uni Sans wordmark; the MP4 is only the clock and the sound (and the
+  fallback picture when Uni Sans is missing).
+Checks: _chromakey/req613/shots.js (2x DPR): menu items, no account chip, SIGN IN view, refused press in place,
+credits, DIFFICULTY -> loading, splash frames 0.5-4.6 s; no page errors.
+
 ## 2026-10-17 — Backgrounds stop competing with the fighters (request 408)
 
 Measured, same fight frame (mean saturation, fighters vs background; _chromakey/req403/gradeshots.js):

@@ -1179,8 +1179,8 @@
        * swipes both drive its navigation), never the cinematics. */
       const phase = R?.frontEndPhase ?? null;
       const GESTURE_PHASES = ['title', 'menu', 'difficulty', 'character', 'characters',
-        'shop', 'controls', 'options', 'levelSelect', 'briefing', 'levelTitle',
-        'extras', 'credits'];
+        'shop', 'controls', 'options', 'levelSelect', 'levelTitle',
+        'signin', 'credits'];   // SIGN IN replaced EXTRAS, the briefing page is gone (request 613)
       /* DELIBERATELY NOT GATED ON worldReady, unlike the gameplay controls
        * above. The menus do not need the level: the title and the main menu are
        * up and interactive long before the 39 sheets have landed — that is the

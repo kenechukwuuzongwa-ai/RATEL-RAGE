@@ -1,7 +1,7 @@
 /* RATEL RAGE — STREETS OF JUSTICE : front end
  *
  * Every screen is built from one UI kit so the main menu's language (smoked
- * glass, thin borders, orange focus, gold information accents) is the same
+ * glass, thin borders, green focus, gold information accents) is the same
  * language every other menu speaks.
  *
  * Production assets, not substitutes:
@@ -18,6 +18,8 @@
 
 // The cinematic bars, shared with game.js (request 399): Level 2's screen changes.
 import { createBarCut } from './bars.js';
+// The KenCrafts game cube, drawn in code (requests 612-613): the splash no longer shows the filmed cube.
+import { createKenCube } from './kensplash.js?v=ratelrage-mobile-v140';
 
 /* START-POINT LINKS (request 486): `?start=strongroom` opens straight into Level 02
  * at the keypad checkpoint — its last arena cleared, a few steps short of the
@@ -69,9 +71,11 @@ const C = {
   muted: '#79828f',
   dim: '#4d545e',
   gold: '#e9b654',           // information accent
-  orange: '#ff7a1f',         // interactive accent — focus only
-  orangeSoft: '#ffa04d',
-  cream: '#ffe6bf',
+  /* REQUEST 613: the interactive accent is GREEN (was orange #ff7a1f / #ffa04d / cream #ffe6bf).
+   * The key keeps its old name so every screen (and game.js / aftermath.js through ui.C) follows. */
+  orange: '#36d67e',         // interactive accent — focus only
+  orangeSoft: '#7be3a6',
+  cream: '#e3f6ea',
   red: '#e0432c',            // alerts only
   green: '#5fb87e',
 };
@@ -368,7 +372,7 @@ const MAIN_ITEMS = [
   { label: 'SHOP', icon: 'cart' },
   // CONTROLS left the main list (request 541): it lives under OPTIONS > CONTROLS
   { label: 'OPTIONS', icon: 'gear' },
-  { label: 'EXTRAS', icon: 'star' },
+  { label: 'SIGN IN', icon: 'signin' },      // was EXTRAS (request 613)
   { label: 'CREDITS', icon: 'users' },
   { label: 'QUIT GAME', icon: 'power' },
 ];
@@ -1301,6 +1305,22 @@ const ICONS = {
       if (i) c.lineTo(x, y); else c.moveTo(x, y);
     }
     c.closePath(); c.stroke();
+  },
+  /* SIGN IN (request 613): an arrow entering a door frame — the universal log-in mark. */
+  signin(c) {
+    c.beginPath(); c.moveTo(13, 3.6); c.lineTo(20.4, 3.6); c.lineTo(20.4, 20.4); c.lineTo(13, 20.4); c.stroke();
+    c.beginPath(); c.moveTo(3.4, 12); c.lineTo(14.2, 12); c.stroke();
+    c.beginPath(); c.moveTo(10.2, 7.6); c.lineTo(14.8, 12); c.lineTo(10.2, 16.4); c.stroke();
+  },
+  /* The sign-in view's own glyphs (request 613): a handset and an envelope, in the menu's line style. */
+  phone(c) {
+    c.beginPath(); c.moveTo(7.2, 2.6); c.lineTo(16.8, 2.6); c.lineTo(16.8, 21.4); c.lineTo(7.2, 21.4); c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(10.4, 5.4); c.lineTo(13.6, 5.4); c.stroke();
+    c.fillRect(11, 17.4, 2, 2);
+  },
+  mail(c) {
+    c.beginPath(); c.moveTo(2.8, 5.6); c.lineTo(21.2, 5.6); c.lineTo(21.2, 18.4); c.lineTo(2.8, 18.4); c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(3.4, 6.4); c.lineTo(12, 13.2); c.lineTo(20.6, 6.4); c.stroke();
   },
   users(c) {
     c.beginPath(); c.arc(9.6, 8.6, 3.5, 0, 7); c.stroke();
@@ -2904,7 +2924,7 @@ export function createFrontEnd({
     /* Out of the case file is back up the setup trail. Note this does mean the
      * intro plays again on the way forward — it is skippable with Cross, and the
      * alternative was a BACK that silently discards the briefing flow. */
-    if (phase === 'levelTitle') { navBack(); go('briefing'); return; }
+    if (phase === 'levelTitle') { navBack(); go('difficulty'); return; }   // the briefing page is gone (request 613)
     if (optionPage && adjustRow >= 0) { selection = adjustRow; adjustRow = -1; adjHold = null; navBack(); return; }
     if (optionPage) { optionPage = null; adjustRow = -1; selection = 0; navBack(); return; }
     if (phase === 'controls' && controlsPage) { selection = controlsPage === 'howto' ? 0 : 1; controlsPage = null; phaseT = 0; navBack(); return; }
@@ -2912,9 +2932,8 @@ export function createFrontEnd({
     if (phase === 'menu') { showMessage('HOST CONTROLS QUIT'); return; }
     if (phase === 'difficulty') toMenu();
     else if (phase === 'character') go('difficulty', { selection: 1 });
-    else if (phase === 'briefing') go('character');
     else if (phase === 'controls' || phase === 'shop' || phase === 'levelSelect' ||
-      phase === 'characters' || phase === 'extras' || phase === 'credits' || phase === 'options') {
+      phase === 'characters' || phase === 'signin' || phase === 'credits' || phase === 'options') {
       /* One step up the trail. OPTIONS is the only screen that parents another,
        * so backing out of CONTROLS lands there and keeps the pause origin. */
       if (returnPhase === 'options') { returnPhase = pausedOrigin ? 'pause' : 'menu'; go('options'); }
@@ -2933,6 +2952,7 @@ export function createFrontEnd({
         .map((label) => ({ label }));
     }
     if (phase === 'controls' && !controlsPage) return CONTROL_ITEMS();
+    if (phase === 'signin') return signInItems();
     return [];
   }
 
@@ -3003,6 +3023,7 @@ export function createFrontEnd({
      * commit. */
     if (phase === 'options' && optionPage) { confirmNow(); return; }
     if (phase === 'menu' && MAIN_ITEMS[selection]?.disabled) { confirmNow(); return; }
+    if (phase === 'signin' && signInRefusal(signInItems()[selection])) { confirmNow(); return; }
     if (phase === 'controls' && !controlsPage && CONTROL_ITEMS()[selection]?.disabled) { confirmNow(); return; }
     /* The title before it has asked. `processHeldInput` already stops the
      * keyboard and the pad, but a MOUSE OR A TAP arrives here directly from
@@ -3068,7 +3089,7 @@ export function createFrontEnd({
       else if (item.label === 'SHOP') go('shop');
       else if (item.label === 'CONTROLS') go('controls');
       else if (item.label === 'OPTIONS') go('options');
-      else if (item.label === 'EXTRAS') go('extras');
+      else if (item.label === 'SIGN IN') go('signin');
       else if (item.label === 'CREDITS') go('credits');
       else if (item.label === 'QUIT GAME') requestQuit('QUIT');
       return;
@@ -3077,11 +3098,12 @@ export function createFrontEnd({
       navForward();
       difficulty = ['EASY', 'NORMAL', 'HARD', 'ARCADE'][selection];
       if (currentLevel !== 1) selectLevel(1);       // START GAME is Level 01
-      go('character');
+      /* REQUEST 613: straight to the load screen. The LEVEL 01 mission-briefing page (BEGIN OPERATION)
+       * is gone — the case file after the intro already carries the same information. */
+      go('loading');
       return;
     }
-    if (phase === 'character') { navForward(); go('briefing'); return; }
-    if (phase === 'briefing') { navForward(); go('loading'); return; }
+    if (phase === 'character') { navForward(); go('loading'); return; }
     if (phase === 'levelSelect') {
       const lvl = levelSelectItems()[selection]?.level ?? 1;
       pressPulse(`lvl:${selection}`);
@@ -3090,10 +3112,11 @@ export function createFrontEnd({
        * its cinematic, its debriefing, its entry. 01 keeps its setup trail. */
       if (lvl === 2) { startLevel(2); return; }
       if (currentLevel !== 1) selectLevel(1);
-      go('briefing');
+      go('loading');                     // no briefing page any more (request 613)
       return;
     }
     if (phase === 'characters') { navForward(); go('character'); return; }
+    if (phase === 'signin') { signInConfirm(); return; }
     if (phase === 'options') {
       if (optionPage) {
         const row = optionRows[selection];
@@ -4046,7 +4069,7 @@ export function createFrontEnd({
 
     const tint = disabled
       ? C.dim
-      : f > 0.5 ? C.cream : `rgba(${lerp(195, 255, f)},${lerp(202, 230, f)},${lerp(214, 191, f)},1)`;
+      : f > 0.5 ? C.cream : `rgba(${lerp(195, 227, f)},${lerp(202, 246, f)},${lerp(214, 234, f)},1)`;
 
     const padX = hero ? 26 : 22;
     if (o.icon) {
@@ -4762,7 +4785,7 @@ export function createFrontEnd({
    * (QUIT is a row), the title has none, and the case file (levelTitle) keeps
    * its own GO BACK button. */
   const CLOSE_PHASES = new Set(['difficulty', 'character', 'characters', 'shop', 'controls', 'options',
-    'levelSelect', 'briefing', 'extras', 'credits']);
+    'levelSelect', 'signin', 'credits']);
 
   const MENU_HINTS = [
     { icon: 'dpad', label: 'NAVIGATE' },
@@ -4961,9 +4984,23 @@ export function createFrontEnd({
     const scale = Math.max(W / vw, H / vh);
     const dw = Math.round(vw * scale), dh = Math.round(vh * scale);
     const ox = Math.round((W - dw) / 2), oy = Math.round((H - dh) / 2);
-    ctx.drawImage(splashVideo, ox, oy, dw, dh);
-    // request 602: the wordmark re-set in Uni Sans over the clip's baked one, in step with it
-    drawKenCraftsType(splashVideo.currentTime, ox, oy, dw / KEN_TYPE.clipW);
+    const kk = dw / KEN_TYPE.clipW, ct = splashVideo.currentTime;
+    if (uniSansReady()) {
+      /* REQUEST 613: THE WHOLE CARD IN CODE. The clip is still the clock and the sound, but none of its
+       * pixels are drawn: its flat white backdrop is a fill, the cube is kensplash.js's renderer and the
+       * wordmark is Uni Sans, all rasterised at the screen's own resolution (renderScale), so the logo
+       * is as sharp as vector art on every display. The filmed picture stays only as the fallback for
+       * a device where Uni Sans did not load. */
+      ctx.fillStyle = 'rgb(253,253,253)';
+      ctx.fillRect(0, 0, W, H);
+      kenCube ??= createKenCube();
+      const n = Math.max(1, Math.min(24, Math.ceil(kenCube.travel(ct, KEN_TYPE.shutter) * kk)));
+      kenCube.draw(ctx, ct, ox, oy, kk, { dev: renderScale, samples: n, shutter: KEN_TYPE.shutter });
+      drawKenCraftsType(ct, ox, oy, kk, false);
+    } else {
+      ctx.drawImage(splashVideo, ox, oy, dw, dh);
+      drawKenCraftsType(ct, ox, oy, kk);
+    }
 
     /* Measured against the FILE's duration, not against phaseT: a clip that
      * stalled or started late must still fade on its own last half-second
@@ -5015,7 +5052,7 @@ export function createFrontEnd({
     s1: { x0: 1050, x1: 1594, mid: 606 },
     rules: { l0: 935, r1: 1707, mid: 603.5, h: 8, gap: 20 },
     skew: 0.2,
-    q: 1.5, pad: 48,                               // sprite resolution and margin, clip px
+    q: 2.5, pad: 48,                               // sprite resolution (px per clip px — above any screen's, request 613) and margin
     shutter: 0.03, maxSamples: 40,                 // motion blur: seconds of travel averaged
     STREAK: [[1.833, 836, 562], [1.867, 639, 536], [1.9, 451, 394], [1.933, 313, 300], [1.966, 208, 217],
       [2.0, 132, 160], [2.033, 76, 132], [2.066, 39, 94], [2.1, 16, 63], [2.133, 4, 38], [2.166, 0, 18], [2.2, 0, 0]],
@@ -5045,6 +5082,7 @@ export function createFrontEnd({
     return tab[tab.length - 1][col];
   }
   let kenSprite = null;      // { canvas, x0, y0 } in clip px (top-left of the sprite)
+  let kenCube = null;        // the coded cube (kensplash.js), made on the first coded frame
   function buildKenSprite() {
     const T = KEN_TYPE, q = T.q, pad = T.pad;
     const bx0 = T.big[0] - pad, by0 = T.big[1] - pad;
@@ -5172,7 +5210,7 @@ export function createFrontEnd({
     return { x: x0, y: y0, s: (x1 - x0) / bw, trail: 0 };
   }
 
-  function drawKenCraftsType(t, ox, oy, k) {
+  function drawKenCraftsType(t, ox, oy, k, cover = true) {
     const T = KEN_TYPE;
     if (t < T.from || t > T.until || !uniSansReady()) return;
     if (!kenSprite) buildKenSprite();
@@ -5186,7 +5224,7 @@ export function createFrontEnd({
     const lift = Math.round(lerpTable(T.BG_LIFT, t, 1));
     ctx.save();
     ctx.fillStyle = `rgb(${lift},${lift},${lift})`;
-    if (right > left) ctx.fillRect(ox + left * k, oy + top * k, (right - left) * k, (bottom - top) * k);
+    if (cover && right > left) ctx.fillRect(ox + left * k, oy + top * k, (right - left) * k, (bottom - top) * k);
     // 2. the vector wordmark in its pose; a streak is drawn as an even average of copies along it
     /* Motion blur by TIME SAMPLING: the pose is averaged over a shutter window behind t, so the
      * streak smears along its path and the shrink blurs as a zoom, as both do in the clip. The
@@ -5919,8 +5957,8 @@ export function createFrontEnd({
       const s = getFx(`roster:${i}`);
       s.target = i === 0 ? 1 : 0;
       glass(x, y, w, h, 8, {
-        tint: i === 0 ? 'rgba(30,20,14,0.72)' : 'rgba(9,13,20,0.64)',
-        border: i === 0 ? `rgba(255,122,31,${0.55 + Math.sin(clock * 2.1) * 0.14})` : C.edgeSoft,
+        tint: i === 0 ? 'rgba(12,28,20,0.72)' : 'rgba(9,13,20,0.64)',
+        border: i === 0 ? `rgba(54,214,126,${0.55 + Math.sin(clock * 2.1) * 0.14})` : C.edgeSoft,
       });
       if (i === 0) {
         if (avatarCanvas) {
@@ -6217,7 +6255,7 @@ export function createFrontEnd({
     const s = getFx('lvl:0');
     s.target = 1;
     glass(56, 172, 720, 372, 10, {
-      border: `rgba(255,122,31,${0.42 + Math.sin(clock * 2.1) * 0.12})`,
+      border: `rgba(54,214,126,${0.42 + Math.sin(clock * 2.1) * 0.12})`,
     });
     ctx.fillStyle = C.orange;
     ctx.fillRect(56, 172, 4, 372);
@@ -6262,7 +6300,7 @@ export function createFrontEnd({
       fx.target = on ? 1 : 0;
       glass(800, y, 424, 110, 9, {
         tint: on ? 'rgba(28,18,10,0.62)' : 'rgba(9,13,20,0.56)',
-        border: on ? `rgba(255,122,31,${0.42 + Math.sin(clock * 2.1) * 0.12})` : 'rgba(233,182,84,0.28)',
+        border: on ? `rgba(54,214,126,${0.42 + Math.sin(clock * 2.1) * 0.12})` : 'rgba(233,182,84,0.28)',
       });
       if (on) { ctx.fillStyle = C.orange; ctx.fillRect(800, y, 4, 110); }
       const Dn = DOSSIERS[n];
@@ -6279,41 +6317,6 @@ export function createFrontEnd({
       icon('skull', 1180, y + 55, 22, 'rgba(224,67,44,0.7)', 0.8);
       hitboxes.push({ x: 800, y, w: 424, h: 110, index, id: `lvl:${index}` });
     }
-    endScreen();
-    drawControlBar(MENU_HINTS);
-    drawGrain();
-    transitionVeil();
-  }
-
-  function drawBriefing() {
-    stage({ darken: 0.24, darki: { cx: 1030, feet: 646, alpha: 0.55 } });
-    beginScreen();
-    glass(40, 40, 700, 640, 12);
-    screenHead('MISSION BRIEFING / LAGOS, NIGERIA', 'LEVEL 01');
-    ctx.textAlign = 'left';
-    setDisplay(700, 40, 1.6);
-    ctx.fillStyle = C.paper;
-    ctx.fillText('THE STREET TAX', 58, 208);
-    const rows = [
-      ['OBJECTIVE', 'End the street extortion.'],
-      ['TARGET', 'MC OLODO'],
-      ['SECONDARY', 'Beat the collectors.'],
-    ];
-    for (let i = 0; i < rows.length; i++) {
-      const y = 268 + i * 80;
-      setFont(700, 10.5, 3);
-      ctx.fillStyle = C.gold;
-      ctx.fillText(rows[i][0], 60, y);
-      setFont(600, 17, 0.6);
-      ctx.fillStyle = C.paper;
-      ctx.fillText(rows[i][1], 60, y + 26);
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(60, y + 46, 620, 1);
-    }
-    button({
-      id: 'brief:go', x: 60, y: 556, w: 300, h: 52,
-      label: 'BEGIN OPERATION', icon: 'play', focused: true, hero: true, index: 0,
-    });
     endScreen();
     drawControlBar(MENU_HINTS);
     drawGrain();
@@ -6973,22 +6976,296 @@ export function createFrontEnd({
     drawGrain(0.6);
   }
 
-  function drawExtras() {
-    stage({ darken: 0.46 });
-    beginScreen();
-    screenHead('ARCHIVE', 'EXTRAS', 'More unlocks as production grows.');
-    const items = ['CHARACTER GALLERY', 'CONCEPT ART', 'ANIMATION GALLERY', 'MUSIC', 'STORY', 'DEVELOPER NOTES', 'ARTWORK'];
-    for (let i = 0; i < items.length; i++) {
-      const x = 58 + (i % 3) * 392, y = 186 + Math.floor(i / 3) * 104;
-      glass(x, y, 368, 88, 9, { tint: 'rgba(9,13,20,0.56)' });
-      ctx.textAlign = 'left';
-      setFont(700, 13.5, 2.2);
-      ctx.fillStyle = 'rgba(175,185,200,0.6)';
-      ctx.fillText(items[i], x + 22, y + 51);
-      icon('lock', x + 340, y + 44, 18, C.dim, 0.55);
+  /* ===================================================== SIGN IN (request 613)
+   *
+   * Replaces EXTRAS (a wall of locked tiles). A landscape screen in the menu's own language, laid out
+   * the way the big mobile shooters do it: the game's mark on top, the sign-in methods stacked under
+   * it as wide rows with the providers' own icons, the minor ways in (email, staying a guest) on one
+   * row below, and one dim line of legal at the foot. Type is dim white; focus is the green accent.
+   *
+   * The rows only ASK: window.RRAccount (src/account.js) does the signing in. Which providers are on
+   * is read from the auth server (RRAccount.providers), so a row marked SOON lights up the day its
+   * provider is configured, with no game update. Email and phone open account.js's small form sheet
+   * over this screen; Gmail and Facebook go to the provider and come back signed in. */
+  const SIGNIN = {
+    colW: 452, rowH: 56, gap: 12, top: 236, minorH: 48,
+    rows: [
+      { key: 'google', label: 'CONTINUE WITH GMAIL', art: 'gmail' },
+      { key: 'facebook', label: 'CONTINUE WITH FACEBOOK', art: 'facebook' },
+      { key: 'phone', label: 'CONTINUE WITH PHONE', glyph: 'phone' },
+    ],
+    minor: [
+      { key: 'email', label: 'EMAIL', glyph: 'mail' },
+      { key: 'guest', label: 'GUEST', glyph: 'person' },
+    ],
+    privacy: new URL('../privacy.html', import.meta.url).href,
+  };
+  /* The providers' own marks, downloaded as SVG (frontend/ui/social: the 2020 Gmail M, the 2023 Facebook
+   * f). Drawn with drawImage, which rasterises an SVG at the size it is drawn — sharp at any scale. */
+  const SOCIAL_ART = {};
+  function socialArt(name) {
+    let im = SOCIAL_ART[name];
+    if (!im) {
+      im = new Image();
+      im.decoding = 'async';
+      im.src = new URL(`../frontend/ui/social/${name}.svg`, import.meta.url).href;
+      SOCIAL_ART[name] = im;
     }
+    return im.complete && im.naturalWidth ? im : null;
+  }
+  const account = () => (window.RRAccount && window.RRAccount.enabled ? window.RRAccount : null);
+  const signedIn = () => account()?.info?.status === 'registered';
+  function signInItems() {
+    const info = account()?.info;
+    if (info && info.status === 'registered') {
+      const out = [];
+      if (info.email && !info.hasPassword) out.push({ key: 'password', label: 'SET PASSWORD', glyph: 'lock' });
+      out.push({ key: 'signout', label: 'SIGN OUT', glyph: 'power' });
+      out.push({ key: 'privacy' });
+      return out;
+    }
+    return [...SIGNIN.rows, ...SIGNIN.minor, { key: 'privacy' }];
+  }
+  /* Why a press on this row would do nothing, or null. Read BEFORE the press beat so a refusal
+   * sounds like a refusal (as a disabled main-menu row does), not like a step forward. */
+  function signInRefusal(it) {
+    if (!it || it.key === 'guest' || it.key === 'privacy') return null;
+    const a = account();
+    const st = a?.info?.status;
+    if (!a || !(st === 'guest' || st === 'registered')) return st === 'connecting' ? 'CONNECTING…' : 'SIGN-IN IS OFFLINE';
+    if (a.info.busy) return 'ONE MOMENT…';
+    if (it.key === 'signout' || it.key === 'password') return null;
+    if (a.providers.read && !a.providers[it.key]) return `${it.label.replace('CONTINUE WITH ', '')} SIGN-IN IS COMING SOON`;
+    return null;
+  }
+  function openLink(url) {
+    try { if (window.RatelHost?.openUrl) { window.RatelHost.openUrl(url); return; } } catch {}
+    try { window.open(url, '_blank', 'noopener'); } catch {}
+  }
+  function signInConfirm() {
+    const it = signInItems()[selection];
+    if (!it) return;
+    const why = signInRefusal(it);
+    if (why) { reject(why); return; }
+    navForward();
+    const a = account();
+    if (it.key === 'guest') { toMenu(); return; }
+    if (it.key === 'privacy') { openLink(SIGNIN.privacy); return; }
+    if (it.key === 'signout') {
+      a.signOut().then(() => { if (phase === 'signin') { selection = 0; showMessage('SIGNED OUT'); } });
+      return;
+    }
+    if (it.key === 'password') { a.open('password'); return; }
+    if (it.key === 'google' || it.key === 'facebook') showMessage(`OPENING ${it.key === 'google' ? 'GOOGLE' : 'FACEBOOK'}…`);
+    Promise.resolve(a.signIn(it.key)).then(() => {
+      const n = a.info?.status === 'registered' ? null : a.takeNotice?.();
+      if (n) showMessage(n.toUpperCase());
+    });
+  }
+
+  /* One sign-in row. `soon` marks a provider that is not switched on yet. */
+  function signInRow(it, index, x, y, w, h, soon) {
+    const id = `signin:${it.key}`;
+    const s = getFx(id);
+    s.target = index === selection ? 1 : 0;
+    const f = s.focus, p = s.press;
+    const shake = index === selection && rejectT > 0 ? Math.sin(clock * 62) * rejectT * 3 : 0;
+    ctx.save();
+    const sc = (1 + 0.012 * f) * (1 - 0.02 * p);
+    ctx.translate(x + w / 2 + shake, y + h / 2);
+    ctx.scale(sc, sc);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
+    // the plate: smoked glass, a green wash running in from the left when it has focus
+    glass(x, y, w, h, 0, { tint: `rgba(8,12,18,${(0.62 + 0.12 * f).toFixed(3)})`, shadow: f > 0.5, border: 'rgba(0,0,0,0)' });
+    if (f > 0.01) {
+      const g = ctx.createLinearGradient(x, y, x + w, y);
+      g.addColorStop(0, `rgba(54,214,126,${(0.20 * f).toFixed(3)})`);
+      g.addColorStop(0.55, `rgba(54,214,126,${(0.05 * f).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(54,214,126,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.strokeStyle = `rgba(${Math.round(lerp(255, 54, f))},${Math.round(lerp(255, 214, f))},${Math.round(lerp(255, 126, f))},${lerp(0.12, 0.6, f).toFixed(3)})`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    if (f > 0.01) { ctx.globalAlpha = f; ctx.fillStyle = C.orange; ctx.fillRect(x, y, 3, h); ctx.globalAlpha = 1; }
+    // the icon tile
+    const t = h - 18, tx = x + 12, ty = y + 9;
+    ctx.fillStyle = 'rgba(255,255,255,0.055)';
+    ctx.fillRect(tx, ty, t, t);
+    const art = it.art ? socialArt(it.art) : null;
+    if (art) {
+      const iw = Math.round(t * 0.66), ih = it.art === 'gmail' ? Math.round(iw * 66 / 88) : iw;
+      ctx.save();
+      ctx.globalAlpha = soon ? 0.55 : 1;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(art, tx + (t - iw) / 2, ty + (t - ih) / 2, iw, ih);
+      ctx.restore();
+    } else if (it.glyph) {
+      icon(it.glyph, tx + t / 2, ty + t / 2, t * 0.56, f > 0.35 ? C.orangeSoft : 'rgba(255,255,255,0.8)', soon ? 0.55 : 1, 1.6);
+    }
+    // the label, dim white, brighter with focus
+    const lx = tx + t + 16, room = x + w - lx - (soon ? 64 : 18);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    fitFont(600, h >= 52 ? 15 : 13.5, 2.2, it.label, room);
+    ctx.fillStyle = `rgba(255,255,255,${(0.6 + 0.34 * f).toFixed(3)})`;
+    ctx.fillText(it.label, lx, y + h / 2 + 0.5);
+    if (soon) {
+      ctx.textAlign = 'right';
+      setFont(600, 9.5, 2.4);
+      ctx.fillStyle = 'rgba(255,255,255,0.34)';
+      ctx.fillText('SOON', x + w - 16, y + h / 2 + 0.5);
+    }
+    ctx.restore();
+    ctx.textBaseline = 'alphabetic';
+    hitboxes.push({ x, y, w, h, index, id });
+  }
+
+  /* The Ratel Rage mark, centred on (cx, cy), `inkW` wide: the full lockup when it loaded, else the wordmark. */
+  function drawMarkCentred(cx, cy, inkW) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (titleArt) {
+      const imgW = inkW / TITLE_ART.inkFrac, imgH = imgW / TITLE_ART.aspect;
+      ctx.drawImage(titleArt, cx - imgW / 2, cy - imgH / 2, imgW, imgH);
+    } else {
+      drawLogoBox(cx - inkW / 2, cy + logoHeight(inkW) / 2, inkW);
+    }
+    ctx.restore();
+  }
+
+  function drawSignIn() {
+    stage({ darken: 0.58, blur: 0.9 });
+    // a soft pool of dark under the column, so the rows read on any frame of the street
+    const cx = W / 2;
+    const pool = ctx.createRadialGradient(cx, H * 0.52, 40, cx, H * 0.52, 520);
+    pool.addColorStop(0, 'rgba(2,4,7,0.55)');
+    pool.addColorStop(1, 'rgba(2,4,7,0)');
+    ctx.fillStyle = pool;
+    ctx.fillRect(0, 0, W, H);
+    beginScreen(10);
+    const S = SIGNIN, x0 = Math.round(cx - S.colW / 2);
+    const enter = (i) => easeOut(clamp((phaseT - 0.06 * i) / 0.38, 0, 1));   // rows arrive one after another
+    const a = account();
+    const prov = a?.providers;
+    const items = signInItems();
+
+    // THE MARK
+    ctx.save();
+    const k0 = enter(0);
+    ctx.globalAlpha *= k0;
+    ctx.translate(0, (1 - k0) * 10);
+    drawMarkCentred(cx, 128, 262);
+    ctx.restore();
+
+    if (signedIn()) {
+      /* SIGNED IN: who, and the way out. A true circle for the avatar (rule 603 keeps circles). */
+      const info = a.info;
+      const who = (info.name || info.email || info.phone || 'PLAYER').toString();
+      const sub = info.email || info.phone || (info.provider ? info.provider.toUpperCase() : '');
+      const py = S.top, ph = 76;
+      ctx.save();
+      ctx.globalAlpha *= enter(1);
+      glass(x0, py, S.colW, ph, 0, { tint: 'rgba(8,12,18,0.7)', border: 'rgba(255,255,255,0.10)' });
+      const ax = x0 + 44, ay = py + ph / 2;
+      ctx.beginPath(); ctx.arc(ax, ay, 24, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(54,214,126,0.14)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(54,214,126,0.7)'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      setFont(900, 20, 0);
+      ctx.fillStyle = C.orangeSoft;
+      ctx.fillText(who.trim().charAt(0).toUpperCase() || 'P', ax, ay + 1);
+      ctx.textAlign = 'left';
+      fitFont(700, 15, 1.6, who.toUpperCase(), S.colW - 110);
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillText(who.toUpperCase(), x0 + 84, ay - 11);
+      fitFont(500, 11.5, 0.6, sub, S.colW - 110);
+      ctx.fillStyle = 'rgba(255,255,255,0.46)';
+      ctx.fillText(sub, x0 + 84, ay + 13);
+      // cloud save state: a dot and one word
+      const saved = info.sync === 'saved' || info.sync === 'idle';
+      ctx.beginPath(); ctx.arc(x0 + S.colW - 74, py + 16, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = info.sync === 'error' ? '#ff6a5a' : saved ? C.orange : C.gold; ctx.fill();
+      setFont(600, 9, 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
+      ctx.fillText(info.sync === 'saving' ? 'SAVING' : info.sync === 'error' ? 'RETRY' : 'SYNCED', x0 + S.colW - 66, py + 16.5);
+      ctx.restore();
+      let y = py + ph + 16;
+      items.forEach((it, i) => {
+        if (it.key === 'privacy') return;
+        ctx.save();
+        ctx.globalAlpha *= enter(2 + i);
+        signInRow(it, i, x0, y, S.colW, S.rowH, false);
+        ctx.restore();
+        y += S.rowH + S.gap;
+      });
+    } else {
+      // THE METHODS
+      S.rows.forEach((it, i) => {
+        const y = S.top + i * (S.rowH + S.gap);
+        ctx.save();
+        ctx.globalAlpha *= enter(1 + i);
+        ctx.translate(0, (1 - enter(1 + i)) * 12);
+        signInRow(it, i, x0, y, S.colW, S.rowH, !!(prov && prov.read && !prov[it.key]));
+        ctx.restore();
+      });
+      // OR
+      const orY = S.top + S.rows.length * (S.rowH + S.gap) + 14;
+      ctx.save();
+      ctx.globalAlpha *= enter(4);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(x0, orY, S.colW / 2 - 26, 1);
+      ctx.fillRect(cx + 26, orY, S.colW / 2 - 26, 1);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      setFont(600, 10, 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      fillCentred('OR', cx, orY + 1);
+      ctx.restore();
+      // EMAIL · GUEST
+      const my = orY + 18, mw = (S.colW - S.gap) / 2;
+      S.minor.forEach((it, j) => {
+        const i = S.rows.length + j;
+        ctx.save();
+        ctx.globalAlpha *= enter(5 + j);
+        signInRow(it, i, x0 + j * (mw + S.gap), my, mw, S.minorH, it.key === 'email' && !!(prov && prov.read && !prov.email));
+        ctx.restore();
+      });
+    }
+
+    // THE FOOT: one dim legal line (a link), and the connection state when there is no connection
+    const pi = items.findIndex((it) => it.key === 'privacy');
+    const ly = H - 74;
+    ctx.save();
+    ctx.globalAlpha *= enter(7);
+    const pf = getFx('signin:privacy');
+    pf.target = pi === selection ? 1 : 0;
+    const lead = 'BY CONTINUING YOU ACCEPT THE ', link = 'TERMS & PRIVACY POLICY';
+    setFont(500, 9.5, 1.4);
+    const lw = ctx.measureText(lead).width, kw = ctx.measureText(link).width;
+    const lx = Math.round(cx - (lw + kw) / 2);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.36)';
+    ctx.fillText(lead, lx, ly);
+    ctx.fillStyle = `rgba(${Math.round(lerp(255, 123, pf.focus))},${Math.round(lerp(255, 227, pf.focus))},${Math.round(lerp(255, 166, pf.focus))},${lerp(0.62, 1, pf.focus).toFixed(3)})`;
+    ctx.fillText(link, lx + lw, ly);
+    ctx.fillRect(lx + lw, ly + 8, kw - fontTrack, 1);
+    hitboxes.push({ x: lx - 8, y: ly - 16, w: lw + kw + 16, h: 32, index: pi, id: 'signin:privacy' });
+    const st = a?.info?.status;
+    if (!a || st === 'offline' || st === 'unavailable' || st === 'connecting') {
+      setFont(600, 9.5, 2.4);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,0.32)';
+      fillCentred(st === 'connecting' ? 'CONNECTING…' : 'OFFLINE · PROGRESS IS KEPT ON THIS DEVICE', cx, ly + 26);
+    }
+    ctx.restore();
+    ctx.textBaseline = 'alphabetic';
+
     endScreen();
     drawControlBar([MENU_HINTS[2]]);
+    messagePlate();
     drawGrain();
     transitionVeil();
   }
@@ -7016,10 +7293,7 @@ export function createFrontEnd({
     setFont(700, 11, 4);
     ctx.fillStyle = C.gold;
     fillCentred('ABUJA, NIGERIA', cx, 392 + dy);
-    // the Uni Sans licence's credit (request 608): Fontfabric, with its site
-    setFont(600, 9, 2.4);
-    ctx.fillStyle = C.muted;
-    fillCentred('TYPEFACE: UNI SANS BY FONTFABRIC — WWW.FONTFABRIC.COM', cx, 430 + dy);
+    // request 613: no typeface line here (the Fontfabric credit stays on privacy.html)
     endScreen();
     drawControlBar([MENU_HINTS[2]]);
     drawGrain();
@@ -7718,6 +7992,11 @@ export function createFrontEnd({
 
   function drawPhase() {
     if (pendingGameplay || previewHandoff) { drawHandoff(); return; }
+    // an outcome that came back from a sign-in redirect (cancelled, expired link) is a line on the menu (request 613)
+    if ((phase === 'menu' || phase === 'signin') && messageT <= 0) {
+      const n = account()?.takeNotice?.();
+      if (n) showMessage(String(n).toUpperCase());
+    }
     if (phase === 'splash') drawSplash();
     else if (phase === 'disclaimer') drawDisclaimer();
     else if (phase === 'title') drawTitle();
@@ -7728,11 +8007,10 @@ export function createFrontEnd({
     else if (phase === 'controls') drawControls();
     else if (phase === 'options') drawOptions();
     else if (phase === 'levelSelect') drawLevelSelect();
-    else if (phase === 'briefing') drawBriefing();
     else if (phase === 'loading') drawLoading();
     else if (phase === 'intro') drawIntro();
     else if (phase === 'levelTitle') drawLevelTitle();
-    else if (phase === 'extras') drawExtras();
+    else if (phase === 'signin') drawSignIn();
     else if (phase === 'credits') drawCredits();
     if (CLOSE_PHASES.has(phase)) {
       // the mission briefing is a panel at the top LEFT: its ✕ is on that panel's own corner (request 540)

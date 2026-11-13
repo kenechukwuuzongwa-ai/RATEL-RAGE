@@ -26,8 +26,8 @@
  *     under Do Not Track / Global Privacy Control).
  *
  * The browser only ever holds the PUBLISHABLE key; a secret key is refused.
- * UI: a small chip on the menu screens and a panel over the menu. Neither is
- * ever shown during gameplay, cutscenes or the briefing. */
+ * UI (request 613): the main menu's SIGN IN view (frontend.js) plus a small form sheet over it for
+ * email and phone. Nothing is ever shown during gameplay or cutscenes. */
 (function () {
   'use strict';
   var noop = { enabled: false, status: 'off', state: {}, open: function () {}, close: function () {}, on: function () {} };
@@ -63,7 +63,6 @@
 
   var WHO = 'rr.acct.who';          // { uid, anon } the identity this device last used
   var PENDING = 'rr.acct.pending';  // a sign-in / link that leaves the page and comes back
-  var NUDGE = 'rr.acct.nudge';      // 1 = show the "save your progress" prompt on the menu
   var VER = 'rr.cloud.ver:';        // + uid: the cloud version the local record is based on
   var DIRTY = 'rr.cloud.dirty:';    // + uid: a save that has not reached the cloud yet
   var RUN = 'rr.run';               // sessionStorage: the leaderboard run of this page
@@ -168,6 +167,7 @@
     var code = ret.code, desc = ret.desc;
     if (code === 'identity_already_exists' || /already (linked|exists|registered)/i.test(desc)) {
       S.view = pend && pend.kind === 'email' ? 'conflict-email' : 'conflict-google';
+      S.conflictProvider = (pend && pend.method && pend.method !== 'email') ? pend.method : 'google';
       if (pend && pend.email) S.pendingEmail = pend.email;
     } else if (code === 'otp_expired' || /expired|invalid/i.test(desc)) {
       S.view = 'home';
@@ -229,7 +229,6 @@
       var method = (user.app_metadata && user.app_metadata.provider) || 'email';
       track('account_linked', { method: method });
       S.message = { text: 'Account saved. Progress now syncs to any device.' };
-      jdel(ls, NUDGE);
     } else if (pend && pend.kind === 'signin' && pend.from !== user.id && !anon) {
       track('account_signed_in', { method: pend.method || 'email', merged: !!mergeFrom });
       S.message = { text: mergeFrom ? 'Signed in. Guest progress added.' : 'Signed in.' };
@@ -239,6 +238,7 @@
 
     S.uid = user.id; S.anon = anon;
     S.email = user.email || null;
+    S.phone = user.phone || null;
     S.pendingEmail = user.new_email || S.pendingEmail || null;
     S.provider = (user.app_metadata && user.app_metadata.provider) || null;
     // A guest who confirmed an email has no password yet; one who signed in with a password has.
@@ -331,7 +331,6 @@
           track('score_submitted', { status: (S.score && S.score.status) || 'error' });
         });
       }
-      if (S.status !== 'registered' && !jget(ls, NUDGE + '.off')) jset(ls, NUDGE, 1);
     }
   });
 
@@ -483,71 +482,100 @@
   });
 
   // ------------------------------------------------------------------- UI ----
-  var MENU_PHASES = ['menu', 'levelSelect', 'options', 'extras'];
-  var chip = null, overlay = null, panel = null, open = false, toastShown = false;
+  /* REQUEST 613. The SAVE YOUR PROGRESS chip, its level-cleared strip and the old account window are
+   * gone. Signing in lives on the main menu's SIGN IN view (frontend.js drawSignIn), drawn on the
+   * canvas in landscape like every other menu screen. What is left here is a compact FORM SHEET for
+   * the two methods that need typing (email, phone) and the follow-ups a sign-in can need (a sent
+   * link, a password, an account that already exists). It opens over the SIGN IN view only. */
+  var MENU_PHASES = ['signin', 'menu'];
+  var overlay = null, panel = null, open = false;
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
+
+  /* Which sign-in methods the project really has switched on, read from the auth server itself, so a
+   * button lights up the day its provider is configured in Supabase, with no game update.
+   * Google and Facebook both refuse embedded WebViews, so the Android app leaves them off. */
+  var providers = { google: false, facebook: false, phone: false, email: false, read: false };
+  function readProviders() {
+    return fetch(BASE + '/auth/v1/settings', { headers: { apikey: KEY } }).then(function (r) { return r.json(); }).then(function (j) {
+      var x = (j && j.external) || {};
+      providers = { google: !!x.google && googleOn, facebook: !!x.facebook && !native, phone: !!x.phone, email: x.email !== false, read: true };
+      changed();
+    }, function () {});
+  }
+  readProviders();
+
+  /* Google / Facebook. A guest LINKS the provider (same user id, so the progress on this device stays
+   * theirs); a registered player, or a guest whose provider account already exists, signs in to it. */
+  var signInOAuth = act(async function (provider, signInOnly) {
+    if (S.anon && !signInOnly) {
+      jset(ls, PENDING, { kind: 'link', from: S.uid, merge: true, method: provider, at: Date.now() });
+      var r = await call(sb.auth.linkIdentity({ provider: provider, options: { redirectTo: redirectTo } }));
+      if (!r.error) return;
+      jdel(ls, PENDING);
+      if (r.error.code !== 'manual_linking_disabled') throw r.error;
+    }
+    jset(ls, PENDING, { kind: 'signin', from: S.anon ? S.uid : null, merge: true, method: provider, at: Date.now() });
+    var s = await call(sb.auth.signInWithOAuth({ provider: provider, options: { redirectTo: redirectTo } }));
+    if (s.error) { jdel(ls, PENDING); throw s.error; }
+  });
+  /* Phone: a code by SMS. A guest adds the number to its own account (phone_change); a number that
+   * already has an account is signed in to instead (sms). */
+  var phoneSend = act(async function (phone) {
+    phone = String(phone || '').replace(/[^\d+]/g, '');
+    if (phone.charAt(0) !== '+') phone = '+' + phone;
+    if (!/^\+\d{8,15}$/.test(phone)) throw { message: 'Enter the number with its country code, e.g. +234…' };
+    S.pendingPhone = phone; S.phoneMode = 'signin';
+    if (S.anon) {
+      var r = await call(sb.auth.updateUser({ phone: phone }));
+      if (!r.error) { S.phoneMode = 'link'; S.view = 'phone-code'; return; }
+      if (!(r.error.code === 'phone_exists' || /already/i.test(r.error.message || ''))) throw r.error;
+    }
+    jset(ls, PENDING, { kind: 'signin', from: S.anon ? S.uid : null, merge: true, method: 'phone', at: Date.now() });
+    var s = await call(sb.auth.signInWithOtp({ phone: phone }));
+    if (s.error) { jdel(ls, PENDING); throw s.error; }
+    S.view = 'phone-code';
+  });
+  var phoneVerify = act(async function (code) {
+    var r = await call(sb.auth.verifyOtp({ phone: S.pendingPhone, token: String(code || '').trim(), type: S.phoneMode === 'link' ? 'phone_change' : 'sms' }));
+    if (r.error) throw r.error;
+    S.view = 'done';
+  });
 
   function buildUi() {
     var css = document.createElement('style');
+    /* The game's menu language: smoked glass, hairlines, SHARP corners (rule of request 603), the green
+     * accent (request 613), dim white type, Uni Sans. */
     css.textContent = [
-      /* request 540: smaller and dimmer, and it lives in the bottom-LEFT corner (place()) */
-      '.rr-acct-chip{position:fixed;z-index:65;display:none;align-items:center;gap:.45em;padding:.32em .75em;border-radius:0;',
-      'border:1px solid rgba(255,138,52,.32);background:rgba(8,11,18,.62);color:rgba(255,255,255,.58);font:400 15px/1.2 "RR Uni","RR Pixel",monospace;',
-      'letter-spacing:.08em;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);touch-action:manipulation}',
-      '.rr-acct-chip .dot{width:.6em;height:.6em;border-radius:50%;background:#7a8396}',
-      '.rr-acct-chip.ok .dot{background:#5fd38a}.rr-acct-chip.warn .dot{background:#ffb347}',
-      '.rr-acct-chip.nudge{border-color:#ffe45e;box-shadow:0 0 0 0 rgba(255,228,94,.6);animation:rrAcctPulse 1.8s ease-out infinite}',
-      '@keyframes rrAcctPulse{0%{box-shadow:0 0 0 0 rgba(255,228,94,.55)}80%,100%{box-shadow:0 0 0 12px rgba(255,228,94,0)}}',
-      /* request 611: the level-cleared nudge is no longer a pop-up box. It is a slim strip on the chip's own
-       * row that slides OUT of the chip, holds a few seconds and folds back into it by itself. */
-      '.rr-acct-toast{position:fixed;z-index:65;display:none;white-space:nowrap;padding:.32em .75em;border-radius:0;',
-      'background:rgba(8,11,18,.82);border:1px solid rgba(255,228,94,.45);border-left:0;color:#ffe45e;cursor:pointer;',
-      'font:400 15px/1.2 "RR Uni","RR Pixel",monospace;letter-spacing:.08em;touch-action:manipulation;',
-      'clip-path:inset(0 100% 0 0);opacity:0;transition:clip-path .45s ease,opacity .45s ease}',
-      '.rr-acct-toast.on{clip-path:inset(0 0 0 0);opacity:1}',
-      '.rr-acct-toast button{all:unset;cursor:pointer;color:#ffe45e;font-weight:800;margin-left:.6em}',
-      '.rr-acct-overlay{position:fixed;inset:0;z-index:90;display:none;place-items:center;background:rgba(3,4,7,.62);',
+      '.rr-acct-overlay{position:fixed;inset:0;z-index:90;display:none;place-items:center;background:rgba(2,4,6,.58);',
       'touch-action:manipulation;-webkit-user-select:text;user-select:text}',
-      '.rr-acct-panel{width:min(420px,92vw);max-height:92vh;overflow:auto;padding:22px 22px 18px;border-radius:0;color:#e9edf5;',
-      'background:linear-gradient(180deg,rgba(24,30,46,.97),rgba(10,13,21,.97));border:1px solid rgba(255,138,52,.45);',
-      'box-shadow:0 18px 60px rgba(0,0,0,.6);font:400 18px/1.5 "RR Uni","RR Pixel",monospace}',
-      '.rr-acct-panel h2{margin:0 0 .4em;font:400 17px/1.2 "RR Uni Heavy","RR Pixel Bold","RR Pixel",monospace;letter-spacing:.12em;color:#ffe45e}',
-      '.rr-acct-panel p{margin:.35em 0 .8em}.rr-acct-panel .muted{color:#9aa3b5;font-size:15px}',
-      '.rr-acct-panel .msg{padding:.55em .7em;border-radius:0;background:rgba(95,211,138,.12);border:1px solid rgba(95,211,138,.4);margin:.2em 0 .9em}',
-      '.rr-acct-panel .msg.bad{background:rgba(255,90,90,.12);border-color:rgba(255,90,90,.45)}',
-      '.rr-acct-panel input[type=email],.rr-acct-panel input[type=password],.rr-acct-panel input[type=text]{width:100%;margin:.25em 0 .6em;',
-      'padding:.65em .75em;border-radius:0;border:1px solid #3a4358;background:#0b0f18;color:#fff;font:400 17px "RR Uni","RR Pixel",monospace}',
-      '.rr-acct-panel label.chk{display:flex;gap:.6em;align-items:flex-start;margin:.2em 0 .8em;font-size:16px}',
-      '.rr-acct-panel .btn{display:block;width:100%;margin:.45em 0;padding:.75em;border-radius:0;border:1px solid rgba(255,138,52,.7);',
-      'background:rgba(255,138,52,.16);color:#fff;font:400 17px "RR Uni","RR Pixel",monospace;letter-spacing:.1em;cursor:pointer}',
-      '.rr-acct-panel .btn.primary{background:#ff8a34;color:#140a02;border-color:#ff8a34}',
-      '.rr-acct-panel .btn.ghost{background:transparent;border-color:#3a4358;color:#c9d0de}',
+      '.rr-acct-panel{width:min(400px,90vw);max-height:92vh;overflow:auto;padding:20px 22px 16px;border-radius:0;color:rgba(255,255,255,.78);',
+      'background:linear-gradient(180deg,rgba(16,22,30,.96),rgba(7,10,15,.97));border:1px solid rgba(255,255,255,.12);border-top:2px solid #36d67e;',
+      'box-shadow:0 18px 60px rgba(0,0,0,.6);font:400 16px/1.45 "RR Uni","RR Pixel",monospace;letter-spacing:.04em}',
+      '.rr-acct-panel h2{margin:0 0 .7em;font:400 15px/1.2 "RR Uni Heavy","RR Pixel Bold","RR Pixel",monospace;letter-spacing:.2em;color:rgba(255,255,255,.9)}',
+      '.rr-acct-panel p{margin:.3em 0 .8em;color:rgba(255,255,255,.62)}.rr-acct-panel .muted{color:rgba(255,255,255,.42);font-size:13px}',
+      '.rr-acct-panel .msg{padding:.5em .7em;border-radius:0;background:rgba(54,214,126,.10);border:1px solid rgba(54,214,126,.4);margin:.1em 0 .8em;font-size:14px}',
+      '.rr-acct-panel .msg.bad{background:rgba(255,90,90,.10);border-color:rgba(255,90,90,.45)}',
+      '.rr-acct-panel input[type=email],.rr-acct-panel input[type=password],.rr-acct-panel input[type=text],.rr-acct-panel input[type=tel]{width:100%;box-sizing:border-box;margin:.2em 0 .55em;',
+      'padding:.7em .8em;border-radius:0;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.35);color:#fff;font:400 16px "RR Uni","RR Pixel",monospace;outline:none}',
+      '.rr-acct-panel input:focus{border-color:#36d67e}',
+      '.rr-acct-panel label.chk{display:flex;gap:.6em;align-items:flex-start;margin:.1em 0 .7em;font-size:13px;color:rgba(255,255,255,.55)}',
+      '.rr-acct-panel .btn{display:block;width:100%;margin:.4em 0;padding:.75em;border-radius:0;border:1px solid rgba(255,255,255,.18);',
+      'background:rgba(255,255,255,.04);color:rgba(255,255,255,.82);font:400 15px "RR Uni Heavy","RR Uni","RR Pixel",monospace;letter-spacing:.16em;cursor:pointer}',
+      '.rr-acct-panel .btn.primary{background:#36d67e;color:#04140b;border-color:#36d67e}',
+      '.rr-acct-panel .btn.ghost{background:transparent;color:rgba(255,255,255,.55)}',
       '.rr-acct-panel .btn:disabled{opacity:.45;cursor:default}',
-      '.rr-acct-panel .link{all:unset;cursor:pointer;color:#ffb37a;font-weight:700;font-size:16px}',
-      '.rr-acct-panel .x{all:unset;float:right;cursor:pointer;font:400 20px/1 "RR Uni","RR Pixel",monospace;color:#9aa3b5;padding:2px 6px}',
-      '.rr-acct-panel .row{display:flex;gap:.5em}.rr-acct-panel .row>*{flex:1}',
-      /* PHONE (request 405): the window is docked to the TOP and sized to the room above the keyboard. */
-      '.rr-acct-overlay.phone{place-items:start center;padding:8px 0 0}',
-      '.rr-acct-overlay.phone .rr-acct-panel{width:min(420px,94vw);padding:16px 18px 14px}',
-      'body.rr-acct-open .rotate-hint{display:none!important}',
-      /* …and where it could not turn (landscape, keyboard up) the explanation steps aside for the field and its button. */
+      '.rr-acct-panel .links{display:flex;justify-content:space-between;gap:1em;margin:.3em 0 .2em}',
+      '.rr-acct-panel .link{all:unset;cursor:pointer;color:rgba(255,255,255,.55);font-size:13px;letter-spacing:.06em}',
+      '.rr-acct-panel .link:hover,.rr-acct-panel .link:focus{color:#7be3a6}',
+      '.rr-acct-panel .x{all:unset;float:right;cursor:pointer;font:400 18px/1 "RR Uni","RR Pixel",monospace;color:rgba(255,255,255,.5);padding:2px 4px}',
+      /* PHONE, LANDSCAPE (request 613: the sign-in stays landscape): docked to the top and kept to the room
+       * the keyboard leaves; while typing, the headings step aside for the field and its button. */
+      '.rr-acct-overlay.phone{place-items:start center;padding:6px 0 0}',
+      '.rr-acct-overlay.phone .rr-acct-panel{width:min(400px,70vw);padding:12px 16px 10px}',
       '.rr-acct-overlay.tight .rr-acct-panel>p,.rr-acct-overlay.tight .rr-acct-panel h2{display:none}',
-      '.rr-acct-overlay.tight .rr-acct-panel{padding-top:10px}.rr-acct-overlay.tight .rr-acct-panel .btn{margin:.2em 0;padding:.6em}',
+      '.rr-acct-overlay.tight .rr-acct-panel{padding-top:8px}.rr-acct-overlay.tight .rr-acct-panel .btn{margin:.2em 0;padding:.55em}',
     ].join('');
     document.head.appendChild(css);
-
-    chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'rr-acct-chip';
-    chip.setAttribute('aria-label', 'Player account');
-    chip.addEventListener('click', function (e) { e.stopPropagation(); openPanel(); });
-    chip.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
-    document.body.appendChild(chip);
-
-    toast = document.createElement('div');
-    toast.className = 'rr-acct-toast';
-    toast.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
-    document.body.appendChild(toast);
 
     overlay = document.createElement('div');
     overlay.className = 'rr-acct-overlay';
@@ -565,9 +593,8 @@
     overlay.addEventListener('submit', function (e) { e.preventDefault(); var f = e.target.getAttribute('data-a'); if (f) onAction(f); });
     document.body.appendChild(overlay);
   }
-  var toast = null;
 
-  // Keys typed in the panel must never reach the menus (frontend.js listens on
+  // Keys typed in the sheet must never reach the menus (frontend.js listens on
   // window in the capture phase; this listener is registered before it).
   ['keydown', 'keyup', 'keypress'].forEach(function (t) {
     window.addEventListener(t, function (e) {
@@ -580,97 +607,69 @@
   function onAction(a) {
     var v = function (n) { var el = panel.querySelector('[name="' + n + '"]'); return el ? (el.type === 'checkbox' ? el.checked : el.value) : ''; };
     if (a === 'close') return closePanel();
-    if (a === 'retry') return retry();
-    if (a === 'google-link') return linkGoogle();
-    if (a === 'google-signin') return signInGoogle(v('merge'));
+    if (a === 'oauth-signin') return signInOAuth(S.conflictProvider || 'google', true);
     if (a === 'email-save') return saveWithEmail(v('email'));
     if (a === 'email-signin') return signInEmail(v('email'), v('password'), v('merge'));
     if (a === 'password') return setPassword(v('password'));
     if (a === 'forgot-send') return forgot(v('email'));
-    if (a === 'rename') return rename(v('name'));
-    if (a === 'signout') return signOut();
+    if (a === 'phone-send') return phoneSend(v('phone'));
+    if (a === 'phone-verify') return phoneVerify(v('code'));
     if (a.indexOf('view:') === 0) { S.view = a.slice(5); S.message = null; render(); focusFirst(); }
   }
 
-  function syncLine() {
-    if (S.status === 'offline') return 'Offline: saved here, backs up when online.';
-    if (S.status === 'unavailable') return 'Cloud saves unavailable. Saved on this device.';
-    if (S.status === 'connecting') return 'Connecting…';
-    if (S.sync === 'saving') return 'Cloud save: saving…';
-    if (S.sync === 'saved') return 'Cloud save: up to date.';
-    if (S.sync === 'offline') return 'Cloud save: waiting for connection.';
-    if (S.sync === 'error') return 'Cloud save failed. Saved on this device.';
-    return 'Cloud save: ready.';
-  }
-
   function render() {
-    if (!chip) return;
-    var nudge = S.status === 'guest' && !!jget(ls, NUDGE);
-    chip.className = 'rr-acct-chip' + (S.status === 'registered' && S.sync !== 'error' ? ' ok' : '')
-      + (S.status === 'offline' || S.sync === 'error' || S.sync === 'offline' ? ' warn' : '') + (nudge ? ' nudge' : '');
-    chip.innerHTML = '<span class="dot"></span><span>' + esc(
-      S.status === 'registered' ? (S.name || 'ACCOUNT').toUpperCase()
-        : S.status === 'guest' ? (nudge ? 'SAVE YOUR PROGRESS' : 'GUEST · SAVE PROGRESS')
-          : S.status === 'connecting' ? 'CONNECTING…' : 'OFFLINE') + '</span>';
+    if (!panel) return;
     if (!open) return;
+    // a finished sign-in closes the sheet: the SIGN IN view behind it shows the account
+    if (S.view === 'home' || S.view === 'done') { closePanel(); return; }
     var on = S.status === 'guest' || S.status === 'registered';
     var dis = busy || !on ? ' disabled' : '';
     var h = '<button class="x" data-a="close" aria-label="Close">✕</button>';
     var msg = S.message ? '<div class="msg' + (S.message.bad ? ' bad' : '') + '">' + esc(S.message.text) + '</div>' : '';
+    if (!on) msg = msg || '<div class="msg bad">' + (S.status === 'connecting' ? 'Connecting…' : 'No connection.') + '</div>';
     var mergeBox = S.anon && guestHasProgress()
-      ? '<label class="chk"><input type="checkbox" name="merge" checked> <span>Add guest progress to that account. Nothing is deleted either way.</span></label>' : '';
+      ? '<label class="chk"><input type="checkbox" name="merge" checked> <span>Keep this device’s progress</span></label>' : '';
     var v = S.view;
-    if (v === 'home') {
-      if (S.status === 'registered') {
-        h += '<h2>YOUR ACCOUNT</h2>' + msg + '<p>Signed in' + (S.email ? ' as <b>' + esc(S.email) + '</b>' : S.provider ? ' with ' + esc(S.provider) : '') + '.</p>'
-          + '<p class="muted">' + esc(syncLine()) + '</p>'
-          + '<form data-a="rename"><label class="muted">Leaderboard name</label><div class="row"><input type="text" name="name" maxlength="20" value="' + esc(S.name || '') + '">'
-          + '<button class="btn ghost" style="flex:0 0 auto;width:auto;margin:.25em 0 .6em" data-a="rename" type="button"' + dis + '>SAVE</button></div></form>'
-          + (S.email && !S.hasPassword ? '<button class="btn" data-a="view:password"' + dis + '>SET PASSWORD</button>' : '')
-          + '<button class="btn ghost" data-a="signout"' + dis + '>SIGN OUT</button>';
-      } else {
-        h += '<h2>SAVE YOUR PROGRESS</h2>' + msg
-          + '<p>Playing as guest' + (S.name ? ' (<b>' + esc(S.name) + '</b>)' : '') + '. An account syncs progress across devices and joins the leaderboard. Optional.</p>'
-          + '<p class="muted">' + esc(syncLine()) + '</p>'
-          + (S.pendingEmail ? '<p class="muted">Confirm <b>' + esc(S.pendingEmail) + '</b>.</p>' : '')
-          + (googleOn ? '<button class="btn primary" data-a="google-link"' + dis + '>CONTINUE WITH GOOGLE</button>' : '')
-          + '<button class="btn' + (googleOn ? '' : ' primary') + '" data-a="view:email"' + dis + '>SAVE WITH EMAIL</button>'
-          + (on ? '' : '<button class="btn ghost" data-a="retry"' + (busy ? ' disabled' : '') + '>TRY AGAIN</button>')
-          + '<p style="margin-top:1em">Have an account? <button class="link" data-a="view:signin">SIGN IN</button></p>';
-      }
-    } else if (v === 'email') {
-      h += '<h2>SAVE WITH EMAIL</h2>' + msg + '<p>Open the link we email you, then set a password. Guest progress is kept.</p>'
-        + '<form data-a="email-save"><input type="email" name="email" autocomplete="email" placeholder="you@example.com" value="' + esc(S.pendingEmail || '') + '">'
-        + '<button class="btn primary" type="submit"' + dis + '>SEND LINK</button></form>'
-        + '<button class="btn ghost" data-a="view:home">BACK</button>';
-    } else if (v === 'sent') {
-      h += '<h2>CHECK YOUR EMAIL</h2>' + msg + '<p>Link sent to <b>' + esc(S.pendingEmail) + '</b>. Open it to confirm. Keep playing meanwhile.</p>'
-        + '<p class="muted">Nothing? Check spam.</p>'
-        + '<button class="btn" data-a="view:email">SEND AGAIN</button><button class="btn ghost" data-a="close">KEEP PLAYING</button>';
-    } else if (v === 'signin') {
-      h += '<h2>SIGN IN</h2>' + msg + mergeBox
-        + (googleOn ? '<button class="btn primary" data-a="google-signin"' + dis + '>SIGN IN WITH GOOGLE</button><p class="muted" style="text-align:center">or</p>' : '')
+    if (v === 'email') {
+      h += '<h2>EMAIL</h2>' + msg + mergeBox
         + '<form data-a="email-signin"><input type="email" name="email" autocomplete="email" placeholder="Email" value="' + esc(S.pendingEmail || '') + '">'
         + '<input type="password" name="password" autocomplete="current-password" placeholder="Password">'
-        + '<button class="btn' + (googleOn ? '' : ' primary') + '" type="submit"' + dis + '>SIGN IN WITH EMAIL</button></form>'
-        + '<p><button class="link" data-a="view:forgot">Forgot password?</button></p>'
-        + '<button class="btn ghost" data-a="view:home">BACK</button>';
+        + '<button class="btn primary" type="submit"' + dis + '>SIGN IN</button></form>'
+        + '<div class="links"><button class="link" data-a="view:forgot">Forgot password?</button>'
+        + (S.anon ? '<button class="link" data-a="view:email-new">New account</button>' : '') + '</div>';
+    } else if (v === 'email-new') {
+      h += '<h2>NEW ACCOUNT</h2>' + msg + '<p>We email you a link. Your progress is kept.</p>'
+        + '<form data-a="email-save"><input type="email" name="email" autocomplete="email" placeholder="Email" value="' + esc(S.pendingEmail || '') + '">'
+        + '<button class="btn primary" type="submit"' + dis + '>SEND LINK</button></form>'
+        + '<button class="btn ghost" data-a="view:email">BACK</button>';
+    } else if (v === 'sent') {
+      h += '<h2>CHECK YOUR EMAIL</h2>' + msg + '<p>Link sent to ' + esc(S.pendingEmail) + '.</p>'
+        + '<p class="muted">Nothing? Check spam.</p>'
+        + '<button class="btn primary" data-a="close">OK</button><button class="btn ghost" data-a="view:email-new">SEND AGAIN</button>';
     } else if (v === 'forgot') {
       h += '<h2>RESET PASSWORD</h2>' + msg + '<form data-a="forgot-send"><input type="email" name="email" autocomplete="email" placeholder="Email" value="' + esc(S.pendingEmail || '') + '">'
-        + '<button class="btn primary" type="submit"' + dis + '>SEND LINK</button></form><button class="btn ghost" data-a="view:signin">BACK</button>';
+        + '<button class="btn primary" type="submit"' + dis + '>SEND LINK</button></form><button class="btn ghost" data-a="view:email">BACK</button>';
     } else if (v === 'password') {
-      h += '<h2>CHOOSE A PASSWORD</h2>' + msg + '<p>To sign in with ' + esc(S.email || 'your email') + ' anywhere.</p>'
+      h += '<h2>SET PASSWORD</h2>' + msg
         + '<form data-a="password"><input type="password" name="password" autocomplete="new-password" placeholder="8+ characters">'
-        + '<button class="btn primary" type="submit"' + dis + '>SAVE PASSWORD</button></form><button class="btn ghost" data-a="view:home">LATER</button>';
+        + '<button class="btn primary" type="submit"' + dis + '>SAVE</button></form><button class="btn ghost" data-a="close">LATER</button>';
+    } else if (v === 'phone') {
+      h += '<h2>PHONE NUMBER</h2>' + msg + mergeBox
+        + '<form data-a="phone-send"><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="+234 801 234 5678" value="' + esc(S.pendingPhone || '') + '">'
+        + '<button class="btn primary" type="submit"' + dis + '>SEND CODE</button></form>';
+    } else if (v === 'phone-code') {
+      h += '<h2>ENTER CODE</h2>' + msg + '<p>Sent to ' + esc(S.pendingPhone) + '.</p>'
+        + '<form data-a="phone-verify"><input type="text" name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="8" placeholder="123456">'
+        + '<button class="btn primary" type="submit"' + dis + '>VERIFY</button></form>'
+        + '<button class="btn ghost" data-a="view:phone">CHANGE NUMBER</button>';
     } else if (v === 'conflict-google' || v === 'conflict-email') {
-      var what = v === 'conflict-google' ? 'That Google account' : '<b>' + esc(S.pendingEmail || 'That email') + '</b>';
-      h += '<h2>ACCOUNT ALREADY EXISTS</h2>' + msg + '<p>' + what + ' already has an account. <b>Nothing changed</b>: your guest progress is intact.</p>'
-        + '<p>Sign in to it instead?</p>' + mergeBox
-        + (v === 'conflict-google' && googleOn ? '<button class="btn primary" data-a="google-signin"' + dis + '>SIGN IN WITH GOOGLE</button>'
-          : '<button class="btn primary" data-a="view:signin"' + dis + '>SIGN IN WITH EMAIL</button>')
-        + '<button class="btn ghost" data-a="view:home">STAY GUEST</button>';
-    }
-    // A background update (sync status, token refresh) re-renders the panel:
+      var what = v === 'conflict-google' ? 'That account' : esc(S.pendingEmail || 'That email');
+      h += '<h2>ACCOUNT EXISTS</h2>' + msg + '<p>' + what + ' already has a profile. Nothing changed here.</p>' + mergeBox
+        + (v === 'conflict-google' && providers[S.conflictProvider || 'google'] ? '<button class="btn primary" data-a="oauth-signin"' + dis + '>SIGN IN TO IT</button>'
+          : '<button class="btn primary" data-a="view:email"' + dis + '>SIGN IN TO IT</button>')
+        + '<button class="btn ghost" data-a="close">STAY AS GUEST</button>';
+    } else { closePanel(); return; }
+    // A background update (sync status, token refresh) re-renders the sheet:
     // whatever the player is typing, and where, must survive it.
     if (panel.getAttribute('data-view') === v && panel.__html === h) return;   // nothing new to show
     panel.__html = h;
@@ -693,47 +692,27 @@
       if (f) { f.focus(); try { if (sel && sel[0] != null) f.setSelectionRange(sel[0], sel[1]); } catch (e) {} }
     }
   }
-  /* ============================================ THE PHONE KEYBOARD (request 405)
-   *
-   * The game runs fullscreen in landscape, and in fullscreen Android does NOT
-   * shrink the page when the keyboard opens: it just covers the bottom ~60% of a
-   * screen that is only ~360 px tall, and a centred window had its fields right
-   * under it. So on a phone the account window is VERTICAL: the screen turns to
-   * portrait while it is open (the app through RatelHost.setPortrait, a browser
-   * through the orientation lock it already uses for landscape) and turns back
-   * when it closes. It is also docked to the top and, while a field has focus,
-   * kept to the room the keyboard leaves — which is what still saves it where
-   * the screen cannot be turned (an older APK, a browser that refuses the lock). */
+  /* THE PHONE KEYBOARD. The game runs fullscreen in landscape, where Android does not shrink the page
+   * for the keyboard. The sheet STAYS LANDSCAPE (request 613 — it used to turn the screen to portrait):
+   * it docks to the top and, while a field has focus, keeps to the room the keyboard leaves. */
   var phoneUi = function () {
     try { return window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600; }
     catch (e) { return false; }
   };
   var typing = false;
-  function goVertical(on) {
+  function dock(on) {
     document.body.classList.toggle('rr-acct-open', on);
-    var phone = phoneUi();
-    overlay.classList.toggle('phone', on && phone);
-    if (!phone) return;
-    try {
-      if (window.RatelHost && typeof window.RatelHost.setPortrait === 'function') { window.RatelHost.setPortrait(!!on); return; }
-    } catch (e) {}
-    try {
-      if (screen.orientation && screen.orientation.lock) screen.orientation.lock(on ? 'portrait' : 'landscape').catch(function () {});
-    } catch (e) {}
+    overlay.classList.toggle('phone', on && phoneUi());
   }
   function fitPanel() {
     if (!open || !panel) return;
     if (!overlay.classList.contains('phone')) { overlay.classList.remove('tight'); panel.style.maxHeight = ''; overlay.style.paddingTop = ''; return; }
     var vv = window.visualViewport;
     var H = window.innerHeight, h = vv ? vv.height : H, top = vv ? vv.offsetTop : 0;
-    /* What the keyboard leaves, when the page cannot tell us: in fullscreen the
-     * viewport does not shrink, so while a field has focus assume the keyboard's
-     * share (about 45% of a portrait screen, 60% of a landscape one). */
-    var portrait = H >= window.innerWidth;
-    overlay.classList.toggle('tight', typing && !portrait);
-    var room = typing ? Math.min(h, H * (portrait ? 0.55 : 0.40)) : h;
-    overlay.style.paddingTop = (top + 8) + 'px';
-    panel.style.maxHeight = Math.max(120, room - 16) + 'px';
+    overlay.classList.toggle('tight', typing);
+    var room = typing ? Math.min(h, H * 0.42) : h;
+    overlay.style.paddingTop = (top + 6) + 'px';
+    panel.style.maxHeight = Math.max(120, room - 12) + 'px';
     var f = typing && document.activeElement;
     if (f && panel.contains(f) && f.scrollIntoView) { try { f.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
   }
@@ -741,7 +720,7 @@
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fitPanel);
   document.addEventListener('focusin', function (e) {
     if (!open || !panel || !panel.contains(e.target) || !/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.type === 'checkbox') return;
-    typing = true; setTimeout(fitPanel, 80); setTimeout(fitPanel, 400);   // …and again once the keyboard and any turn have settled
+    typing = true; setTimeout(fitPanel, 80); setTimeout(fitPanel, 400);
   });
   document.addEventListener('focusout', function () {
     setTimeout(function () {
@@ -755,98 +734,53 @@
 
   function openPanel(view) {
     if (!overlay) return;
-    if (view) S.view = view;
+    S.view = view || (S.view && S.view !== 'home' && S.view !== 'done' ? S.view : 'email');
+    S.message = null;
     open = true;
     overlay.style.display = 'grid';
-    goVertical(true);
+    dock(true);
     fitPanel();
-    jdel(ls, NUDGE);
-    hideToast();
     if (S.anon && S.pendingEmail && session) refreshUser();
     render();
     focusFirst();
   }
   function closePanel() {
-    if (!overlay) return;
+    if (!overlay || !open) return;
     open = false;
     overlay.style.display = 'none';
-    goVertical(false);
+    dock(false);
     typing = false;
     panel.innerHTML = '';                 // typed passwords do not linger in the DOM
     panel.removeAttribute('data-view');
     panel.__html = null;
     if (S.view !== 'sent') S.view = 'home';
     S.message = null;
-    render();
     try { var c = document.getElementById('game'); c && c.focus({ preventScroll: true }); } catch (e) {}
   }
-  var toastFold = 0;
-  function hideToast() {
-    if (!toast) return;
-    clearTimeout(toastFold);
-    toast.classList.remove('on');
-    toast.style.display = 'none';
-  }
-  // fold the strip back into the chip, then take it out of the page once the slide has finished
-  function foldToast() {
-    if (!toast) return;
-    toast.classList.remove('on');
-    clearTimeout(toastFold);
-    toastFold = setTimeout(function () { toast.style.display = 'none'; }, 500);
-  }
-  function seatToast(top) {
-    if (!toast || !chip) return;
-    var cr = chip.getBoundingClientRect();
-    toast.style.top = top + 'px';
-    toast.style.left = Math.round(cr.right) + 'px';
-    toast.style.right = 'auto';
-    toast.style.height = Math.round(cr.height) + 'px';
-  }
 
-  // Shown on the menu screens only. Polled (cheap) rather than hooked into
-  // frontend.js, so the front end needs no changes to host it.
+  // The sheet belongs to the menus: it closes if the game leaves them, and a sign-in that came back
+  // from a redirect with something to say (an existing account, a failed link) opens it there.
   function menuVisible() {
     try {
       var R = window.__ror, M = window.__rorMenu;
       return !!(R && R.frontActive && M && MENU_PHASES.indexOf(M.phase) >= 0);
     } catch (e) { return false; }
   }
-  function place() {
-    if (!chip) return;
+  function watch() {
+    if (!overlay) return;
     var vis = menuVisible();
     if (!vis && open) closePanel();
-    chip.style.display = vis ? 'inline-flex' : 'none';
-    if (!vis) { hideToast(); return; }
-    var c = document.getElementById('game'), r = c ? c.getBoundingClientRect() : { top: 0, left: 0, height: innerHeight, width: innerWidth };
-    /* THE BOTTOM-LEFT CORNER (request 540), on the same row as Darki's player plate in the
-     * bottom-right (the plate's centre is at 693 of the 720-row frame). It used to sit in the
-     * top right, where it covered the close button on Options and Extras. */
-    var ch = chip.offsetHeight || 22;
-    var top = Math.round(r.top + r.height * (693 / 720) - ch / 2);
-    var left = Math.max(8, Math.round(r.left + r.width * 0.02));
-    chip.style.top = top + 'px'; chip.style.left = left + 'px'; chip.style.right = 'auto';
-    if (S.autoOpen) { S.autoOpen = false; openPanel(); return; }
-    if (toast.style.display === 'block') seatToast(top);          // keep the strip on the chip's row
-    if (S.status === 'guest' && jget(ls, NUDGE) && !toastShown && !open) {
-      toastShown = true;
-      /* request 611 ("what's this… hide it somehow, in a menu bar that disappears?"): one short line
-       * that slides out of the chip, stays 5 s and folds away; a tap on it opens the save panel. The
-       * chip keeps its SAVE YOUR PROGRESS pulse, so nothing is lost when the strip goes. */
-      toast.textContent = 'LEVEL CLEARED · SAVE IT TO YOUR ACCOUNT ›';
-      toast.onclick = function (e) { e.stopPropagation(); hideToast(); openPanel('home'); };
-      seatToast(top);
-      toast.style.display = 'block';
-      void toast.offsetWidth;                                     // start the slide from folded
-      toast.classList.add('on');
-      clearTimeout(toastFold);
-      toastFold = setTimeout(foldToast, 5000);
+    if (vis && S.autoOpen) {
+      S.autoOpen = false;
+      // a choice to make opens the sheet; a plain outcome (cancelled, expired) is a line on the menu
+      if (/^(conflict-|password)/.test(S.view || '')) openPanel(S.view);
+      else if (S.message) { S.notice = S.message.text; S.message = null; }
     }
   }
 
   function start() {
     buildUi();
-    render();
-    setInterval(place, 400);
+    setInterval(watch, 400);
     boot();
   }
   if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
@@ -900,6 +834,16 @@
     get state() { return JSON.parse(JSON.stringify(S)); },
     open: function (view) { openPanel(view); },
     close: closePanel,
+    /* For the SIGN IN view (request 613). Cheap to read every frame. */
+    get providers() { return providers; },
+    get info() { return { status: S.status, anon: S.anon, email: S.email, phone: S.phone || null, name: S.name, provider: S.provider, hasPassword: S.hasPassword, sync: S.sync, busy: busy, open: open }; },
+    takeNotice: function () { var n = S.notice; S.notice = null; return n || null; },
+    signIn: function (method) {
+      if (method === 'google' || method === 'facebook') return signInOAuth(method);
+      openPanel(method === 'phone' ? 'phone' : 'email');
+      return Promise.resolve();
+    },
+    signOut: function () { return signOut(); },
     on: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     syncNow: syncNow,
     getLeaderboard: function (level, difficulty, limit) {
