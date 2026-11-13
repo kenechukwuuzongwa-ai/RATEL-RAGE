@@ -6989,18 +6989,20 @@ export function createFrontEnd({
    * over this screen; Gmail and Facebook go to the provider and come back signed in. */
   const SIGNIN = {
     colW: 452, rowH: 56, gap: 12, top: 236, minorH: 48,
+    /* Request 614: EMAIL leads (any address: Gmail, Yahoo, Outlook, work mail), then GOOGLE (the Google
+     * account itself, one tap on Android) and FACEBOOK. Phone and staying a guest are the minor row. */
     rows: [
-      { key: 'google', label: 'CONTINUE WITH GMAIL', art: 'gmail' },
+      { key: 'email', label: 'CONTINUE WITH EMAIL', glyph: 'mail' },
+      { key: 'google', label: 'CONTINUE WITH GOOGLE', art: 'google' },
       { key: 'facebook', label: 'CONTINUE WITH FACEBOOK', art: 'facebook' },
-      { key: 'phone', label: 'CONTINUE WITH PHONE', glyph: 'phone' },
     ],
     minor: [
-      { key: 'email', label: 'EMAIL', glyph: 'mail' },
+      { key: 'phone', label: 'PHONE', glyph: 'phone' },
       { key: 'guest', label: 'GUEST', glyph: 'person' },
     ],
     privacy: new URL('../privacy.html', import.meta.url).href,
   };
-  /* The providers' own marks, downloaded as SVG (frontend/ui/social: the 2020 Gmail M, the 2023 Facebook
+  /* The providers' own marks, downloaded as SVG (frontend/ui/social: the Google G, the 2023 Facebook
    * f). Drawn with drawImage, which rasterises an SVG at the size it is drawn — sharp at any scale. */
   const SOCIAL_ART = {};
   function socialArt(name) {
@@ -7095,7 +7097,7 @@ export function createFrontEnd({
     ctx.fillRect(tx, ty, t, t);
     const art = it.art ? socialArt(it.art) : null;
     if (art) {
-      const iw = Math.round(t * 0.66), ih = it.art === 'gmail' ? Math.round(iw * 66 / 88) : iw;
+      const iw = Math.round(t * 0.66), ih = iw;   // both marks are square
       ctx.save();
       ctx.globalAlpha = soon ? 0.55 : 1;
       ctx.imageSmoothingEnabled = true;
@@ -7230,7 +7232,7 @@ export function createFrontEnd({
         const i = S.rows.length + j;
         ctx.save();
         ctx.globalAlpha *= enter(5 + j);
-        signInRow(it, i, x0 + j * (mw + S.gap), my, mw, S.minorH, it.key === 'email' && !!(prov && prov.read && !prov.email));
+        signInRow(it, i, x0 + j * (mw + S.gap), my, mw, S.minorH, it.key !== 'guest' && !!(prov && prov.read && !prov[it.key]));
         ctx.restore();
       });
     }

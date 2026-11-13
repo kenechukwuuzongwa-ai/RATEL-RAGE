@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v140';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v141';
 import { createAftermath } from './aftermath.js?v=ratelrage-green613-v1';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-13 — Sign in: EMAIL leads, GOOGLE replaces GMAIL (v141, request 614)
+
+- SIGN IN rows: CONTINUE WITH EMAIL (any address), CONTINUE WITH GOOGLE (Google G mark), CONTINUE WITH FACEBOOK; minor row PHONE and GUEST. gmail.svg removed.
+
 ## 2026-11-13 — SIGN IN replaces EXTRAS, green accent, coded KenCrafts splash (v140, request 613)
 
 - Main menu EXTRAS -> SIGN IN (new sign-in icon). A landscape canvas view: the Ratel Rage mark, CONTINUE WITH
