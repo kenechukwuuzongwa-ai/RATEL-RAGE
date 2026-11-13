@@ -46,6 +46,15 @@
   font-display: block;
   src: url('frontend/fonts/uni-sans-heavy-italic.otf?v=uni623') format('opentype');
 }
+/* REQUEST 626: Uni Sans THIN (same Fontfabric free cut, unmodified, gitignored), for the text LEFT of every
+ * '|' separator (fillSplit in frontend.js). */
+@font-face {
+  font-family: 'RR Uni Thin';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('frontend/fonts/uni-sans-thin.otf?v=uni626') format('opentype');
+}
 @font-face {
   font-family: 'RR Uni';
   font-style: normal;

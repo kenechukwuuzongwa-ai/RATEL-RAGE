@@ -78,6 +78,7 @@ const C = {
   cream: '#e3f6ea',
   red: '#e0432c',            // alerts only
   green: '#5fb87e',
+  rule: '#e3242b',           // the short underline under every heading (request 626: red, was the green accent)
 };
 
 /* ----------------------------------------------------------------- layout
@@ -226,6 +227,79 @@ export function pixelFont(weight, px, bold = false) {
   const b = bold || weight >= 900;
   return `400 ${+readablePx(px * (b ? PIXEL_FIT.bold : PIXEL_FIT.body)).toFixed(2)}px ${b ? FONT_BOLD : FONT}`;
 }
+/* Uni Sans Heavy ITALIC (request 623) and Uni Sans THIN (request 626), the real cuts, never synthesised. */
+export const FONT_ITALIC = `'RR Uni Heavy Italic', ${FONT_BOLD}`;
+export const FONT_THIN = `'RR Uni Thin', ${FONT}`;
+/* The px size of a canvas font string (what setFont/setDisplay just set). */
+export const fontPx = (font) => parseFloat((/([\d.]+)px/.exec(font) || [0, 16])[1]);
+/* A SHEEN ON ONE LINE OF TYPE (request 626; the summary's headline/score/grade have game.js's copy): the
+ * text in the ctx's current font, alignment and tracking, with a slanted band of light laid on the letters
+ * only. `u` is the band's 0..1 travel; outside (0,1) the text is drawn plain. The box comes from the glyphs'
+ * actual bounds, so an italic's overhang and any alignment are covered. */
+const sheenBufFE = { c: null, g: null };
+export function sheenText(ctx, text, x, baseY, fill, u) {
+  if (!(u > 0 && u < 1)) { ctx.fillStyle = fill; ctx.fillText(text, x, baseY); return; }
+  const mt = ctx.measureText(text);
+  const px = fontPx(ctx.font);
+  const L0 = mt.actualBoundingBoxLeft ?? 0, R0 = mt.actualBoundingBoxRight ?? mt.width;
+  const asc = mt.actualBoundingBoxAscent ?? px * 0.8, desc = mt.actualBoundingBoxDescent ?? 0;
+  const pad = 4 + px * 0.15;
+  const left = x - L0 - pad, top = baseY - asc - pad, wid = L0 + R0 + pad * 2, hgt = asc + desc + pad * 2;
+  const m = ctx.getTransform(), k = Math.max(1, Math.hypot(m.a, m.b));
+  if (!sheenBufFE.c) { sheenBufFE.c = document.createElement('canvas'); sheenBufFE.g = sheenBufFE.c.getContext('2d'); }
+  const c = sheenBufFE.c, g = sheenBufFE.g;
+  const bw = Math.ceil(wid * k), bh = Math.ceil(hgt * k);
+  if (c.width < bw || c.height < bh) { c.width = Math.max(c.width, bw); c.height = Math.max(c.height, bh); }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, c.width, c.height);
+  g.setTransform(k, 0, 0, k, 0, 0);
+  g.font = ctx.font;
+  if ('letterSpacing' in g) g.letterSpacing = 'letterSpacing' in ctx ? ctx.letterSpacing : '0px';
+  g.textAlign = ctx.textAlign;
+  g.textBaseline = ctx.textBaseline;
+  g.fillStyle = fill;
+  g.fillText(text, x - left, baseY - top);
+  const band = Math.max(28, hgt * 1.5), bx = -band + u * (wid + band * 2);
+  const sg = g.createLinearGradient(bx - band / 2, 0, bx + band / 2, hgt * 0.6);
+  sg.addColorStop(0, 'rgba(255,255,255,0)');
+  sg.addColorStop(0.5, 'rgba(255,255,255,0.78)');
+  sg.addColorStop(1, 'rgba(255,255,255,0)');
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = sg;
+  g.fillRect(0, 0, wid, hgt);
+  g.globalCompositeOperation = 'source-over';
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(c, 0, 0, bw, bh, left, top, bw / k, bh / k);
+  ctx.restore();
+}
+/* THE '|' SEPARATOR LINES (request 626: "the left text should be the thin version of Uni Sans while the right
+ * text retains the present preset"). Draws `text` like fillText at the ctx's current alignment: everything
+ * left of the first '|' in Uni Sans THIN at the same size, the bar and what follows in the current face.
+ * Centred lines get the same trailing-track correction fillCentred applies. Text without a '|' is plain. */
+export function fillSplit(ctx, text, x, y) {
+  const i = text.indexOf('|');
+  if (i < 0) { ctx.fillText(text, x, y); return; }
+  const left = text.slice(0, i).trimEnd(), rest = text.slice(left.length);
+  const main = ctx.font, thin = `400 ${fontPx(main)}px ${FONT_THIN}`;
+  const al = ctx.textAlign;
+  ctx.font = thin;
+  const wL = ctx.measureText(left).width;
+  ctx.font = main;
+  const wR = ctx.measureText(rest).width;
+  const track = 'letterSpacing' in ctx ? (parseFloat(ctx.letterSpacing) || 0) : 0;
+  const x0 = al === 'center' ? x - (wL + wR) / 2 + track / 2 : (al === 'right' || al === 'end') ? x - wL - wR : x;
+  ctx.textAlign = 'left';
+  ctx.font = thin;
+  ctx.fillText(left, x0, y);
+  ctx.font = main;
+  ctx.fillText(rest, x0 + wL, y);
+  ctx.textAlign = al;
+}
+/* Where a repeating sheen is at time t: first pass at `start`, one pass every `period`, each `pass` long. */
+export const sheenAt = (t, start, period = 3.2, pass = 0.75) => (t > start ? ((t - start) % period) / pass : -1);
+
 /* The two debug overlays (F9 placement tool, execDebug) stay monospace on
  * purpose: they print columns of numbers, and column alignment is the entire
  * reason a reader can scan them. Neither is ever on screen for a player. */
@@ -602,6 +676,7 @@ export function drawTapCue(ctx, W, H, t, o = {}) {
   /* IN THE CORNER (request 600: "remove the placeholder of the tap to skip annotation and move it to
    * top right out of direct view"): the skip cue sits in the top-right corner, with no plate behind it. */
   const corner = !!o.corner;
+  const plain = corner || !!o.plain;   // no plate: the corner skip cue (request 600), the title's TAP TO ENTER (request 626)
   const cy = corner ? Math.round(o.top ?? 34) : Math.round((o.cy ?? H - (o.inset ?? 56) - h / 2) - (since == null ? 0 : easeOut3(u) * 12));
   const x = corner ? Math.round(W - w - 8) : Math.round((W - w) / 2), y = cy - Math.round(h / 2);
   const alpha = arrival * (since == null ? 1 : 1 - easeOut3(u));
@@ -615,7 +690,7 @@ export function drawTapCue(ctx, W, H, t, o = {}) {
   ctx.globalAlpha = alpha;
   ctx.beginPath();
   ctx.rect(x, y, w, h);                            // sharp corners (request 603)
-  if (!corner) {
+  if (!plain) {
     ctx.fillStyle = 'rgba(4,6,9,0.74)';
     ctx.fill();
     ctx.strokeStyle = `rgba(233,182,84,${0.22 + 0.10 * pulse})`;
@@ -4661,7 +4736,7 @@ export function createFrontEnd({
     ctx.save();
     ctx.translate(L.locale.x + 4, L.locale.y - 3.4);
     ctx.rotate(Math.PI / 4);
-    ctx.fillStyle = C.gold;
+    ctx.fillStyle = C.orange;                       // the accent green (request 626), was gold
     ctx.fillRect(-2.6, -2.6, 5.2, 5.2);
     ctx.restore();
   }
@@ -4807,7 +4882,7 @@ export function createFrontEnd({
     setDisplay(700, 40, 1.4);
     ctx.fillStyle = C.paper;
     ctx.fillText(title, 56, 104);
-    ctx.fillStyle = C.orange;
+    ctx.fillStyle = C.rule;                         // red underline (request 626)
     ctx.fillRect(58, 118, 62, 3);
     if (sub) {
       setFont(500, 13, 0.2);
@@ -5468,7 +5543,7 @@ export function createFrontEnd({
       ctx.textBaseline = 'alphabetic';
       setFont(700, 9.5, 3.2);
       ctx.fillStyle = 'rgba(207,216,234,0.75)';
-      ctx.fillText(`LOADING  ${Math.round(p * 100)}%`, W / 2, y + 20);
+      ctx.fillText(`LOADING  ${Math.round(p * 100)}%`, W / 2, y + 32);   // more air under the bar (request 626; was +20)
     }
     ctx.restore();
   }
@@ -5567,17 +5642,21 @@ export function createFrontEnd({
      * This reads `titlePromptAt()`; it does not work it out a second time. */
     const promptFrom = titlePromptAt();
     const pK = easeOut((phaseT - promptFrom) / TITLE.promptIn);
+    /* EQUIDISTANT (request 626): the prompt hangs as far under STREETS OF JUSTICE as STREETS OF JUSTICE
+     * hangs under the mark — the same clear gap (subGap less the tagline's cap height) above the prompt's top. */
+    const tagCap = 11, tagGap = TITLE.subGap - tagCap;
+    const promptTop = logoBottom + TITLE.subGap + tagGap;
     /* ON A PHONE, THE ANIMATED TAP CUE (request 357) — the same code-drawn element
      * the skippable sections carry, on the prompt's row, beating ONCE per cycle
      * because one tap enters. A controller glyph means nothing under a thumb. */
     if (isTouchUI()) {
-      // 10 px above the text prompt's row: the 58 px plate would otherwise sit on the loading rule
-      drawTapCue(ctx, W, H, phaseT, { hintAt: promptFrom, text: 'TAP TO ENTER', taps: 1, cy: TITLE.promptY - 10 });
+      // no plate behind it (request 626); its 34 px ring's top on promptTop
+      drawTapCue(ctx, W, H, phaseT, { hintAt: promptFrom, text: 'TAP TO ENTER', taps: 1, cy: promptTop + 17, plain: true });
       if (tapCueState.drawn)
         hitboxes.push({ x: tapCueState.x, y: tapCueState.y, w: tapCueState.w, h: tapCueState.h, index: 0, id: 'title:enter' });
     } else if (pK > 0) {
       const breathe = 0.80 + Math.sin(clock * 2.0) * 0.20;
-      const py = TITLE.promptY;
+      const py = promptTop + 8;                       // the line's middle, its cap top on promptTop (request 626)
       ctx.save();
       ctx.globalAlpha = pK;
       ctx.textBaseline = 'middle';
@@ -6265,7 +6344,7 @@ export function createFrontEnd({
     ctx.fillText(D.title, 92, 330);
     setFont(600, 12.5, 1.4);
     ctx.fillStyle = C.muted;
-    ctx.fillText(`${focused === 1 ? 'BOSS' : 'TARGET'}  |  ${D.target}`, 92, 362);
+    fillSplit(ctx, `${focused === 1 ? 'BOSS' : 'TARGET'}  |  ${D.target}`, 92, 362);   // thin left of the bar (request 626)
     setFont(700, 11, 2.4);
     ctx.fillStyle = C.green;
     ctx.fillText(focused === 1 && levelUnlocked(2) ? '●  COMPLETED  ·  REPLAY' : '●  AVAILABLE', 92, 400);
@@ -6320,7 +6399,7 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    fillCentred(isL2() ? 'LAGOS  |  02' : 'LAGOS  |  01', W / 2, 238);
+    { const a = ctx.textAlign; ctx.textAlign = 'center'; fillSplit(ctx, isL2() ? 'LAGOS  |  02' : 'LAGOS  |  01', W / 2, 238); ctx.textAlign = a; }   // request 626
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
     fillCentred(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 306);
@@ -6373,7 +6452,7 @@ export function createFrontEnd({
     ctx.textBaseline = 'middle';
     setFont(700, 10.5, 3);
     ctx.fillStyle = C.orange;
-    ctx.fillText(`${dossier().code ?? 'LEVEL 01'}  |  STORY INTRO`, 28, 24);
+    fillSplit(ctx, `${dossier().code ?? 'LEVEL 01'}  |  STORY INTRO`, 28, 24);   // request 626
     ctx.textAlign = 'right';
     ctx.fillStyle = C.muted;
     /* NAME THE CONTROL THE PLAYER HAS. On a phone there is no X and no Square,
@@ -6778,7 +6857,7 @@ export function createFrontEnd({
     hairline(x, y, w);
     const p = clamp(briefT / (briefVoFor(currentLevel) ?? BRIEF_VO).dur, 0, 1);
     if (p <= 0) return;
-    ctx.fillStyle = 'rgba(54,214,126,0.55)';
+    ctx.fillStyle = 'rgba(227,36,43,0.75)';         // C.rule red (request 626), was the accent green
     ctx.fillRect(x, y, w * p, 1);
     const hx = x + w * p;
     const g = ctx.createRadialGradient(hx, y + 0.5, 0, hx, y + 0.5, 10);
@@ -6798,12 +6877,13 @@ export function createFrontEnd({
     /* The heading follows the DOSSIER, not the file. It was three hardcoded
      * strings, so Level 02's case file opened under "LEVEL 01 / THE STREET TAX"
      * with Masood Jibril's profile beside it. */
+    /* request 626: the level number in Uni Sans Heavy ITALIC, and a sheen down both lines (the number,
+     * then the operation's name a beat later), every 3.2 s */
     setDisplay(700, 54, 2);
-    ctx.fillStyle = C.paper;
-    ctx.fillText(dossier().code ?? 'LEVEL 01', T.x - 2, T.code);
+    ctx.font = `400 ${fontPx(ctx.font)}px ${FONT_ITALIC}`;
+    sheenText(ctx, dossier().code ?? 'LEVEL 01', T.x - 2, T.code, C.paper, sheenAt(phaseT, 0.55));
     setDisplay(700, 32, 1.6);
-    ctx.fillStyle = C.orange;
-    ctx.fillText(dossier().title ?? 'THE STREET TAX', T.x, T.name);
+    sheenText(ctx, dossier().title ?? 'THE STREET TAX', T.x, T.name, C.orange, sheenAt(phaseT, 0.7));
 
     /* The row: photograph, profile (+ file number), dossier — each scales in, in reading order. */
     briefCard(0, BRIEF.portrait, briefPortrait);
@@ -6938,7 +7018,7 @@ export function createFrontEnd({
     ctx.textAlign = 'center';
     setFont(700, 11, 5);
     ctx.fillStyle = C.gold;
-    fillCentred(isL2() ? 'LAGOS  |  02' : 'LAGOS  |  01', W / 2, 300);
+    { const a = ctx.textAlign; ctx.textAlign = 'center'; fillSplit(ctx, isL2() ? 'LAGOS  |  02' : 'LAGOS  |  01', W / 2, 300); ctx.textAlign = a; }   // request 626
     setDisplay(700, 54, 2.4);
     ctx.fillStyle = C.paper;
     fillCentred(isL2() ? dossier().title : 'THE STREET TAX', W / 2, 368);
@@ -8460,6 +8540,9 @@ export function createFrontEnd({
   const ui = {
     C, W, H, MENU_HINTS, HOLD_DELAY, HOLD_RATE,
     setFont, setDisplay, fitFont, glass, button, icon, roundRectPath, networkGraph, focusOverlay,
+    // request 626: '|' lines with the left in Uni Sans Thin, and a sheen on a line of type
+    fillSplit: (text, x, y) => fillSplit(ctx, text, x, y),
+    sheenText: (text, x, y, fill, u) => sheenText(ctx, text, x, y, fill, u),
     /* Measured against the CURRENT ctx font, so a caller must `setFont` before
      * asking. Shared rather than re-written over in aftermath.js: both files
      * draw on the same canvas with the same fonts, and two wrap routines drift. */

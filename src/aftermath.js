@@ -781,11 +781,11 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     ctx.textAlign = 'left';
     ui.setFont(700, 11, 4);
     ctx.fillStyle = C.orange;                     // green kicker, as on every screen (request 615)
-    ctx.fillText(assertPlayerSafe(eyebrow, 'header.eyebrow'), 58, 76);
+    ui.fillSplit(assertPlayerSafe(eyebrow, 'header.eyebrow'), 58, 76);   // thin left of the '|' (request 626)
     ui.setDisplay(700, 38, 1.7);
     ctx.fillStyle = C.paper;
     ctx.fillText(assertPlayerSafe(title, 'header.title'), 56, 119);
-    ctx.fillStyle = C.orange;
+    ctx.fillStyle = C.rule || '#e3242b';          // red underline (request 626)
     ctx.fillRect(58, 133, 78, 3);
     if (sub) {
       ui.setFont(500, 12.5, 0.2);

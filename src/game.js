@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake } from './frontend.js?v=ratelrage-mobile-v149';
-import { createAftermath } from './aftermath.js?v=ratelrage-green615-v2';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx } from './frontend.js?v=ratelrage-mobile-v150';
+import { createAftermath } from './aftermath.js?v=ratelrage-v150';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -3438,11 +3438,11 @@ window.addEventListener('keyup', (e) => {
  * with an apology. It sits below QUIT TO MENU because it is the further door:
  * the list reads resume -> restart -> settings -> leave the fight -> leave the
  * game, in increasing order of how much you are giving up. */
+/* CONTROLS and CUSTOMIZE CONTROLS are not rows here any more (request 626): both live in the OPTIONS
+ * submenu, which this list opens. Their handlers below stay, harmless, for the dev hooks. */
 const PAUSE_MENU = [
   { label: 'RESUME', icon: 'play' },
-  { label: 'CUSTOMIZE CONTROLS', icon: 'pad' },
   { label: 'RESTART CHECKPOINT', icon: 'restore' },
-  { label: 'CONTROLS', icon: 'pad' },
   { label: 'OPTIONS', icon: 'gear' },
   { label: 'QUIT TO MENU', icon: 'power' },
 ];
@@ -9840,7 +9840,7 @@ function drawExecPrompt(enemy, screenX, headY) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = display(700, 11);
-  ctx.fillText('EXECUTE', screenX, y - 10);
+  hitInk('EXECUTE', screenX, y - 10);                        // the hit counter's look (request 626)
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.restore();
@@ -9968,14 +9968,11 @@ function drawExecBrutalityLabel() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.globalAlpha = Math.min(1, k * 2);
+  // the hit counter's look (request 626)
   ctx.font = display(900, Math.round(62 - (1 - k) * 20));
-  ctx.fillStyle = 'rgba(6,8,14,0.7)';
-  ctx.fillText(b.label, x + 4, y + 4);
-  ctx.fillStyle = '#ff5a3c';
-  ctx.fillText(b.label, x, y);
+  hitInk(b.label, x, y, { hot: true });
   ctx.font = uiFont(700, 15);
-  ctx.fillStyle = '#ffd23f';
-  ctx.fillText('PERFECT EXECUTION', VIEW_W / 2, y + 42);
+  hitInk('PERFECT EXECUTION', VIEW_W / 2, y + 42);
   ctx.restore();
 }
 
@@ -10227,8 +10224,7 @@ function drawExecButton(ex) {
   if (!touchUI()) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = uiFont(700, 10);
-    ctx.fillStyle = 'rgba(207,216,234,0.75)';
-    ctx.fillText(t.key, x, y + R + 15);
+    hitInk(t.key, x, y + R + 15);                          // request 626
   }
   // Progress pips only earn their space on a MULTI-press checkpoint, where not
   // knowing whether you are on the last press is its own kind of blind. On the
@@ -10266,10 +10262,9 @@ function drawExecPerfHud(ex) {
       : ex.gradeTier === 'GOOD' ? '#8ef0a8' : '#ff7a55';
     ctx.globalAlpha = Math.min(1, k * 1.9);
     ctx.font = display(900, ex.gradeTier === 'PERFECT' ? 46 : 38);
-    ctx.fillStyle = 'rgba(6,8,14,0.55)';
-    ctx.fillText(ex.gradeText, cx + 2, EXEC_HUD_Y - 48 - rise + 2);
-    ctx.fillStyle = col;
-    ctx.fillText(ex.gradeText, cx, EXEC_HUD_Y - 48 - rise);
+    // the hit counter's look (request 626): PERFECT hot, GOOD green, the rest the counter's ramp
+    void col;
+    hitInk(ex.gradeText, cx, EXEC_HUD_Y - 48 - rise, { hot: ex.gradeTier === 'PERFECT', green: ex.gradeTier === 'GOOD' });
     ctx.globalAlpha = 1;
   }
 
@@ -10288,8 +10283,7 @@ function drawExecPerfHud(ex) {
   ctx.fillStyle = s >= 0.999 ? '#fff2b8' : '#ffd23f';
   ctx.fillRect(mx, my, mw * s, 7);
   ctx.font = uiFont(700, 10);
-  ctx.fillStyle = 'rgba(207,216,234,0.8)';
-  ctx.fillText('EXECUTION  ' + Math.round(ex.perf.score), VIEW_W / 2, my + 17);
+  hitInk('EXECUTION  ' + Math.round(ex.perf.score), VIEW_W / 2, my + 17);   // request 626
   ctx.restore();
 }
 
@@ -10311,14 +10305,11 @@ function drawExecResult() {
   ctx.textBaseline = 'middle';
   ctx.globalAlpha = k;
   const gold = r.grade === 'PERFECT';
+  // the hit counter's look (request 626)
   ctx.font = display(900, (gold ? 54 : 44) + grow * 20);
-  ctx.fillStyle = 'rgba(6,8,14,0.6)';
-  ctx.fillText(EXEC_FINAL_LABEL[r.grade] ?? r.grade, VIEW_W / 2 + 3, 150 + 3);
-  ctx.fillStyle = gold ? '#ffe45e' : r.grade === 'FAILED' ? '#ff7a55' : '#ffd23f';
-  ctx.fillText(EXEC_FINAL_LABEL[r.grade] ?? r.grade, VIEW_W / 2, 150);
+  hitInk(EXEC_FINAL_LABEL[r.grade] ?? r.grade, VIEW_W / 2, 150, { hot: gold });
   ctx.font = uiFont(700, 15);
-  ctx.fillStyle = '#cfd8ea';
-  ctx.fillText(`${r.perfect} PERFECT · ${r.good} GOOD · ${r.miss} MISS · ${r.score}`, VIEW_W / 2, 186);
+  hitInk(`${r.perfect} PERFECT · ${r.good} GOOD · ${r.miss} MISS · ${r.score}`, VIEW_W / 2, 186);
   ctx.restore();
 }
 
@@ -24645,10 +24636,30 @@ function drawPortrait(img, x, y, s) {
     ctx.restore();
   }
 }
-/* Outlined pixel text: a hard drop shadow, then the colour. */
-function pixText(text, x, y, col, shadow = '#0b0a0c', off = 2) {
-  ctx.fillStyle = shadow; ctx.fillText(text, x + off, y + off);
-  ctx.fillStyle = col; ctx.fillText(text, x, y);
+/* EVERY GAMEPLAY LINE IN THE HIT COUNTER'S LOOK (request 626: "make every gameplay text same style as the
+ * hit splash counter"). The current ctx font's SIZE, alignment and baseline, in the counter's heavy face: its
+ * ink drop shadow, ink outline and yellow-to-red ramp (o.hot: the counter's hot ramp, o.green: the UI green).
+ * Shadow and outline scale with the size as the counter's do, floored so small lines keep an edge. */
+function hitInk(text, x, y, o = {}) {
+  const px = fontPx(ctx.font);
+  ctx.save();
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.font = `400 ${px}px ${FONT_BOLD}`;
+  const m = ctx.measureText(text);
+  const asc = m.actualBoundingBoxAscent || px * 0.7, desc = m.actualBoundingBoxDescent || 0;
+  const k = px / 74;
+  ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
+  ctx.fillStyle = HIT_INK; ctx.fillText(text, x + Math.max(1.5, 5 * k), y + Math.max(1.5, 5 * k));
+  ctx.strokeStyle = HIT_INK; ctx.lineWidth = Math.max(2.5, 7 * k); ctx.strokeText(text, x, y);
+  ctx.fillStyle = hitInkFill(y - asc, y + desc + 2 * k, o.hot, o.green);
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+/* The HUD's outlined text — in the hit counter's look since request 626 (it was a hard drop shadow and a
+ * flat colour). `col` only picks the ramp: the rage/enraged fire colours take the counter's hot ramp. */
+const HOT_INKS = new Set(['#ff6a3d', '#ffd25a', '#ffe27c']);
+function pixText(text, x, y, col) {
+  hitInk(text, x, y, { hot: HOT_INKS.has(col) || col === PHUD.fireHi });
 }
 
 function drawPixelHud() {
@@ -24696,18 +24707,8 @@ function drawPixelHud() {
     ctx.textAlign = 'right';
     ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now * 5);
     const tx = bx + P.barW - 8, ty = yHp + P.barH / 2 + 1;
-    /* TWO-TONE, like a progress label: dark green where it crosses the yellow fill, bright green over the
-     * bar's empty end, split exactly at the fill's edge so every letter reads. */
-    const edge = Math.round(bx) + Math.round(P.barW * hpF);
-    const part = (x0, x1, col) => {
-      if (x1 <= x0) return;
-      ctx.save();
-      ctx.beginPath(); ctx.rect(x0, yHp, x1 - x0, P.barH); ctx.clip();
-      ctx.fillStyle = col; ctx.fillText('+ RECOVERING', tx, ty);
-      ctx.restore();
-    };
-    part(Math.round(bx), edge, '#0d4a26');
-    part(edge, Math.round(bx + P.barW), '#7dffa0');
+    // in the hit counter's look, its green ramp (request 626): the ink outline reads over fill and empty alike
+    hitInk('+ RECOVERING', tx, ty, { green: true });
     ctx.restore();
   }
 
@@ -25025,12 +25026,10 @@ function drawWaveHud() {
     drawGoPrompt();
   } else if (waveState === 'complete') {
     ctx.textAlign = 'center';
-    ctx.font = display(900, 56);
-    ctx.fillStyle = '#ffe45e';
-    ctx.fillText('AREA CLEARED', VIEW_W / 2, VIEW_H / 2 - 6);
+    // the hit counter's look (request 626)
+    hitStyleText('AREA CLEARED', VIEW_W / 2, VIEW_H / 2 - 6, 56);
     ctx.font = uiFont(400, 16);
-    ctx.fillStyle = '#cfd8ea';
-    ctx.fillText(activeLevel === 2 ? `${LEVELS[2].code}  —  ${LEVELS[2].title}` : 'Lagos Island is yours', VIEW_W / 2, VIEW_H / 2 + 30);
+    hitInk(activeLevel === 2 ? `${LEVELS[2].code}  —  ${LEVELS[2].title}` : 'LAGOS ISLAND IS YOURS', VIEW_W / 2, VIEW_H / 2 + 30);
   }
   if (fightBanner > 0) {                 // overlays the live street; never a separate cutscene
     const k = Math.min(1, fightBanner / 0.25);
@@ -25098,12 +25097,11 @@ function drawCutscene() {
     ctx.fillRect(-330, 41, 660, 5);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#ffe45e';
+    // the hit counter's look (request 626)
     ctx.font = display(900, 58);
-    ctx.fillText('MC OLODO', 0, 14);
+    hitInk('MC OLODO', 0, 14);
     ctx.font = uiFont(700, 13);
-    ctx.fillStyle = 'rgba(207,216,234,0.9)';
-    ctx.fillText('AREA BOSS  ·  LAGOS ISLAND', 0, 36);
+    hitInk('AREA BOSS  ·  LAGOS ISLAND', 0, 36);
     ctx.restore();
   }
 
@@ -25297,11 +25295,11 @@ function drawOutro() {
    * the level table and cannot render a development tag — see the fiction firewall in story.js. */
   const OC = outroCard(), LV = LEVELS[activeLevel === 2 ? 2 : 1];
   const kicker = `${LV.code}  |  ${LV.title}`;
-  ctx.fillText(kicker, cx + ('letterSpacing' in ctx ? 2 : 0), 58);
+  ui.fillSplit(kicker, cx, 58);   // thin left of the bar (request 626); fillSplit applies the half-track
   const headline = OC.headline();
   ui.fitFont(700, 47, 1.7, headline, COL + 160, true);
   drawSummaryHeadline(headline, cx, 108, C);
-  ctx.fillStyle = C.orange;
+  ctx.fillStyle = C.rule;                                    // red underline (request 626)
   ctx.fillRect(Math.round(cx - 39), 122, 78, 3);
   ui.setFont(500, 12, 0.2);
   ctx.fillStyle = dimWhite(0.5);
@@ -25590,11 +25588,11 @@ function drawPauseOverlay() {
   ctx.textBaseline = 'alphabetic';
   ui.setFont(700, 11, 4);
   ctx.fillStyle = C.orange;                          // green kicker, '|' separator (request 615)
-  { const PL = LEVELS[activeLevel === 2 ? 2 : 1]; ctx.fillText(`${PL.code}  |  ${PL.title}`, 58, 58); }
+  { const PL = LEVELS[activeLevel === 2 ? 2 : 1]; ui.fillSplit(`${PL.code}  |  ${PL.title}`, 58, 58); }   // request 626
   ui.setDisplay(700, 40, 1.4);
   ctx.fillStyle = C.paper;
   ctx.fillText('PAUSED', 56, 104);
-  ctx.fillStyle = C.orange;
+  ctx.fillStyle = C.rule;                            // red underline (request 626)
   ctx.fillRect(58, 118, 62, 3);
   ui.setFont(500, 13, 0.2);
   ctx.fillStyle = C.muted;
@@ -26067,7 +26065,7 @@ function drawGameOver() {
   ctx.globalAlpha = fadeIn(0.45);
   ui.setFont(700, 20, 1.2);
   ctx.fillStyle = '#e8d9c4';
-  ctx.fillText(cl ? `${LEVELS[activeLevel].code}  |  ${LEVELS[activeLevel].title}`
+  ui.fillSplit(cl ? `${LEVELS[activeLevel].code}  |  ${LEVELS[activeLevel].title}`
     : lost ? "JIMOH'S MEN DESTROYED THE WORKSTATION." : 'A RATEL DOES NOT STAY DOWN.', VIEW_W / 2, 312);
   ui.setFont(500, 14, 0.3);
   ctx.fillStyle = 'rgba(214,200,184,0.75)';
@@ -29083,7 +29081,7 @@ const FONT_FACES = ["40px 'RR Pixel'", "40px 'RR Pixel Bold'"];
 /* Uni Sans (request 602) leads every stack but is OPTIONAL at boot: until its files are in
  * frontend/fonts the pixel faces above carry the text, so its load is awaited separately and a
  * missing file is a note, not an error. calibrateFontFit() then sizes whichever face loaded. */
-const UNI_FACES = ["40px 'RR Uni Heavy'", "40px 'RR Uni'", "40px 'RR Uni Heavy Italic'"];   // + the italic (request 623)
+const UNI_FACES = ["40px 'RR Uni Heavy'", "40px 'RR Uni'", "40px 'RR Uni Heavy Italic'", "40px 'RR Uni Thin'"];   // + the italic (request 623), the thin (request 626)
 let fontFit = null;
 /* THE FONT MAY NEVER BLOCK BOOT. This ceiling is not belt-and-braces.
  *

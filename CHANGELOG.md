@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-13 — Title spacing, red underlines, briefing sheen, hit-style gameplay text, thin '|' lines (v150, request 626)
+
+- Title: LOADING % 32 px under the bar (was 20); TAP TO ENTER has no plate (drawTapCue `plain`) and sits as far under STREETS OF JUSTICE as that sits under the mark (desktop PRESS ENTER TO START too).
+- Menu: the dot before LAGOS, NIGERIA is green.
+- Short heading underlines are red (C.rule #e3242b): screenHead, PAUSED, level summary, aftermath header, the briefing DOSSIER progress rule.
+- Mission briefing: LEVEL 0x in Uni Sans Heavy Italic; sheen on it and on the operation name (sheenText/sheenAt in frontend.js).
+- Pause menu: CONTROLS and CUSTOMIZE CONTROLS removed (OPTIONS > CONTROLS has both).
+- Gameplay text in the hit counter's look (hitInk in game.js): HUD names/values (pixText), RECOVERING, AREA CLEARED, boss intro plate, execution prompt/grades/result/meter.
+- '|' separators: text left of the bar in Uni Sans Thin (frontend/fonts/uni-sans-thin.otf, 'RR Uni Thin', unmodified, gitignored), right keeps its face (fillSplit): summary kicker, pause kicker, game-over card, aftermath headers, TARGET/BOSS line, story intro tag, LAGOS | 0x.
+Checks: _chromakey/req626/screens.js (desktop + TOUCH title), req622/frames.js summary; no page errors.
+
 ## 2026-11-13 — Glossy splash D-pad, score/grade sheen, combo bar text gone (v149, request 625)
 
 - KenCrafts cube D-pad: gloss black plastic. Fresnel term in shade() (`fres`: edge-on faces mirror the white studio) and drawGloss() on its cap (softbox reflection streaks + edge catch-light). kensplash.js.
