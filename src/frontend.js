@@ -1747,7 +1747,7 @@ export function createFrontEnd({
    * (SKIP_TAP); `introTapSkippable` is kept only for the keyboard hint's fade. */
   const videoTap = makeDoubleTap();
   // Seconds the studio clip has been rolling (0 while the card's lead runs).
-  const splashVideoT = () => Math.max(0, phaseT - SPLASH_CARD_LEAD);
+  const splashVideoT = () => (splashStarted ? Math.max(0, phaseT - splashRollAt) : 0);
   let introLoadProgress = 0;
   /* Set when the intro video fails or takes too long to produce its first
    * frame: the story screen must never wedge on a media element, so the flow
@@ -2706,6 +2706,10 @@ export function createFrontEnd({
   /* Seconds spent parked on the held logo frame. -1 until the hold begins, so
    * "not holding yet" and "holding, 0 s in" are different states. */
   let splashHoldT = -1;
+  /* REQUEST 630: which card this run shows, decided ONCE when the clip starts (coded cube + Uni Sans
+   * wordmark, or the filmed fallback), so a font that lands mid-clip can never swap the picture. */
+  let splashCoded = false;
+  let splashRollAt = 0;            // phaseT at which the clip started rolling
   splashVideo.addEventListener('loadeddata', () => { splashReady = true; });
   splashVideo.addEventListener('ended', () => { splashEnded = true; });
   splashVideo.addEventListener('error', () => {
@@ -2723,6 +2727,8 @@ export function createFrontEnd({
   function startSplashVideo() {
     if (splashStarted || splashFailed) return;
     splashStarted = true;
+    splashCoded = uniSansReady();
+    splashRollAt = phaseT;
     splashHoldT = -1;
     clearTimeout(splashStartTimer);
     /* ONCE. Both the `loadeddata` listener and the 2.5 s ceiling below call
@@ -5068,7 +5074,12 @@ export function createFrontEnd({
   /* Deadlock guard only — see the advance in update(). Comfortably past the
    * 6.006 s clip plus its hold, AND past the card lead that now precedes both,
    * so a healthy playthrough never reaches it. */
-  const SPLASH_MAX = 12 + SPLASH_CARD_LEAD;
+  /* REQUEST 630 ("the link sometimes loads the old KenCrafts splash"): the coded card needs Uni Sans,
+   * and on a slow phone network the font used to arrive after the clip had already started, so the
+   * filmed card played instead. The clip now waits for the font (index.html also preloads it) for up
+   * to this long past the lead; only a font that never arrives falls back to the filmed card. */
+  const SPLASH_FONT_WAIT = 8;
+  const SPLASH_MAX = 12 + SPLASH_CARD_LEAD + SPLASH_FONT_WAIT;
 
   function drawSplashVideo() {
     /* COVER, per the owner's call: the studio card fills the whole screen on
@@ -5080,7 +5091,7 @@ export function createFrontEnd({
     const dw = Math.round(vw * scale), dh = Math.round(vh * scale);
     const ox = Math.round((W - dw) / 2), oy = Math.round((H - dh) / 2);
     const kk = dw / KEN_TYPE.clipW, ct = splashVideo.currentTime;
-    if (uniSansReady()) {
+    if (splashCoded) {
       /* REQUEST 613: THE WHOLE CARD IN CODE. The clip is still the clock and the sound, but none of its
        * pixels are drawn: its flat white backdrop is a fill, the cube is kensplash.js's renderer and the
        * wordmark is Uni Sans, all rasterised at the screen's own resolution (renderScale), so the logo
@@ -5437,7 +5448,7 @@ export function createFrontEnd({
      * then out behind the first video frame was the visible "pop" this
      * originally fixed. */
     if (phaseT < SPLASH_CARD_LEAD) drawSplashCard();
-    else if (live) drawSplashVideo();
+    else if (live && splashStarted) drawSplashVideo();   // black while the clip waits for the font (request 630)
     else if (splashFailed) drawSplashCard();
 
     /* The card draws no button, but it is skippable and a skip is a press like
@@ -7909,7 +7920,7 @@ export function createFrontEnd({
        * startSplashVideo's own `splashStarted` latch, so calling it every frame
        * after the lead costs nothing and the start cannot be missed by a frame
        * that happened to straddle the boundary. */
-      if (phaseT >= SPLASH_CARD_LEAD) startSplashVideo();
+      if (phaseT >= SPLASH_CARD_LEAD && (uniSansReady() || phaseT >= SPLASH_CARD_LEAD + SPLASH_FONT_WAIT)) startSplashVideo();
       const dur = Number.isFinite(splashVideo.duration) ? splashVideo.duration : 0;
       const rolled = dur > 0 && splashVideo.currentTime >= dur - 0.05;
       const live = !splashFailed && splashVideo.readyState >= 2;
@@ -8302,6 +8313,7 @@ export function createFrontEnd({
       return {
         ready: splashReady, failed: splashFailed, started: splashStarted,
         muted: splashMuted, ended: splashEnded,
+        coded: splashCoded, rollAt: +splashRollAt.toFixed(2),   // request 630
         paused: splashVideo.paused,
         t: +splashVideo.currentTime.toFixed(2),
         /* -1 until the clip is parked on the wordmark, then seconds held. A

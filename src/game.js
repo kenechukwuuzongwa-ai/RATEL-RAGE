@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v153';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v154';
 import { createAftermath } from './aftermath.js?v=ratelrage-v150';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -66,6 +66,18 @@ function fitText(text, x, y, maxW, weight = 400, px = 13, min = 10) {
  * copy. Desktop measured no difference either way, so this is Android-only:
  * the validated desktop renderer stays exactly as it is. */
 const IS_ANDROID = /Android/.test(navigator.userAgent);
+/* iPHONE / iPAD (request 630: "A problem repeatedly occurred on ratelrage.com" in Safari, "Can't open
+ * this page" in Chrome for iOS). Both are iOS killing the page's WebKit process for memory: iOS was
+ * handed the DESKTOP art, ~2.9 GB decoded for the sheets Android gets as phone copies (darki-jump
+ * alone is 12288x10056, ~494 MB). iPadOS reports itself as a Mac, so a touch Mac counts too. */
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
+  || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+/* THE PHONE ART: Android always (the APK ships it at the original paths; the web build lists it in
+ * RR_WEB.lowres), iOS when the web build has the phone copies to give it. Everything that loads,
+ * sizes or compensates for the downscaled plates and sheets hangs off this one flag. */
+const PHONE_ART = IS_ANDROID || (IS_IOS && (() => {
+  try { return Array.isArray(window.RR_WEB?.lowres) && window.RR_WEB.lowres.length > 0; } catch { return false; }
+})());
 /* AUTHORING TOOLS (the ASSETS mover, the F2 region editor, F3, the F7 grade
  * cycle) are for building the game, not playing it. A public web build
  * (deploy/build-web.js sets RR_WEB.production) hides them unless the URL asks
@@ -860,7 +872,7 @@ const IDLE_SHEET = {
    * original file must ship untouched. The gameplay loader adapts to any
    * size, so Android loads a downscaled twin instead: the full sheet is
    * ~110MB decoded, which is real pressure on a phone at load time. */
-  src: IS_ANDROID ? 'sprites/darki-idle-mobile.png' : 'sprites/darki-idle.png',
+  src: PHONE_ART ? 'sprites/darki-idle-mobile.png' : 'sprites/darki-idle.png',
   metaSrc: 'sprites/darki-idle.json',
   cols: 6,
   rows: 5,
@@ -2363,7 +2375,7 @@ function mulberry32(seed) {
  * Android browser is pointed there. Anywhere else the list is absent: no-op. */
 const LOWRES = (() => {
   try {
-    const list = IS_ANDROID && window.RR_WEB && window.RR_WEB.lowres;
+    const list = PHONE_ART && window.RR_WEB && window.RR_WEB.lowres;   // Android, and iOS (request 630)
     return Array.isArray(list) && list.length ? new Set(list) : null;
   } catch { return null; }
 })();
@@ -2445,6 +2457,17 @@ function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   return c;
+}
+/* LET GO NOW, NOT AT THE NEXT COLLECTION (request 630). A zero-size canvas frees its backing store on
+ * the spot, and an image with no source drops its decoded bitmap. WebKit on iOS counts every live
+ * canvas and decoded sheet against the page until the collector runs, and a load that leaves a few
+ * gigabytes of finished work lying around is killed ("A problem repeatedly occurred"). The load
+ * handlers go first so the cleared source can never look like a failed load and trigger a retry. */
+function dropCanvas(c) {
+  try { c.width = 0; c.height = 0; } catch { /* already gone */ }
+}
+function dropImage(img) {
+  try { img.onload = null; img.onerror = null; img.removeAttribute('src'); } catch { /* already gone */ }
 }
 
 /* ------------------------------------------------------- sprite loading */
@@ -2713,7 +2736,7 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
      * bad decode can only ever cost seconds, not the load. Desktop keeps the
      * plain await (the timeout would never fire there). */
     const dec = img.decode().catch(() => {});
-    await (IS_ANDROID
+    await (PHONE_ART
       ? Promise.race([dec, new Promise((r) => setTimeout(r, 6000))])
       : dec);
   }
@@ -2742,7 +2765,13 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
   // `config.workH` lowers that working resolution for sheets with a lot of
   // frames (the boss stance is 81) â€” every later measurement is a RATIO inside
   // this space, so it only trades resampling headroom for load time and memory.
-  const WORK_H = config.workH ?? 480;
+  /* iOS (request 630): never work ABOVE the cell's own height. The phone copies are ~200 px cells, and
+   * blowing each one up to 480 to key it adds no detail, only ~5x the pixels to read back, and that
+   * readback garbage is most of what peaks an iPhone's memory during the load. Android and desktop
+   * keep the authored working size. */
+  const WORK_H = IS_IOS && PHONE_ART
+    ? Math.min(config.workH ?? 480, Math.max(64, Math.floor(fh)))
+    : (config.workH ?? 480);
   const workW = Math.round(WORK_H * (fw / fh));
   const work = [];
   const boxes = [];
@@ -2769,7 +2798,7 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
      * canvas onto a CPU raster, where the per-frame readback is a memory copy
      * instead of a GPU sync. Gated to Android so the validated desktop path
      * is untouched. */
-    const cc = c.getContext('2d', IS_ANDROID ? { willReadFrequently: true } : undefined);
+    const cc = c.getContext('2d', PHONE_ART ? { willReadFrequently: true } : undefined);
     cc.imageSmoothingEnabled = true;
     cc.imageSmoothingQuality = 'high';
     /* UPSAMPLE GUARD. When a cell is smaller than the work canvas the draw is
@@ -2781,7 +2810,7 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
      * cell. Only needed when upscaling; the desktop sheets (full-res) never
      * take this path, so the guard is Android-gated. */
     const upscaling = workW > fw || WORK_H > fh;
-    const ins = upscaling && IS_ANDROID ? 2 : 0;
+    const ins = upscaling && PHONE_ART ? 2 : 0;
     cc.drawImage(img, (i % cols) * fw + ins, Math.floor(i / cols) * fh + ins,
       fw - ins * 2, fh - ins * 2, 0, 0, workW, WORK_H);
     const b = keyOutBackground(c);      // the box comes back with the key now
@@ -2794,6 +2823,10 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
     const yieldNow = breathe();
     if (yieldNow) await yieldNow;
   }
+  /* REQUEST 630: the source sheet is not read again after pass 1, so its decoded pixels are let go
+   * NOW rather than whenever the collector gets to it (the whole load's sheets otherwise pile up in
+   * memory, which is what iOS kills the page for). */
+  dropImage(img);
   if (maxX < 0) throw new Error('sprite sheet is fully transparent after keying');
 
   // Pass 2: crop every frame to the union box, scaled so character height is
@@ -2815,9 +2848,11 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
     fc.imageSmoothingQuality = 'high';
     fc.drawImage(c, minX, minY, bw, bh, 0, 0, drawW, drawH);
     frames.push(f);
+    dropCanvas(c);                      // the working copy is done with (request 630)
     const yieldNow = breathe();
     if (yieldNow) await yieldNow;
   }
+  work.length = 0;
 
   const anims = resolveAnims(meta, count);
   if (animationName !== 'walk') anims[animationName] = anims.walk;
@@ -29010,7 +29045,7 @@ async function loadWorld() {
      * main street needs nothing - its scale is derived above and
      * self-compensates - and drawLayer's topY anchor scales with the draw
      * scale, so the world keeps its authored 9259-px size everywhere. */
-    if (IS_ANDROID) {
+    if (PHONE_ART) {                         // the half-res plates: Android, and iOS (request 630)
       tune.skyScale = 2;
       tune.backgroundScale = 2;
     }

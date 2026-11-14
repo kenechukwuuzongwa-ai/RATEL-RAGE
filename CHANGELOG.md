@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-14 — iPhone crash on load, old KenCrafts splash on slow links (v154, request 630)
+
+- iPhone/iPad ("A problem repeatedly occurred" in Safari, "Can't open this page" in Chrome for iOS): iOS now gets the phone art Android gets (RR_WEB.lowres, half-res sky/background with the x2 compensation, the idle twin) instead of the desktop sheets (~2.9 GB decoded for those sheets; darki-jump alone 12288x10056). PHONE_ART flag in game.js; iPadOS counts (touch Mac).
+- Every platform: each sprite sheet's decoded pixels and its working canvases are released as soon as its frames are cut (dropImage/dropCanvas), not left for the collector. iOS also keys at the cell's own height instead of blowing ~200 px phone cells up to 480.
+- Splash: the clip waits (up to 8 s past the card) for Uni Sans, so a slow font no longer drops the run onto the filmed card; the coded/filmed choice is made once at clip start. index.html preloads uni-sans-heavy.otf ahead of the art.
+Checks: _chromakey/req630/mem.js (iOS fetches 33 lowres sheets, idle twin, sky x2; renderer peak 2.29 -> 1.8 GB in headless Chrome), req630/play.js (iOS = Android gameplay frames, desktop unchanged), req630/splash.js FONT_DELAY=9000 (clip waits, coded card); no page errors. Not tested on a real iPhone.
+
 ## 2026-11-14 — Story intro label names the operation (v153, request 629)
 
 - Story intro top-left: LEVEL 01 | THE STREET TAX and LEVEL 02 | OPERATION CLEAN SWEEP (the dossier title) instead of STORY INTRO.
