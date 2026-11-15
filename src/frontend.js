@@ -191,9 +191,13 @@ const figureH = (feet) => GROUND.k * (feet - GROUND.horizon);
  *   interFont(w) the cut for any weight 300-800 (pixelFont maps the weight a call site asks for).
  * Inter has real lowercase, so sentence-case copy (subtitles, notes) now reads as written. */
 const INTER_CUTS = [300, 400, 500, 600, 700, 800];
-export const interFamily = (w) => `'RR Inter ${INTER_CUTS.reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a))}'`;
+/* ONE CUT HEAVIER (request 640: "add more thickness to the capitalized letters, they are too thin"): the
+ * tracked capitals the UI is built on asked for 600/700 and read thin in Inter, so from 500 up every weight
+ * is drawn one cut heavier (500->600, 600->700, 700/800->800). Light/Regular (prose, 'or') are unchanged. */
+const heavier = (w) => (w >= 500 ? Math.min(800, w + 100) : w);
+export const interFamily = (w) => `'RR Inter ${INTER_CUTS.reduce((a, b) => (Math.abs(b - heavier(w)) < Math.abs(a - heavier(w)) ? b : a))}'`;
 const FALLBACK = "'RR Pixel', system-ui, sans-serif";
-export const FONT = `'RR Inter 600', ${FALLBACK}`;
+export const FONT = `'RR Inter 700', ${FALLBACK}`;   // request 640: Bold (was SemiBold)
 export const FONT_BOLD = "'RR Inter Black', 'RR Pixel Bold', system-ui, sans-serif";
 export const interFont = (w) => `${interFamily(w)}, ${FALLBACK}`;
 export const PIXEL_FIT = { body: 1.1, bold: 0.85 };
@@ -241,7 +245,7 @@ export function pixelFont(weight, px, bold = false) {
 /* Inter Display Black ITALIC (was Uni Sans Heavy Italic, request 623) and Inter LIGHT (was Uni Sans Thin,
  * request 626), the real cuts, never synthesised. */
 export const FONT_ITALIC = `'RR Inter Black Italic', ${FONT_BOLD}`;
-export const FONT_THIN = `'RR Inter 300', ${FONT}`;
+export const FONT_THIN = `'RR Inter 400', ${FONT}`;   // request 640: Regular (Light read too thin beside the heavier caps)
 /* The px size of a canvas font string (what setFont/setDisplay just set). */
 export const fontPx = (font) => parseFloat((/([\d.]+)px/.exec(font) || [0, 16])[1]);
 /* A SHEEN ON ONE LINE OF TYPE (request 626; the summary's headline/score/grade have game.js's copy): the
@@ -306,7 +310,14 @@ export function fillSplit(ctx, text, x, y) {
   ctx.font = thin;
   ctx.fillText(left, x0, y);
   ctx.font = main;
-  ctx.fillText(rest, x0 + wL, y);
+  /* THE BAR IS WHITE (request 640: "change vertical stroke separator to white"): the spaces and the '|' in
+   * white, then what follows in the caller's colour */
+  const b = rest.indexOf('|') + 1, bar = rest.slice(0, b), after = rest.slice(b);
+  const fill = ctx.fillStyle;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(bar, x0 + wL, y);
+  ctx.fillStyle = fill;
+  ctx.fillText(after, x0 + wL + ctx.measureText(bar).width, y);
   ctx.textAlign = al;
 }
 /* Where a repeating sheen is at time t: first pass at `start`, one pass every `period`, each `pass` long. */
@@ -871,15 +882,21 @@ export function drawSubtitleScroll(ctx, lines, t, band, o) {
     if (t < line.at - S.lead) continue;                // never shown before it starts to rise
     const y = cy + (i - p) * o.lineH;
     if (y < band.y - o.lineH || y > band.y + band.h + o.lineH) continue;
-    const m = matte(y);
+    /* THE LINE BEING SAID IS ALWAYS AT FULL STRENGTH (request 640: "the first video subtitle text has
+     * transparency"). The intro sits its current line low in its band, inside the matte's fade ramp, so the
+     * spoken words were drawn part-transparent. The matte now only dims lines on their way in or out. */
+    let m = matte(y);
+    if (i === now) m = Math.max(m, 1 - Math.min(1, Math.abs(p - now) * 2));
     if (m <= 0) continue;
     ctx.font = o.font;
-    let widths = line.words.map(([w]) => ctx.measureText(w).width);
+    // ALL CAPITALS (request 640: "make all subtitles capital letters")
+    const caps = line.words.map(([w, at]) => [String(w).toUpperCase(), at]);
+    let widths = caps.map(([w]) => ctx.measureText(w).width);
     let sp = space, total = widths.reduce((a, b) => a + b, 0) + sp * (widths.length - 1);
     if (total > fitW) {
       const k = fitW / total;
       ctx.font = fontAt(k);
-      widths = line.words.map(([w]) => ctx.measureText(w).width);
+      widths = caps.map(([w]) => ctx.measureText(w).width);
       sp = ctx.measureText(' ').width;
       total = widths.reduce((a, b) => a + b, 0) + sp * (widths.length - 1);
     }
@@ -888,14 +905,19 @@ export function drawSubtitleScroll(ctx, lines, t, band, o) {
     /* NO GHOST TEXT (request 597, "remove the faint dark subtitle placeholders"): with `ghost: false` a
      * word appears only once it is spoken, and a line already said is not left behind in grey. */
     if (o.ghost === false && said) continue;
-    line.words.forEach(([w, at], k) => {
+    caps.forEach(([w, at], k) => {
       const lit = said || t >= at;
       if (o.ghost === false && !lit) { x += widths[k] + sp; return; }
       ctx.globalAlpha = alpha * m * (said ? 0.5 : lit ? 1 : 0.32);
       if (outline) {
+        // over a moving video: a solid dark edge plus a soft shadow, so the white reads on any frame
         ctx.lineWidth = outline;
-        ctx.strokeStyle = 'rgba(0,0,0,0.88)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+        ctx.shadowColor = 'rgba(0,0,0,0.85)';
+        ctx.shadowBlur = Math.max(4, fh * 0.3);
         ctx.strokeText(w, x, y);
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'rgba(0,0,0,0)';
       }
       ctx.fillStyle = lit && !said ? '#ffffff' : '#cfd8ea';
       ctx.fillText(w, x, y);
@@ -3855,6 +3877,22 @@ export function createFrontEnd({
   /* TEXT NEVER LEAVES ITS BOX (request 570). Sets the font as setFont/setDisplay would, then
    * steps the size down half a point at a time until the text is no wider than maxW.
    * Returns the size it settled on. Same faces, same tracking: only the size gives. */
+  /* SHORTEN, DON'T SHRINK (request 640): `text` cut to fit `maxW` in the current font and tracking, with an
+   * ellipsis. An email keeps its @domain and loses the end of its name ("rr-test-a-1794…@example.com"). */
+  function ellipsize(text, maxW) {
+    text = String(text ?? '');
+    if (trackedWidth(ctx, text) <= maxW) return text;
+    const at = text.lastIndexOf('@');
+    if (at > 1) {
+      const dom = text.slice(at);
+      let name = text.slice(0, at);
+      while (name.length > 1 && trackedWidth(ctx, `${name}…${dom}`) > maxW) name = name.slice(0, -1);
+      if (trackedWidth(ctx, `${name}…${dom}`) <= maxW) return `${name}…${dom}`;
+    }
+    let t = text;
+    while (t.length > 1 && trackedWidth(ctx, `${t}…`) > maxW) t = t.slice(0, -1);
+    return `${t.trimEnd()}…`;
+  }
   function fitFont(weight, size, spacing, text, maxW, display = false) {
     const set = display ? setDisplay : setFont;
     let k = size;
@@ -7315,7 +7353,7 @@ export function createFrontEnd({
       icon(it.glyph, tx + t / 2, ty + t / 2, t * 0.54, f > 0.35 ? C.orangeSoft : 'rgba(255,255,255,0.8)', soon ? 0.55 : 1, 1.6);
     }
     // the label: Inter Bold capitals, tracked; dim white, brighter with focus
-    const lx = tx + t + 16, room = x + w - lx - (soon ? 64 : 18);
+    const lx = tx + t + 16, room = x + w - lx - (soon ? 88 : 18);   // request 640: clear of SOON at the heavier cut
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     fitFont(700, h >= 52 ? 15.5 : 14, 2.4, it.label, room);
@@ -7366,12 +7404,13 @@ export function createFrontEnd({
     const lx = ax + 26, room = x + w - xw - lx - 8;
     const how = acc.email || acc.phone || (acc.provider === 'google' ? 'Google account' : acc.provider === 'facebook' ? 'Facebook account' : 'Email account');
     ctx.textAlign = 'left';
-    fitFont(700, 13.5, 0.2, who, room);
+    // request 640: a fixed size, shortened with '…' to its room (two cards side by side spilled their emails)
+    setFont(700, 13.5, 0.2);
     ctx.fillStyle = `rgba(255,255,255,${(0.76 + 0.22 * f).toFixed(3)})`;
-    ctx.fillText(who, lx, ay - 7.5);
-    fitFont(400, 10.5, 0.1, how, room);
+    ctx.fillText(ellipsize(who, room), lx, ay - 7.5);
+    setFont(400, 10.5, 0.1);
     ctx.fillStyle = 'rgba(255,255,255,0.46)';
-    ctx.fillText(how, lx, ay + 9.5);
+    ctx.fillText(ellipsize(how, room), lx, ay + 9.5);
     // FORGET: a hairline and a cross
     const fx0 = x + w - xw;
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
@@ -7471,11 +7510,11 @@ export function createFrontEnd({
         setFont(700, 8.5, 2.6);
         ctx.fillStyle = 'rgba(54,214,126,0.85)';
         ctx.fillText('SIGNED IN', tx, py + 18.5);
-        fitFont(800, 18, 0.1, who, S.colW - 86 - 20);
-        sheenText(ctx, who, tx, py + 41, 'rgba(255,255,255,0.94)', sheenAt(phaseT, 0.5, 4.8, 0.8));
-        fitFont(400, 11.5, 0.1, sub, S.colW - 86 - 20);
+        setFont(800, 18, 0.1);
+        sheenText(ctx, ellipsize(who, S.colW - 86 - 20), tx, py + 41, 'rgba(255,255,255,0.94)', sheenAt(phaseT, 0.5, 4.8, 0.8));
+        setFont(400, 11.5, 0.1);
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        ctx.fillText(sub, tx, py + 61);
+        ctx.fillText(ellipsize(sub, S.colW - 86 - 20), tx, py + 61);
         ctx.textBaseline = 'alphabetic';
       });
       let y = py + ph + 14, n = 0;

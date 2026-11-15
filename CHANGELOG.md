@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-15 — Speed pays, per-letter hit counter, heavier caps, caps subtitles (v157, request 640)
+
+- SCORE: the time part is now 40 points per second under the 600 s par (was 5). On the real Level 1 bests (241-497 s) the old rate put ~1,150 points between a 4 and an 8 minute clear, less than a slow run's extra hits, so grinding beat speed. Leaderboard check updated in the same step (supabase/migrations/20261115120000_score_speed.sql, applied; it also accepts the old rate from a page loaded before the update). Ranks unchanged.
+- HIT COUNTER: from 30 hits every letter wobbles about its own centre, harder and faster with the real hit rate (last 1.6 s) and the chain length, jolted by each hit. The break-up follows the reference clip (HitsOutro.mp4 at 24 fps): a 0.22 s hold, then the letters come loose right to left 0.085 s apart, each spinning, falling under gravity, drifting and shrinking with a motion trail, gone ~0.8 s after letting go. Colour ramp/heat unchanged.
+- TYPE: every Inter weight from 500 up is drawn one cut heavier (FONT Bold, FONT_THIN Regular); SOON's room on sign-in rows widened for it. The '|' separator bar is white (fillSplit). The summary's grade letter has no tile behind it.
+- SUBTITLES: all capitals; the line being said is always full strength (the intro's current line sat inside the matte's fade ramp and drew part-transparent); over video a stronger dark edge plus a soft shadow.
+- SIGN IN: account names/emails are set at a fixed size and shortened with '…' (emails keep their @domain when it fits), so two cards side by side never spill.
+Checks: req640/hits.js (loose frames 35-39 hits, outro frames 0.05-1.6 s vs the reference sheet), req639/sweep.js re-run (all screens), req640/twocards.js 2/2 on the real project (two long-email cards fit), intro subtitle frames.
+
 ## 2026-11-15 — Inter everywhere, sign-in motion + sheen, player name, landscape from the first frame (v156, request 639)
 
 - Typeface: Inter 4.1 (SIL OFL, frontend/fonts/inter) replaces Uni Sans in every canvas and DOM text. Each weight is its own canvas family (Light 300 … ExtraBold 800, Inter Display Black for headlines/hit counter, Display Black Italic for DEFEATED); pixelFont maps the weight a call site asks for. INTER_FIT (body 0.882, bold 1.15, measured in _chromakey/req639/metrics.js) keeps every UPPERCASE line as wide as under Uni Sans, so nothing overflows. Real lowercase: subtitles, notes, identity lines now read in sentence case. Uni Sans Heavy stays only for the KenCrafts splash wordmark (a logo). Credits on privacy.html.

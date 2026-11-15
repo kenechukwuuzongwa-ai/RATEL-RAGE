@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v156';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v157';
 import { createAftermath } from './aftermath.js?v=ratelrage-v150';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -16441,7 +16441,12 @@ const MEDPACK = {
 };
 const SCORE = {
   perKo: 150, perComboHit: 50, perTopHitDmg: 5,
-  parTime: 600, perSecUnderPar: 5, health: 2000,
+  /* SPEED PAYS (request 640, for the challenge modes): 40 points per second under the 600 s par (was 5).
+   * On the real Level 1 bests (241-497 s) the old rate put only ~1,150 points between a 4 and an 8 minute
+   * clear, less than the extra hits a slow run lands, so grinding beat speed. Now a 265 s clear is worth
+   * ~13,400 time points and a 496 s one ~4,200. supabase/migrations/20261115120000_score_speed.sql checks
+   * the same rate on the leaderboard. */
+  parTime: 600, perSecUnderPar: 40, health: 2000,
   ranks: [['S', 32000], ['A', 25000], ['B', 18000], ['C', 11000], ['D', 0]],
 };
 
@@ -24897,41 +24902,129 @@ function hitStyleArrow(x, y, h) {
   ctx.fillStyle = hitInkFill(y - h / 2, y + h / 2); ctx.fill();
   ctx.restore();
 }
+/* PER-LETTER HIT COUNTER (request 640).
+ * THE OUTRO, from the reference clip (HitsOutro.mp4, studied at 24 fps): the count holds still for a beat,
+ * then the letters come loose from the RIGHT, one after another (~0.085 s apart: T first, the number last).
+ * Each spins about its OWN centre, drops under gravity with a little sideways drift and shrinks as if falling
+ * away into the screen (to about a third), smeared by a faint motion trail, and is gone ~0.8 s after it lets go.
+ * THE LOOSENING, from 30 hits: every letter wobbles about its own centre, harder and faster the faster the
+ * blows are actually landing (hits per second over the last 1.6 s) and the longer the chain, jolted by each
+ * hit, so the counter looks like it is working itself loose and could fall at any moment.
+ * The yellow-to-red ramp, the white-hot crowns from 10 and the shimmer from 20 are unchanged. */
+const HIT_OUTRO = { hold: 0.22, stagger: 0.085, fall: 0.8, g: 1500, spinMin: 3.2, spinMax: 7.5, drift: 70, shrink: 0.68 };
+const HIT_WIGGLE = { from: 30, rateWin: 1.6, ampBase: 0.03, ampPerHit: 0.004, ampPerRate: 0.035, ampMax: 0.34,
+  hzBase: 1.6, hzPerRate: 0.9, hzMax: 10, droop: 9 };
+const hitRnd = (i, salt) => { const v = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453; return v - Math.floor(v); };
+const hitOutroDur = (glyphs) => HIT_OUTRO.hold + HIT_OUTRO.stagger * Math.max(0, glyphs - 1) + HIT_OUTRO.fall;
+// one letter in the counter's ink, centred on (0, 0); `asc` is the whole string's cap height, so every
+// letter shares one baseline and one ramp
+function hitGlyph(ch, px, asc, hot, hotter) {
+  ctx.font = pixelFont(900, px);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const k = px / 74, y = asc / 2;
+  ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
+  ctx.fillStyle = HIT_INK; ctx.fillText(ch, 5 * k, y + 5 * k);
+  ctx.strokeStyle = HIT_INK; ctx.lineWidth = Math.max(2, 7 * k); ctx.strokeText(ch, 0, y);
+  ctx.fillStyle = hitInkFill(y - asc, y + 2 * k, hot);
+  ctx.fillText(ch, 0, y);
+  if (hotter) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha *= 0.28 + 0.18 * Math.sin(mobClock * 31);
+    ctx.fillStyle = '#ffb040';
+    ctx.fillText(ch, 0, y - 3 - 2 * Math.sin(mobClock * 17));
+    ctx.restore();
+  }
+}
 function drawHitCounter() {
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
   const dt = Math.min(0.1, Math.max(0, mobClock - (hitCtr.t || mobClock))); hitCtr.t = mobClock;
   const n = run.combo;
+  // the real hit rate: one timestamp per blow landed, kept for the last HIT_WIGGLE.rateWin seconds
+  if (!hitCtr.times) { hitCtr.times = []; hitCtr.seenN = 0; }
+  if (n > hitCtr.seenN) for (let k = hitCtr.seenN; k < n; k++) hitCtr.times.push(mobClock);
+  hitCtr.seenN = n;
+  while (hitCtr.times.length && mobClock - hitCtr.times[0] > HIT_WIGGLE.rateWin) hitCtr.times.shift();
+  const rate = hitCtr.times.length / HIT_WIGGLE.rateWin;
   if (n >= 2) { hitCtr.last = n; hitCtr.breakT = 0; }
-  else if (hitCtr.last >= 2 && hitCtr.breakT === 0) hitCtr.breakT = 0.0001;
+  else if (hitCtr.last >= 2 && hitCtr.breakT === 0) { hitCtr.breakT = 0.0001; hitCtr.salt = (hitCtr.salt || 0) + 1; }
   const breaking = n < 2 && hitCtr.breakT > 0;
+  const lastText = `${hitCtr.last} HIT`;
+  const glyphCount = lastText.replace(/ /g, '').length;
   if (breaking) hitCtr.breakT += dt;
-  if (breaking && hitCtr.breakT > 0.45) { hitCtr.last = 0; hitCtr.breakT = 0; }
+  if (breaking && hitCtr.breakT > hitOutroDur(glyphCount)) { hitCtr.last = 0; hitCtr.breakT = 0; }
   const show = n >= 2 ? n : breaking ? hitCtr.last : 0;
   const rx = VIEW_W - PHUD.side - (isTouchUI() ? PHUD.touchInset : 4);
   const by = Math.max(hudRightBottom + 64, isTouchUI() ? 268 : 0);
   if (show) {
     const text = `${show} HIT`;
-    const p = breaking ? Math.min(1, hitCtr.breakT / 0.45) : 0;
     const pop = breaking ? 1 : 1 + 0.45 * Math.pow(run.popT / 0.2, 2);
     ctx.save();
     ctx.font = pixelFont(900, 74);
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
     const tw = ctx.measureText(text).width;
-    ctx.translate(rx - tw / 2, by - 22 + p * p * 120);
-    if (breaking) { ctx.rotate(p * 0.5); ctx.globalAlpha = 1 - p; }
+    ctx.translate(rx - tw / 2, by - 22);
     ctx.scale(pop, pop);
-    if (run.popT > 0.12) ctx.translate((Math.random() - 0.5) * 4, 0);
+    if (run.popT > 0.12 && !breaking) ctx.translate((Math.random() - 0.5) * 4, 0);
     const x = tw / 2, y = 22;
-    // shadow, outline and the yellow-to-red fill (hotter as the chain grows) — the shared recipe
     const hot = show >= 10, hotter = show >= 20;
-    hitStyleText(text, x, y, 74, { align: 'right', hot });
-    ctx.font = pixelFont(900, 74);
-    if (hotter) {                                    // the heat shimmer
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha *= 0.28 + 0.18 * Math.sin(mobClock * 31);
-      ctx.fillStyle = '#ffb040';
-      ctx.fillText(text, x, y - 3 - 2 * Math.sin(mobClock * 17));
+    const loose = !breaking && show >= HIT_WIGGLE.from;
+    if (!breaking && !loose) {
+      // a tight counter: the whole word at once (exact kerning) — the shared recipe
+      hitStyleText(text, x, y, 74, { align: 'right', hot });
+      ctx.font = pixelFont(900, 74);
+      if (hotter) {                                    // the heat shimmer
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha *= 0.28 + 0.18 * Math.sin(mobClock * 31);
+        ctx.fillStyle = '#ffb040';
+        ctx.fillText(text, x, y - 3 - 2 * Math.sin(mobClock * 17));
+      }
+    } else {
+      // letter by letter: each one's centre from the measured run of the string
+      const asc = ctx.measureText(text).actualBoundingBoxAscent || 74 * 0.7;
+      const cy = y - asc / 2;
+      const W = HIT_WIGGLE, O = HIT_OUTRO;
+      const amp = loose ? Math.min(W.ampMax, W.ampBase + W.ampPerHit * (show - W.from) + W.ampPerRate * rate) * (1 + 0.6 * (run.popT / 0.2)) : 0;
+      const hz = Math.min(W.hzMax, W.hzBase + W.hzPerRate * rate);
+      const glyphs = [];
+      for (let i = 0; i < text.length; i++) if (text[i] !== ' ') glyphs.push(i);
+      glyphs.forEach((i, gi) => {
+        const ch = text[i];
+        const left = -tw / 2 + ctx.measureText(text.slice(0, i)).width;
+        const gw = ctx.measureText(ch).width;
+        const gx = left + gw / 2;
+        const draw = (dx, dy, rot, sc, a) => {
+          if (a <= 0.003 || sc <= 0.01) return;
+          ctx.save();
+          ctx.globalAlpha *= a;
+          ctx.translate(gx + dx, cy + dy);
+          ctx.rotate(rot);
+          ctx.scale(sc, sc);
+          hitGlyph(ch, 74, asc, hot, hotter);
+          ctx.restore();
+        };
+        if (loose) {
+          const ph = gi * 1.7 + hitRnd(gi, 3) * 6.28;
+          const w = Math.sin(mobClock * hz * Math.PI * 2 + ph);
+          draw(0, amp * W.droop * (0.5 + 0.5 * Math.abs(w)), amp * w, 1, 1);
+          return;
+        }
+        // breaking: the reference's crumble, right to left
+        const j = glyphs.length - 1 - gi;
+        const s = hitCtr.salt || 0;
+        const spin = (O.spinMin + (O.spinMax - O.spinMin) * hitRnd(gi, s)) * (hitRnd(gi, s + 7) > 0.5 ? 1 : -1);
+        const drift = O.drift * (hitRnd(gi, s + 13) * 2 - 1);
+        const state = (tl) => {
+          if (tl <= 0) return [0, 0, 0, 1, 1];
+          const u = Math.min(1, tl / O.fall);
+          return [drift * tl, 0.5 * O.g * tl * tl, spin * (tl + 0.8 * tl * tl), 1 - O.shrink * u * u * (3 - 2 * u), 1 - Math.max(0, (u - 0.6) / 0.4)];
+        };
+        const tl = hitCtr.breakT - O.hold - O.stagger * j;
+        if (tl > 0.02) draw(...state(tl - 1 / 30).slice(0, 4), state(tl)[4] * 0.32);   // the motion trail
+        draw(...state(tl));
+      });
     }
     ctx.restore();
     if (!breaking) {
@@ -25414,12 +25507,8 @@ function drawOutro() {
     const shown = Math.round(F.total * ease(Math.max(0, Math.min(1, (summaryT - SCORE_COUNT.at) / SCORE_COUNT.dur))));
     // the rank in a square tile, the score beside it
     const tile = 52, tx = rx - tile, ty = card.y + 16;
-    // the grade and the score in yellow (request 619: 'so many green')
-    ctx.fillStyle = 'rgba(233,182,84,0.10)';
-    ctx.fillRect(tx, ty, tile, tile);
-    ctx.strokeStyle = 'rgba(233,182,84,0.55)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(tx + 0.5, ty + 0.5, tile - 1, tile - 1);
+    // the grade and the score in yellow (request 619: 'so many green'). NO TILE BEHIND THE LETTER (request 640:
+    // "remove the backdrop in the score grade alphabet label"): the letter stands on the card by itself.
     ctx.textAlign = 'center';
     ui.setDisplay(900, 46, 0);
     ctx.fillStyle = C.gold;
@@ -25434,11 +25523,6 @@ function drawOutro() {
       ctx.translate(-(tx + tile / 2), -(ty + tile / 2));
       drawSheenText(F.rank, tx + tile / 2, ty + tile / 2 + 15, C.gold, stampAt + 0.3);   // sheen once it has landed (request 625)
       ctx.restore();
-      const fl = 1 - span(stampAt + 0.2, 0.4);                // the tile flashes as it lands
-      if (st >= 1 && fl > 0) {
-        ctx.fillStyle = `rgba(233,182,84,${(0.32 * fl).toFixed(3)})`;
-        ctx.fillRect(tx, ty, tile, tile);
-      }
     }
     ctx.textAlign = 'right';
     ui.setFont(700, 9, 2.4);
