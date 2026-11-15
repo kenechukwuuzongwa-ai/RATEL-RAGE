@@ -1,0 +1,20 @@
+# rr-push: RATEL RAGE return reminders (request 644). Deploy from this folder: npx wrangler deploy
+# Secret (never in the repo): VAPID_PRIVATE_JWK  ->  npx wrangler secret put VAPID_PRIVATE_JWK
+name = "rr-push"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rr-push"
+database_id = "a5047463-a580-46cb-bdb7-8666021cdb3e"
+
+# every hour on the 7th minute: remind players who have been away (see worker.js for the rules)
+[triggers]
+crons = ["7 * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://ratelrage.com,https://www.ratelrage.com,https://ratel-rage.pages.dev,https://*.ratel-rage.pages.dev,https://localhost"
+VAPID_PUBLIC = "BG4RUld2t-Cxm8B2qxZLDtskQGCHvHEUt5TEVI4H9J6LIbN8GHsxqjHl-UQ8hPwgWIJk2CjEgNfraai9BYOMqWo"
+VAPID_SUBJECT = "https://ratelrage.com"

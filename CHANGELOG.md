@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-15 — Return reminders (push notifications) (v160, request 644)
+
+- rr-push (push/: Cloudflare Worker + D1 "rr-push", hourly cron): stores browsers that said yes and nudges a player who has been away 10+ hours, at most one per 20 hours, only 10:00-20:59 in their own time, stopping after 4 unanswered until they play again. Pushes carry no data (VAPID-signed wake-ups, private key only as the Worker secret VAPID_PRIVATE_JWK).
+- The site's service worker (deploy/media-sw.js) shows a rotating line (Agberos taxing traders on Balogun Street, the motor park paying "levy", MC Olodo's boys, a cold combo record...) with the ratel logo on a transparent ground (frontend/icons/notify-192.png) and a white Inter R status-bar badge (badge-96.png); a tap opens or focuses the game; a rotated subscription re-registers itself.
+- src/reminders.js: asks once on the main menu after the first level played (REMIND ME / NOT NOW, again after 3 days at the earliest); every launch resets the clock (/seen); OPTIONS > GAMEPLAY > RETURN REMINDERS turns it on/off (BLOCKED when the browser refuses). Web build only; iPhone once on the home screen.
+- privacy.html: what reminders store and how to turn them off.
+
 ## 2026-11-15 — Installable web app: fullscreen landscape from the home-screen icon, no tap (v159, request 643)
 
 - A web page cannot go fullscreen without a tap (browser rule), but an installed web app can: manifest.webmanifest (display fullscreen, orientation landscape, dark background, icons from the title lockup in frontend/icons: 192, 512, maskable 512) + the existing media-sw.js worker make the site installable. Launched from its icon it opens fullscreen and sideways with no tap.

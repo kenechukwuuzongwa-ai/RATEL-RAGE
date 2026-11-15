@@ -3363,6 +3363,8 @@ export function createFrontEnd({
       { label: 'DAMAGE INDICATORS', key: 'damageIndicators', type: 'toggle' },
       { label: 'COMBO ASSIST', key: 'comboAssist', type: 'toggle' },
       { label: 'AUTOPLAY VIDEO ADS', key: 'autoplayAds', type: 'toggle' },
+      // request 644: the come-back reminders (src/reminders.js), only where the browser can receive them
+      ...(window.RRReminders?.supported ? [{ label: 'RETURN REMINDERS', value: reminderValue, action: toggleReminders }] : []),
     ];
     if (page === 'ACCESSIBILITY') return [
       { label: 'SUBTITLES', key: 'subtitles', type: 'toggle' },
@@ -3377,6 +3379,23 @@ export function createFrontEnd({
   function cycleDifficulty(dir = 1) {
     const list = ['EASY', 'NORMAL', 'HARD', 'ARCADE'];
     difficulty = list[(list.indexOf(difficulty) + dir + list.length) % list.length];
+  }
+
+  /* RETURN REMINDERS (request 644): ON / OFF, or BLOCKED when the browser's own setting refuses them. */
+  function reminderValue() {
+    const R = window.RRReminders;
+    if (!R) return 'OFF';
+    if (R.busy) return '…';
+    if (R.permission === 'denied') return 'BLOCKED';
+    return R.on ? 'ON' : 'OFF';
+  }
+  function toggleReminders() {
+    const R = window.RRReminders;
+    if (!R) return;
+    playCue('toggle');
+    if (R.on) { R.off().then(() => showMessage('REMINDERS OFF')); return; }
+    if (R.permission === 'denied') { showMessage('ALLOW NOTIFICATIONS FOR RATELRAGE.COM IN YOUR BROWSER'); messageT = 4; return; }
+    R.ask().then((ok) => showMessage(ok ? 'REMINDERS ON' : 'REMINDERS STAY OFF'));
   }
 
   function toggleFullscreen() {

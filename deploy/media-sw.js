@@ -125,3 +125,58 @@ async function slice(hit, r) {
   h.set('Accept-Ranges', 'bytes');
   return new Response(blob.slice(start, end + 1, h.get('content-type') || ''), { status: 206, statusText: 'Partial Content', headers: h });
 }
+
+/* ---- RETURN REMINDERS (request 644) ---------------------------------------------------------------------
+ * rr-push (push/worker.js) sends an EMPTY, signed push to a player who has been away (10+ hours, at most one
+ * per 20 hours, in their daytime). This worker turns it into the notification: one of the lines below, the
+ * ratel logo on a transparent ground as the icon, a white R as Android's status-bar badge. Tapping it opens
+ * the game (or brings an open one forward). Lines rotate so the same one never shows twice running. */
+const PUSH_API = 'https://rr-push.kenechukwuuzongwa.workers.dev';
+const VAPID_PUBLIC = 'BG4RUld2t-Cxm8B2qxZLDtskQGCHvHEUt5TEVI4H9J6LIbN8GHsxqjHl-UQ8hPwgWIJk2CjEgNfraai9BYOMqWo';
+const RETURN_LINES = [
+  ['AGBEROS ON BALOGUN STREET', 'They are taxing the traders again. No receipt, no mercy. Darki, the streets need you.'],
+  ['THE MOTOR PARK IS PAYING', 'MC Olodo\'s boys are collecting "levy" from every bus. Are you going to let them?'],
+  ['A TRADER JUST PAID DOUBLE', 'The street tax went up while you were away. Come and cancel it.'],
+  ['LAGOS NO BE FOR THE WEAK', 'The Agberos think you have gone soft. Prove them wrong.'],
+  ['YOUR COMBO IS GETTING COLD', 'Your best run is waiting to be beaten. Faster this time.'],
+  ['THE CABAL IS WATCHING', 'Evidence is piling up and the bosses are moving. Get back on the case.'],
+  ['MAMA PUT GOT SHAKEN DOWN', 'They took her day\'s sales "for protection". Ratel, it is time.'],
+];
+self.addEventListener('push', (e) => {
+  e.waitUntil((async () => {
+    let i = 0;
+    try {
+      const c = await caches.open('ror-push-v1');
+      const r = await c.match('/__line');
+      i = ((r ? +(await r.text()) : Math.floor(Math.random() * RETURN_LINES.length)) + 1) % RETURN_LINES.length;
+      await c.put('/__line', new Response(String(i)));
+    } catch (err) { i = Math.floor(Math.random() * RETURN_LINES.length); }
+    const [title, body] = RETURN_LINES[i];
+    await self.registration.showNotification(title, {
+      body,
+      icon: 'frontend/icons/notify-192.png',
+      badge: 'frontend/icons/badge-96.png',
+      tag: 'rr-return', renotify: true,
+      data: { url: './?from=reminder' },
+    });
+  })());
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const url = new URL((e.notification.data && e.notification.data.url) || './', self.registration.scope).href;
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of open) if (new URL(c.url).origin === self.location.origin && 'focus' in c) return c.focus();
+    return self.clients.openWindow(url);
+  })());
+});
+// a push service may rotate the subscription: take the new one and tell rr-push, so reminders keep arriving
+self.addEventListener('pushsubscriptionchange', (e) => {
+  e.waitUntil((async () => {
+    const old = e.oldSubscription && e.oldSubscription.endpoint;
+    const sub = e.newSubscription || await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: VAPID_PUBLIC });
+    const post = (p, endpoint, extra) => fetch(PUSH_API + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ endpoint }, extra || {})) }).catch(() => {});
+    if (old) await post('/unsub', old);
+    await post('/sub', sub.endpoint, { tz: -new Date().getTimezoneOffset() });
+  })());
+});
