@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-15 — Reminder card waits for its logo (v161, request 645)
+
+- src/reminders.js: the REMIND ME card is built hidden as soon as the menu opens and slides in only once the ratel logo has loaded, so it never shows an empty logo slot. Verified end to end on ratelrage.com: a real push through Google's push service reached the game's service worker in about 2 s and showed the reminder.
+
 ## 2026-11-15 — Return reminders (push notifications) (v160, request 644)
 
 - rr-push (push/: Cloudflare Worker + D1 "rr-push", hourly cron): stores browsers that said yes and nudges a player who has been away 10+ hours, at most one per 20 hours, only 10:00-20:59 in their own time, stopping after 4 unanswered until they play again. Pushes carry no data (VAPID-signed wake-ups, private key only as the Worker secret VAPID_PRIVATE_JWK).

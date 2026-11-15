@@ -138,12 +138,15 @@
     });
     card.querySelector('.yes').addEventListener('click', function () { hideCard(); ask(); });
     card.querySelector('.no').addEventListener('click', function () { lset(ASKED, Date.now()); hideCard(); });
+    card.style.display = 'none';
     document.body.appendChild(card);
   }
   var shown = false;
   function showCard() {
     if (shown) return;
     if (!card) buildCard();
+    // never slide in with an empty logo slot: wait for the image (watch() retries every 500 ms; error counts too)
+    if (!card.querySelector('img').complete) return;
     shown = true;
     card.style.display = 'grid';
     requestAnimationFrame(function () { card.classList.add('in'); });
@@ -160,7 +163,10 @@
     var onMenu = !!(M && R && R.frontActive && M.phase === 'menu');
     onMenuSince = onMenu ? (onMenuSince || Date.now()) : 0;
     // a beat after landing on the menu, not over the arrival
-    if (onMenu && !shown && Date.now() - onMenuSince > 1500 && shouldOffer()) showCard();
+    if (onMenu && !shown && shouldOffer()) {
+      if (!card) buildCard(); // hidden; starts loading the logo during the beat below
+      if (Date.now() - onMenuSince > 1500) showCard();
+    }
     else if (!onMenu && shown) hideCard();
   }
 
