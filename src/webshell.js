@@ -17,6 +17,30 @@
     var C = window.Capacitor;
     W.native = !!(C && (typeof C.isNativePlatform === 'function' ? C.isNativePlatform() : true));
   } catch (e) { W.native = false; }
+
+  /* THE VIEW FOLLOWS THE VISIBLE WINDOW (request 641: "starts rotated but not scaled to fit the screen until
+   * touched"). On Android both renderers widen the 1280x720 view to the device's shape. That shape used to
+   * be the SCREEN's, fixed at load, but until the first tap goes fullscreen the browser's own bars take part
+   * of the screen, so the picture was letterboxed inside the window. Now it is the WINDOW's long:short ratio
+   * (the same on a turned page), re-read on every resize: the game fills the window from the first frame and
+   * simply widens when fullscreen arrives. One rule for game.js (VIEW_W), frontend.js (W) and the shell CSS
+   * (--rr-vw, touch.js). Not while a form field has focus: the keyboard is not a new screen shape. */
+  var lastVW = 1280;
+  W.viewW = function () {
+    if (!/Android/.test(navigator.userAgent)) return 1280;
+    var a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) return lastVW;
+    var iw = window.innerWidth || 0, ih = window.innerHeight || 0;
+    if (!iw || !ih) { iw = (window.screen && screen.width) || 0; ih = (window.screen && screen.height) || 0; }
+    var long = Math.max(iw, ih), short = Math.min(iw, ih);
+    var r = short > 0 ? long / short : 16 / 9;
+    lastVW = r > 16 / 9 + 0.01 ? Math.min(2200, Math.round((720 * r) / 2) * 2) : 1280;
+    try { document.documentElement.style.setProperty('--rr-vw', String(lastVW)); } catch (e) {}
+    return lastVW;
+  };
+  W.viewW();
+  window.addEventListener('resize', function () { W.viewW(); });
+
   if (W.native) return;
 
   var editable = function (t) {

@@ -50,12 +50,12 @@ const H = 720;
  * fill the screen instead of letterboxing. Centred layouts stay centred;
  * edge-anchored panels move to the true screen edges. Desktop keeps 1280. */
 let W = 1280;
+/* Request 641: the shape of the VISIBLE WINDOW (webshell.js RR_WEB.viewW), re-read on resize, so the view
+ * fills the window before the first tap and widens when fullscreen arrives. Every W use is per frame. */
+const viewWNow = () => { try { const f = window.RR_WEB && window.RR_WEB.viewW; return f ? f() : 1280; } catch { return 1280; } };
 if (/Android/.test(navigator.userAgent)) {
-  const sw = Math.max(window.screen.width || 0, window.screen.height || 0);
-  const sh = Math.min(window.screen.width || 0, window.screen.height || 0);
-  if (sw && sh && sw / sh > 16 / 9 + 0.01) {
-    W = Math.min(2200, Math.round((H * (sw / sh)) / 2) * 2);
-  }
+  W = viewWNow();
+  addEventListener('resize', () => { const w = viewWNow(); if (w) W = w; });
 }
 
 /* ---------------------------------------------------------------- palette */
@@ -6072,17 +6072,16 @@ export function createFrontEnd({
       'Faster. Less forgiving.',
       'Classic arcade rules.',
     ];
-    glass(506, 186, 420, 232, 10);
+    /* request 641: no second "NORMAL" here: the highlighted row beside it already says it. The number and
+     * what the tier means; the card is cut to fit them. */
+    glass(506, 186, 420, 150, 10);
     ctx.textAlign = 'left';
     setDisplay(700, 52, 2);
     ctx.fillStyle = C.orange;                       // green (request 615)
     ctx.fillText(['01', '02', '03', '04'][selection], 538, 258);
-    setDisplay(700, 28, 1.6);
-    ctx.fillStyle = C.paper;
-    ctx.fillText(['EASY', 'NORMAL', 'HARD', 'ARCADE'][selection], 538, 302);
     setFont(500, 13.5, 0.2);
     ctx.fillStyle = C.muted;
-    ctx.fillText(notes[selection], 538, 334);
+    ctx.fillText(notes[selection], 538, 300);
     endScreen();
     drawControlBar(MENU_HINTS);
     messagePlate();
@@ -6334,12 +6333,12 @@ export function createFrontEnd({
     if (!optionPage) {
       screenHead('SYSTEM', 'OPTIONS');
       buttonList(currentItems(), 58, 180, 400, 44, 8, 'opt');
-      glass(506, 180, 480, 300, 10);
+      /* request 641: no second "VIDEO" title here (the highlighted row says it); only what the page holds,
+       * on a card cut to that one line */
+      glass(506, 180, 480, 76, 10);
       const item = currentItems()[selection].label;
       ctx.textAlign = 'left';
-      setDisplay(700, 20, 2.6);
-      ctx.fillStyle = C.orange;
-      ctx.fillText(item, 538, 224);
+      ctx.textBaseline = 'middle';
       setFont(500, 13, 0.2);
       ctx.fillStyle = C.text;
       const copy = {
@@ -6351,7 +6350,8 @@ export function createFrontEnd({
         LANGUAGE: 'Interface language.',
         'RESET SETTINGS': 'Restore defaults.',
       };
-      ctx.fillText(copy[item], 538, 256);
+      ctx.fillText(copy[item], 538, 218);
+      ctx.textBaseline = 'alphabetic';
     } else {
       screenHead('OPTIONS', optionPage, 'Saved on this device.');
       optionRows = optionSpec(optionPage);

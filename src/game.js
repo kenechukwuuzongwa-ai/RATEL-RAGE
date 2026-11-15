@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v157';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v158';
 import { createAftermath } from './aftermath.js?v=ratelrage-v150';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -107,19 +107,13 @@ const VIEW_H = 720;
  * the frame inside it, so the side areas show real street, never a stretch or
  * a repeat). Height stays 720: the vertical framing, the zoom and every HUD
  * metric are authored against it. Desktop keeps 1280x720. */
+/* Request 641: the VISIBLE WINDOW's shape (webshell.js RR_WEB.viewW, shared with frontend.js and the shell
+ * CSS), re-read on resize: a browser that has not gone fullscreen yet still gets a picture that fills its
+ * window, and fullscreen simply widens it. VIEW_W is read per frame everywhere (camera clamps, HUD). */
 if (IS_ANDROID) {
-  let sw = Math.max(window.screen.width || 0, window.screen.height || 0);
-  let sh = Math.min(window.screen.width || 0, window.screen.height || 0);
-  /* Some WebViews report a zeroed screen box before first layout; the window
-   * itself is the same full-bleed surface in this app, so fall back to it. */
-  if (!sw || !sh) {
-    sw = Math.max(window.innerWidth || 0, window.innerHeight || 0);
-    sh = Math.min(window.innerWidth || 0, window.innerHeight || 0);
-  }
-  const ratio = sh > 0 ? sw / sh : 16 / 9;
-  if (ratio > 16 / 9 + 0.01) {
-    VIEW_W = Math.min(2200, Math.round((VIEW_H * ratio) / 2) * 2);
-  }
+  const viewWNow = () => { try { const f = window.RR_WEB && window.RR_WEB.viewW; return f ? f() : 1280; } catch { return 1280; } };
+  VIEW_W = viewWNow();
+  addEventListener('resize', () => { const w = viewWNow(); if (w) VIEW_W = w; });
 }
 /* The view's size in WORLD pixels under the scene zoom: the camera clamps,
  * the framing bias and every "is it on screen" bound are world quantities. */
@@ -25740,9 +25734,7 @@ function drawPauseOverlay() {
   ctx.fillText('PAUSED', 56, 104);
   ctx.fillStyle = C.rule;                            // red underline (request 626)
   ctx.fillRect(58, 118, 62, 3);
-  ui.setFont(500, 13, 0.2);
-  ctx.fillStyle = C.muted;
-  ctx.fillText('Fight on hold.', 58, 142);
+  // no "Fight on hold." under it (request 641: PAUSED already says so)
   ctx.restore();
 
   ctx.save();

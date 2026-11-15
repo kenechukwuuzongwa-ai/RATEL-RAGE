@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-15 — Fills the window from the first frame; repeated labels removed (v158, request 641)
+
+- Android browsers: the view's width now follows the VISIBLE WINDOW (webshell.js RR_WEB.viewW, re-read on every resize; game.js VIEW_W, frontend.js W, shell CSS --rr-vw in touch.js), not the full screen fixed at load. Before the first tap the browser's bars take part of the screen, so the old screen-shaped view was letterboxed in the window until fullscreen; now the turned page fills the window at once and widens when fullscreen arrives. Ignored while a form field has focus (the keyboard is not a new screen shape).
+- Repetition removed: "Fight on hold." under PAUSED; the second "NORMAL" (etc.) in the difficulty card and the second "VIDEO" (etc.) title in the options card, each beside the highlighted row that already says it. Both cards cut to fit what is left.
+Checks: _chromakey/req641/fit.js (upright phone, window 412x780 on a 412x915 screen: turned canvas 412x781 = the window; fullscreen 915x412 = the screen; view width 1364 -> 1600 live), sweep of difficulty/options/pause.
+
 ## 2026-11-15 — Speed pays, per-letter hit counter, heavier caps, caps subtitles (v157, request 640)
 
 - SCORE: the time part is now 40 points per second under the 600 s par (was 5). On the real Level 1 bests (241-497 s) the old rate put ~1,150 points between a 4 and an 8 minute clear, less than a slow run's extra hits, so grinding beat speed. Leaderboard check updated in the same step (supabase/migrations/20261115120000_score_speed.sql, applied; it also accepts the old rate from a page loaded before the update). Ranks unchanged.
