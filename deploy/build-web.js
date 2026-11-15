@@ -36,7 +36,7 @@ const OUT = outAt >= 0 ? path.resolve(args[outAt + 1]) : path.join(__dirname, 'd
 const MOBILE = path.join(ROOT, 'mobile', 'assets-mobile');
 const CF_FILE_LIMIT = 25 * 1024 * 1024;
 
-const ALLOWLIST = ['index.html', 'privacy.html', 'quit.html','styles.css', 'analytics-config.js', 'supabase-config.js', 'ads-config.js', 'favicon.png', 'src', 'frontend',
+const ALLOWLIST = ['index.html', 'privacy.html', 'quit.html','styles.css', 'analytics-config.js', 'supabase-config.js', 'ads-config.js', 'favicon.png', 'manifest.webmanifest', 'src', 'frontend',
   'layers', 'sprites', 'sounds', 'music', 'buildings', 'level1'];
 
 const sha = (f) => crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex');
@@ -260,6 +260,10 @@ fs.writeFileSync(path.join(OUT, '_headers'), [
   '/ads-config.js',
   '  Cache-Control: no-cache',
   '/media-sw.js',
+  '  Cache-Control: no-cache',
+  // request 643: the installable web app's manifest
+  '/manifest.webmanifest',
+  '  Content-Type: application/manifest+json',
   '  Cache-Control: no-cache',
   '/src/*',
   '  Cache-Control: public, max-age=300',

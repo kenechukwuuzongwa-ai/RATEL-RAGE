@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-15 — Installable web app: fullscreen landscape from the home-screen icon, no tap (v159, request 643)
+
+- A web page cannot go fullscreen without a tap (browser rule), but an installed web app can: manifest.webmanifest (display fullscreen, orientation landscape, dark background, icons from the title lockup in frontend/icons: 192, 512, maskable 512) + the existing media-sw.js worker make the site installable. Launched from its icon it opens fullscreen and sideways with no tap.
+- Main menu: INSTALL GAME (above QUIT GAME, new 'install' glyph) when Chrome offers installing (beforeinstallprompt; the row opens Chrome's own dialog and goes away after), and on iPhone/iPad (Share > Add to Home Screen, spelled out). Hidden when running installed and in the Android app.
+- index.html: manifest link, apple-mobile-web-app tags, icon-192 as the touch icon. build-web ships the manifest (Content-Type application/manifest+json, no-cache).
+Checks: _chromakey/req643/install.js 10/10 (Chrome Page.getInstallabilityErrors empty, manifest fullscreen/landscape, icons 200, the row appears/opens the dialog/goes, hidden when installed, shown on iPhone Safari); menu fits ten rows.
+
 ## 2026-11-15 — Fills the window from the first frame; repeated labels removed (v158, request 641)
 
 - Android browsers: the view's width now follows the VISIBLE WINDOW (webshell.js RR_WEB.viewW, re-read on every resize; game.js VIEW_W, frontend.js W, shell CSS --rr-vw in touch.js), not the full screen fixed at load. Before the first tap the browser's bars take part of the screen, so the old screen-shaped view was letterboxed in the window until fullscreen; now the turned page fills the window at once and widens when fullscreen arrives. Ignored while a form field has focus (the keyboard is not a new screen shape).

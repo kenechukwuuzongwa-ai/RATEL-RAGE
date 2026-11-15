@@ -474,6 +474,32 @@ const MAIN_ITEMS = [
   { label: 'QUIT GAME', icon: 'power' },
 ];
 
+/* INSTALL GAME (request 643: "fullscreen on first launch, no tap at all"). No web page may go fullscreen
+ * without a tap, but an INSTALLED web app can: manifest.webmanifest asks for display "fullscreen" and
+ * orientation "landscape", so the game opens from its home-screen icon fullscreen and sideways with no
+ * tap. The row sits above QUIT GAME only where installing is possible right now:
+ *   Android Chrome — when the browser offers it (beforeinstallprompt); the row opens Chrome's own dialog;
+ *   iPhone / iPad  — always (Safari has no prompt to call): the row says how (Share > Add to Home Screen);
+ * never once installed (running fullscreen/standalone) or in the Android app. */
+let installPrompt = null;
+const IS_IOS_WEB = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+export const runningInstalled = () => {
+  try {
+    return matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  } catch { return false; }
+};
+const INSTALL_ITEM = { label: 'INSTALL GAME', icon: 'install' };
+function syncInstallItem() {
+  const native = !!(window.RR_WEB && window.RR_WEB.native);
+  const want = !native && !runningInstalled() && (!!installPrompt || IS_IOS_WEB);
+  const i = MAIN_ITEMS.indexOf(INSTALL_ITEM);
+  if (want && i < 0) MAIN_ITEMS.splice(MAIN_ITEMS.length - 1, 0, INSTALL_ITEM);
+  else if (!want && i >= 0) MAIN_ITEMS.splice(i, 1);
+}
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; syncInstallItem(); });
+addEventListener('appinstalled', () => { installPrompt = null; syncInstallItem(); });
+syncInstallItem();
+
 const SETTINGS_DEFAULTS = {
   master: 0.85, music: 0.70, sfx: 0.85, voice: 1, ambience: 0.55,
   subtitles: true, subtitleSize: 1, highContrast: false, screenShake: true,
@@ -1433,6 +1459,12 @@ const ICONS = {
     c.beginPath(); c.moveTo(13, 3.6); c.lineTo(20.4, 3.6); c.lineTo(20.4, 20.4); c.lineTo(13, 20.4); c.stroke();
     c.beginPath(); c.moveTo(3.4, 12); c.lineTo(14.2, 12); c.stroke();
     c.beginPath(); c.moveTo(10.2, 7.6); c.lineTo(14.8, 12); c.lineTo(10.2, 16.4); c.stroke();
+  },
+  // INSTALL GAME (request 643): an arrow down into a tray, the same line style
+  install(c) {
+    c.beginPath(); c.moveTo(12, 3.4); c.lineTo(12, 14.6); c.stroke();
+    c.beginPath(); c.moveTo(7.4, 10.2); c.lineTo(12, 14.8); c.lineTo(16.6, 10.2); c.stroke();
+    c.beginPath(); c.moveTo(4, 15.4); c.lineTo(4, 20.4); c.lineTo(20, 20.4); c.lineTo(20, 15.4); c.stroke();
   },
   /* The sign-in view's own glyphs (request 613): a handset and an envelope, in the menu's line style. */
   phone(c) {
@@ -3117,6 +3149,23 @@ export function createFrontEnd({
   }
 
   function showMessage(text) { message = text; messageT = 2.2; }
+  // INSTALL GAME (request 643): Chrome's own install dialog, or the iPhone's two taps spelled out
+  function installGame() {
+    const p = installPrompt;
+    if (p) {
+      try {
+        p.prompt();
+        Promise.resolve(p.userChoice).then((c) => {
+          installPrompt = null;
+          syncInstallItem();
+          selection = Math.max(0, Math.min(selection, MAIN_ITEMS.length - 1));
+          if (c && c.outcome === 'accepted') { showMessage('INSTALLED. OPEN RATEL RAGE FROM YOUR HOME SCREEN'); messageT = 4.5; }
+        }).catch(() => {});
+      } catch { /* the prompt can only be shown once */ }
+      return;
+    }
+    if (IS_IOS_WEB) { showMessage('TAP SHARE, THEN ADD TO HOME SCREEN'); messageT = 4.5; }
+  }
 
   /* QUIT, ON THE SECOND PRESS.
    *
@@ -3225,6 +3274,7 @@ export function createFrontEnd({
       else if (item.label === 'OPTIONS') go('options');
       else if (item.label === 'SIGN IN') go('signin');
       else if (item.label === 'CREDITS') go('credits');
+      else if (item.label === 'INSTALL GAME') installGame();
       else if (item.label === 'QUIT GAME') requestQuit('QUIT');
       return;
     }
