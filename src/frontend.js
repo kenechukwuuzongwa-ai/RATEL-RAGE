@@ -181,10 +181,28 @@ const figureH = (feet) => GROUND.k * (feet - GROUND.horizon);
  * exactly as before instead of dropping to monospace. calibrateFontFit() (called at boot, after
  * the faces load) re-derives PIXEL_FIT from MEASURED widths, so every box tuned for the pixel
  * faces keeps its text inside it whichever face actually loaded. */
-export const FONT = "'RR Uni', 'RR Pixel', monospace";
-export const FONT_BOLD = "'RR Uni Heavy', 'RR Pixel Bold', 'RR Pixel', monospace";
+/* REQUEST 639 — INTER, EVERYWHERE (rsms/inter 4.1, OFL; styles.css declares the faces). Uni Sans is kept
+ * only for the KenCrafts studio wordmark (drawKenCraftsType, a logo). Each Inter weight is its own
+ * family over its own static cut, so a font string still names its look by FAMILY ("400 Npx <family>",
+ * as many call sites hard-code) and nothing is ever synthesised:
+ *   FONT       'RR Inter 600'  SemiBold — the default body / label face
+ *   FONT_BOLD  'RR Inter Black' — Inter DISPLAY Black, headlines and the hit counter
+ *   FONT_THIN  'RR Inter 300'  Light — the left of '|' lines, quiet secondary type
+ *   interFont(w) the cut for any weight 300-800 (pixelFont maps the weight a call site asks for).
+ * Inter has real lowercase, so sentence-case copy (subtitles, notes) now reads as written. */
+const INTER_CUTS = [300, 400, 500, 600, 700, 800];
+export const interFamily = (w) => `'RR Inter ${INTER_CUTS.reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) ? b : a))}'`;
+const FALLBACK = "'RR Pixel', system-ui, sans-serif";
+export const FONT = `'RR Inter 600', ${FALLBACK}`;
+export const FONT_BOLD = "'RR Inter Black', 'RR Pixel Bold', system-ui, sans-serif";
+export const interFont = (w) => `${interFamily(w)}, ${FALLBACK}`;
 export const PIXEL_FIT = { body: 1.1, bold: 0.85 };
 const PIXEL_FIT_BASE = { body: 1.1, bold: 0.85 };
+/* INTER'S FIT (request 639, _chromakey/req639/metrics.js). Every box was last tuned on Uni Sans (fit body
+ * 0.991 / bold 1.277). Inter's capitals are ~12% wider at the same px (UPPERCASE sample: Uni Heavy 3286,
+ * Inter SemiBold 3692, Inter Display Black 3650 at 100 px) and about as tall (cap 71 vs 73), so these keep
+ * every UPPERCASE line exactly as wide as it was: nothing that fitted before can overflow now. */
+const INTER_FIT = { body: 0.882, bold: 1.15 };
 /* Is a face of this family actually LOADED (not merely declared, or declared and 404'd)?
  * document.fonts.check() answers true for a face in 'error', so the set is walked instead. */
 export function fontFaceLoaded(family) {
@@ -196,20 +214,13 @@ export function fontFaceLoaded(family) {
   return false;
 }
 export const uniSansReady = () => fontFaceLoaded('RR Uni Heavy');
-/* Width-match Uni Sans to the pixel faces the layouts were last tuned on (request 602). A mixed
- * sample, because the free Uni Sans cuts are CAPS faces: their lowercase is not the pixel face's. */
-const FIT_SAMPLE = 'Rage of Ratels — Lagos Hit 0123456789 SCORE';
+/* The fit for whichever face loaded: Inter's measured constants (INTER_FIT), else the pixel faces' base. */
 export function calibrateFontFit() {
-  const out = { uniBody: fontFaceLoaded('RR Uni'), uniBold: fontFaceLoaded('RR Uni Heavy') };
+  const out = { interBody: fontFaceLoaded('RR Inter 600'), interBold: fontFaceLoaded('RR Inter Black'), uniBold: fontFaceLoaded('RR Uni Heavy') };
   PIXEL_FIT.body = PIXEL_FIT_BASE.body;
   PIXEL_FIT.bold = PIXEL_FIT_BASE.bold;
-  try {
-    const g = document.createElement('canvas').getContext('2d');
-    const w = (fam) => { g.font = `400 100px ${fam}`; return g.measureText(FIT_SAMPLE).width; };
-    const clampFit = (v) => Math.min(1.6, Math.max(0.55, v));
-    if (out.uniBody) PIXEL_FIT.body = +clampFit(PIXEL_FIT_BASE.body * w("'RR Pixel'") / w("'RR Uni'")).toFixed(3);
-    if (out.uniBold) PIXEL_FIT.bold = +clampFit(PIXEL_FIT_BASE.bold * w("'RR Pixel Bold'") / w("'RR Uni Heavy'")).toFixed(3);
-  } catch { /* keep the base fit */ }
+  if (out.interBody) PIXEL_FIT.body = INTER_FIT.body;
+  if (out.interBold) PIXEL_FIT.bold = INTER_FIT.bold;
   return { ...out, fit: { ...PIXEL_FIT } };
 }
 /* The one place a weight + px becomes a canvas/CSS font string. `bold` forces the display face. */
@@ -225,11 +236,12 @@ export function readablePx(eff) {
 }
 export function pixelFont(weight, px, bold = false) {
   const b = bold || weight >= 900;
-  return `400 ${+readablePx(px * (b ? PIXEL_FIT.bold : PIXEL_FIT.body)).toFixed(2)}px ${b ? FONT_BOLD : FONT}`;
+  return `400 ${+readablePx(px * (b ? PIXEL_FIT.bold : PIXEL_FIT.body)).toFixed(2)}px ${b ? FONT_BOLD : interFont(weight || 600)}`;
 }
-/* Uni Sans Heavy ITALIC (request 623) and Uni Sans THIN (request 626), the real cuts, never synthesised. */
-export const FONT_ITALIC = `'RR Uni Heavy Italic', ${FONT_BOLD}`;
-export const FONT_THIN = `'RR Uni Thin', ${FONT}`;
+/* Inter Display Black ITALIC (was Uni Sans Heavy Italic, request 623) and Inter LIGHT (was Uni Sans Thin,
+ * request 626), the real cuts, never synthesised. */
+export const FONT_ITALIC = `'RR Inter Black Italic', ${FONT_BOLD}`;
+export const FONT_THIN = `'RR Inter 300', ${FONT}`;
 /* The px size of a canvas font string (what setFont/setDisplay just set). */
 export const fontPx = (font) => parseFloat((/([\d.]+)px/.exec(font) || [0, 16])[1]);
 /* A SHEEN ON ONE LINE OF TYPE (request 626; the summary's headline/score/grade have game.js's copy): the
@@ -1634,6 +1646,7 @@ export function createFrontEnd({
   let phase = sessionStorage.getItem('rorSkipSplash') ? (sessionStorage.getItem('rorSkipSplash') === 'signin' ? 'signin' : 'menu') : 'splash';
   sessionStorage.removeItem('rorSkipSplash');
   let phaseT = 0;
+  let signinLeave = null;              // request 639: { t, then } while the SIGN IN cards drop away
   let clock = 0;
   /* 0 on both of the phases boot can start in. It used to be 1 on the splash,
    * which was harmless while nothing there was selectable — but the studio card
@@ -2863,6 +2876,7 @@ export function createFrontEnd({
     prevPhase = phase;
     phase = next;
     phaseT = 0;
+    signinLeave = null;
     message = '';
     messageT = 0;
     rejectT = 0;
@@ -3026,6 +3040,8 @@ export function createFrontEnd({
     if (phase === 'controls' && controlsPage) { selection = controlsPage === 'howto' ? 0 : 1; controlsPage = null; phaseT = 0; navBack(); return; }
     navBack();
     if (phase === 'menu') { showMessage('HOST CONTROLS QUIT'); return; }
+    // SIGN IN leaves with its cards dropping back down (request 639), then takes the usual step up
+    if (phase === 'signin' && !signinLeave) { leaveSignIn(() => { if (pausedOrigin) returnToPause(); else toMenu(); }); return; }
     if (phase === 'difficulty') toMenu();
     else if (phase === 'character') go('difficulty', { selection: 1 });
     else if (phase === 'controls' || phase === 'shop' || phase === 'levelSelect' ||
@@ -4941,7 +4957,8 @@ export function createFrontEnd({
     }
   }
 
-  function messagePlate() {
+  // `cy`: the line's centre (request 639: SIGN IN puts it where its legal line is, which steps aside)
+  function messagePlate(cy = H - 98) {
     if (messageT <= 0 || !message) return;
     const a = Math.min(1, messageT * 3.4);
     ctx.save();
@@ -4949,7 +4966,7 @@ export function createFrontEnd({
     /* NO BOX (request 638: "remove the placeholders on all info text popups"): the words alone,
      * held off the picture by a soft shadow, as the subtitles are (request 597). */
     setFont(700, 12.5, 2.4);
-    const by = H - 116;
+    const by = cy - 18;
     ctx.fillStyle = C.cream;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -6091,7 +6108,7 @@ export function createFrontEnd({
       } else {
         icon('lock', x + w / 2, y + h / 2 - 6, 22, C.dim, 0.7);
         ctx.textAlign = 'center';
-        fitFont(700, 9.5, 1.8, 'LOCKED', w - 12);
+        fitFont(600, 9, 1.2, 'LOCKED', w - 22);   // request 639: a margin inside the tile
         ctx.fillStyle = C.dim;
         ctx.fillText('LOCKED', x + w / 2, y + h - 9);
       }
@@ -6716,7 +6733,12 @@ export function createFrontEnd({
     ctx.fillText('PROFILE', p.x, p.y + 18);
     hairline(p.x, p.y + 28, p.w);
 
-    const labX = p.x + 10, valX = p.x + BRIEF_PROFILE.valX, valW = p.w - BRIEF_PROFILE.valX;
+    /* the value column clears the WIDEST label by a fixed gutter (request 639: Inter's tracked capitals put
+     * MUSCLE against its value at the old fixed 92 px) */
+    setFont(700, 9.5, 1.5);
+    const labW = Math.max(...dossier().profile.map(([l]) => trackedWidth(ctx, l)));
+    const valOff = Math.max(BRIEF_PROFILE.valX, Math.ceil(10 + labW + 14));
+    const labX = p.x + 10, valX = p.x + valOff, valW = p.w - valOff;
     let y = p.y + 56;
     for (let i = 0; i < dossier().profile.length; i++) {
       const [label, value, tone] = dossier().profile[i];
@@ -7147,6 +7169,7 @@ export function createFrontEnd({
     if (info && info.status === 'registered') {
       const out = [];
       if (info.email && !info.hasPassword) out.push({ key: 'password', label: 'SET PASSWORD', glyph: 'lock' });
+      out.push({ key: 'name', label: 'CHANGE PLAYER NAME', glyph: 'person' });   // request 639: the alias
       out.push({ key: 'signout', label: 'SIGN OUT', glyph: 'power' });
       out.push(...deviceItems());
       out.push({ key: 'privacy' });
@@ -7162,7 +7185,7 @@ export function createFrontEnd({
     const st = a?.info?.status;
     if (!a || !(st === 'guest' || st === 'registered')) return st === 'connecting' ? 'CONNECTING…' : 'SIGN-IN IS OFFLINE';
     if (a.info.busy) return 'ONE MOMENT…';
-    if (it.key === 'signout' || it.key === 'password' || it.key === 'acct') return null;
+    if (it.key === 'signout' || it.key === 'password' || it.key === 'acct' || it.key === 'name') return null;
     if (a.providers.read && !a.providers[it.key]) return `${it.label.replace('CONTINUE WITH ', '')} SIGN-IN IS COMING SOON`;
     return null;
   }
@@ -7177,7 +7200,8 @@ export function createFrontEnd({
     if (why) { reject(why); return; }
     navForward();
     const a = account();
-    if (it.key === 'guest') { toMenu(); return; }
+    if (it.key === 'guest') { leaveSignIn(toMenu); return; }   // the cards drop away first (request 639)
+    if (it.key === 'name') { a.open('name'); return; }
     if (it.key === 'privacy') { openLink(SIGNIN.privacy); return; }
     if (it.key === 'signout') {
       a.signOut().then(() => { if (phase === 'signin') { selection = 0; showMessage('SIGNED OUT. TAP YOUR ACCOUNT BELOW TO COME BACK'); } });
@@ -7209,6 +7233,52 @@ export function createFrontEnd({
     });
   }
 
+  /* ---- SIGN IN, REDRAWN IN INTER (request 639) -------------------------------------------------------
+   * Two voices: ACTIONS are tracked capitals (Inter Bold), IDENTITY (names, addresses) is set as written,
+   * in sentence case: Inter's lowercase is the point of the change. Every card RISES into place from just
+   * below, staggered down the column (a very brief transform), and DROPS back the same way, bottom card
+   * first, when the view is left; a slow sheen cascades down the cards. */
+  const SIGNIN_MOTION = { in: 0.22, stagger: 0.04, rise: 24, out: 0.16, outStagger: 0.022, cards: 9 };
+  const signinLeaveDur = () => SIGNIN_MOTION.out + SIGNIN_MOTION.outStagger * (SIGNIN_MOTION.cards - 1);
+  function leaveSignIn(then) {
+    if (signinLeave) return;
+    signinLeave = { t: 0, then };
+    inputLock = Math.max(inputLock, signinLeaveDur() + 0.05);
+  }
+  function tickSignInLeave(dt) {
+    if (!signinLeave) return;
+    signinLeave.t += dt;
+    if (signinLeave.t >= signinLeaveDur()) { const f = signinLeave.then; signinLeave = null; f?.(); }
+  }
+  // card i of the column: its opacity and how far below its place it is
+  function cardMotion(i) {
+    const M = SIGNIN_MOTION;
+    const e = easeOut((phaseT - M.stagger * i) / M.in);
+    let a = e, dy = (1 - e) * M.rise;
+    if (signinLeave) {
+      const v = clamp((signinLeave.t - M.outStagger * (M.cards - 1 - i)) / M.out, 0, 1), o = v * v;
+      a *= 1 - o; dy += o * M.rise;
+    }
+    return { a, dy };
+  }
+  function card(i, fn) {
+    const m = cardMotion(i);
+    if (m.a <= 0.002) return;
+    ctx.save();
+    ctx.globalAlpha *= m.a;
+    ctx.translate(0, m.dy);
+    fn();
+    ctx.restore();
+  }
+  // the cascade: the same light (glimmer) passes down the column card by card; a focused card catches more
+  function signinSheen(x, y, w, h, i, f = 0) {
+    const off = 1 - 0.035 * i;
+    glimmer(x, y, w, h, 0, { period: 4.8, cross: 0.32, passes: [
+      { off, band: 150, a: 0.05 + 0.05 * f },
+      { off: off + 0.045, band: 40, a: 0.10 + 0.12 * f },
+    ] });
+  }
+
   /* One sign-in row. `soon` marks a provider that is not switched on yet. */
   function signInRow(it, index, x, y, w, h, soon) {
     const id = `signin:${it.key}`;
@@ -7227,42 +7297,44 @@ export function createFrontEnd({
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     focusOverlay(x, y, w, h, f, p);
+    signinSheen(x, y, w, h, index, f);
     // the icon tile
     const t = h - 18, tx = x + 12, ty = y + 9;
     ctx.fillStyle = 'rgba(255,255,255,0.055)';
     ctx.fillRect(tx, ty, t, t);
     const art = it.art ? socialArt(it.art) : null;
     if (art) {
-      const iw = Math.round(t * 0.66), ih = iw;   // both marks are square
+      const iw = Math.round(t * 0.62), ih = iw;   // both marks are square
       ctx.save();
-      ctx.globalAlpha = soon ? 0.55 : 1;
+      ctx.globalAlpha *= soon ? 0.55 : 1;
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(art, tx + (t - iw) / 2, ty + (t - ih) / 2, iw, ih);
       ctx.restore();
     } else if (it.glyph) {
-      icon(it.glyph, tx + t / 2, ty + t / 2, t * 0.56, f > 0.35 ? C.orangeSoft : 'rgba(255,255,255,0.8)', soon ? 0.55 : 1, 1.6);
+      icon(it.glyph, tx + t / 2, ty + t / 2, t * 0.54, f > 0.35 ? C.orangeSoft : 'rgba(255,255,255,0.8)', soon ? 0.55 : 1, 1.6);
     }
-    // the label, dim white, brighter with focus
+    // the label: Inter Bold capitals, tracked; dim white, brighter with focus
     const lx = tx + t + 16, room = x + w - lx - (soon ? 64 : 18);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    fitFont(600, h >= 52 ? 15 : 13.5, 2.2, it.label, room);
-    ctx.fillStyle = `rgba(255,255,255,${(0.6 + 0.34 * f).toFixed(3)})`;
+    fitFont(700, h >= 52 ? 15.5 : 14, 2.4, it.label, room);
+    ctx.fillStyle = `rgba(255,255,255,${((soon ? 0.5 : 0.66) + 0.3 * f).toFixed(3)})`;
     ctx.fillText(it.label, lx, y + h / 2 + 0.5);
     if (soon) {
+      // SOON as a quiet tag: Inter Medium, small and wide
       ctx.textAlign = 'right';
-      setFont(600, 9.5, 2.4);
+      setFont(500, 9, 2.6);
       ctx.fillStyle = 'rgba(255,255,255,0.34)';
-      ctx.fillText('SOON', x + w - 16, y + h / 2 + 0.5);
+      ctx.fillText('SOON', x + w - 16 + fontTrack, y + h / 2 + 0.5);
     }
     ctx.restore();
     ctx.textBaseline = 'alphabetic';
     hitboxes.push({ x, y, w, h, index, id });
   }
 
-  /* One account card from ON THIS DEVICE (request 638): the initial in a ring, the name and how it
-   * signs in, and a FORGET cross at the right that is its own target (the next item in the list). */
+  /* One account card from ON THIS DEVICE (request 638): the initial in a ring, the name and its address set
+   * as written (request 639), and a FORGET cross at the right that is its own target (the next item). */
   function accountCard(it, index, x, y, w, h) {
     const acc = it.acc;
     const id = `signin:acct:${acc.uid}`, xid = `signin:forget:${acc.uid}`;
@@ -7271,7 +7343,7 @@ export function createFrontEnd({
     sx.target = index + 1 === selection ? 1 : 0;
     const f = s.focus, p = s.press;
     const shake = index === selection && rejectT > 0 ? Math.sin(clock * 62) * rejectT * 3 : 0;
-    const xw = 34;                                   // the FORGET strip
+    const xw = 36;                                   // the FORGET strip
     ctx.save();
     ctx.translate(shake, 0);
     glass(x, y, w, h, 0, { tint: `rgba(8,12,18,${(0.62 + 0.12 * Math.max(f, sx.focus)).toFixed(3)})`, shadow: f > 0.5, border: 'rgba(0,0,0,0)' });
@@ -7279,31 +7351,31 @@ export function createFrontEnd({
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     focusOverlay(x, y, w - xw, h, f, p);
+    signinSheen(x, y, w, h, index, f);
     // the ring and initial (rule 603 keeps circles)
-    const who = (acc.name || (acc.email ? acc.email.split('@')[0] : '') || acc.phone || 'PLAYER').toString();
-    const ax = x + 12 + 14, ay = y + h / 2;
-    ctx.beginPath(); ctx.arc(ax, ay, 14, 0, Math.PI * 2);
+    const who = (acc.name || (acc.email ? acc.email.split('@')[0] : '') || acc.phone || 'Player').toString();
+    const ax = x + 13 + 15, ay = y + h / 2;
+    ctx.beginPath(); ctx.arc(ax, ay, 15, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(54,214,126,0.14)'; ctx.fill();
     ctx.strokeStyle = 'rgba(54,214,126,0.7)'; ctx.lineWidth = 1.1; ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    setFont(900, 12.5, 0);
+    setFont(900, 13, 0);
     ctx.fillStyle = C.orangeSoft;
     ctx.fillText(who.trim().charAt(0).toUpperCase() || 'P', ax, ay + 1);
-    // name over the way in
-    const lx = ax + 24, room = x + w - xw - lx - 8;
-    // the second line tells two accounts apart: the address (or number), else the way in
-    const how = (acc.email || acc.phone || (acc.provider === 'google' ? 'GOOGLE' : acc.provider === 'facebook' ? 'FACEBOOK' : 'EMAIL')).toUpperCase();
+    // the name over its address: identity, so as written
+    const lx = ax + 26, room = x + w - xw - lx - 8;
+    const how = acc.email || acc.phone || (acc.provider === 'google' ? 'Google account' : acc.provider === 'facebook' ? 'Facebook account' : 'Email account');
     ctx.textAlign = 'left';
-    fitFont(700, 12.5, 1.4, who.toUpperCase(), room);
-    ctx.fillStyle = `rgba(255,255,255,${(0.7 + 0.25 * f).toFixed(3)})`;
-    ctx.fillText(who.toUpperCase(), lx, ay - 7);
-    fitFont(500, 9, 1.6, how, room);
-    ctx.fillStyle = 'rgba(255,255,255,0.42)';
-    ctx.fillText(how, lx, ay + 9);
+    fitFont(700, 13.5, 0.2, who, room);
+    ctx.fillStyle = `rgba(255,255,255,${(0.76 + 0.22 * f).toFixed(3)})`;
+    ctx.fillText(who, lx, ay - 7.5);
+    fitFont(400, 10.5, 0.1, how, room);
+    ctx.fillStyle = 'rgba(255,255,255,0.46)';
+    ctx.fillText(how, lx, ay + 9.5);
     // FORGET: a hairline and a cross
     const fx0 = x + w - xw;
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    ctx.fillRect(fx0, y + 8, 1, h - 16);
+    ctx.fillRect(fx0, y + 9, 1, h - 18);
     if (sx.focus > 0.01) { ctx.fillStyle = `rgba(255,106,90,${(0.16 * sx.focus).toFixed(3)})`; ctx.fillRect(fx0 + 1, y, xw - 1, h); }
     const cx0 = fx0 + xw / 2, r = 4.5;
     ctx.strokeStyle = `rgba(255,255,255,${(0.42 + 0.5 * sx.focus).toFixed(3)})`;
@@ -7317,20 +7389,17 @@ export function createFrontEnd({
     hitboxes.push({ x, y, w: w - xw, h, index, id });
     hitboxes.push({ x: fx0, y, w: xw, h, index: index + 1, id: xid });
   }
-  /* The ON THIS DEVICE block: a small heading and one or two cards, side by side. */
-  function drawDeviceAccounts(x0, y, items, enterK) {
+  /* The ON THIS DEVICE block: a small kicker and one or two cards, side by side. */
+  function drawDeviceAccounts(x0, y, items) {
     const cards = items.map((it, i) => ({ it, i })).filter((o) => o.it.key === 'acct');
     if (!cards.length) return;
     const S = SIGNIN;
-    ctx.save();
-    ctx.globalAlpha *= enterK;
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    setFont(600, 9.5, 2.6);
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    setFont(700, 8.5, 2.8);
+    ctx.fillStyle = 'rgba(255,255,255,0.42)';
     ctx.fillText('ON THIS DEVICE', x0, y);
     const cw = cards.length > 1 ? (S.colW - S.gap) / 2 : S.colW;
-    cards.forEach((o, j) => accountCard(o.it, o.i, x0 + j * (cw + S.gap), y + 12, cw, 46));
-    ctx.restore();
+    cards.forEach((o, j) => accountCard(o.it, o.i, x0 + j * (cw + S.gap), y + 12, cw, 48));
   }
 
   /* The Ratel Rage mark, centred on (cx, cy), `inkW` wide: the full lockup when it loaded, else the wordmark. */
@@ -7356,9 +7425,8 @@ export function createFrontEnd({
     pool.addColorStop(1, 'rgba(2,4,7,0)');
     ctx.fillStyle = pool;
     ctx.fillRect(0, 0, W, H);
-    beginScreen(10);
+    beginScreen(0);                      // the cards carry the motion (vertical), not the screen
     const S = SIGNIN, x0 = Math.round(cx - S.colW / 2);
-    const enter = (i) => easeOut(clamp((phaseT - 0.06 * i) / 0.38, 0, 1));   // rows arrive one after another
     const a = account();
     const prov = a?.providers;
     const items = signInItems();
@@ -7366,127 +7434,121 @@ export function createFrontEnd({
     const deviceY = S.top + S.rows.length * (S.rowH + S.gap) + 14 + 18 + S.minorH + 22;
 
     // THE MARK
-    ctx.save();
-    const k0 = enter(0);
-    ctx.globalAlpha *= k0;
-    ctx.translate(0, (1 - k0) * 10);
-    drawMarkCentred(cx, 128, 262);
-    ctx.restore();
+    card(0, () => drawMarkCentred(cx, 128, 262));
 
     if (signedIn()) {
-      /* SIGNED IN: who, and the way out. A true circle for the avatar (rule 603 keeps circles). */
+      /* SIGNED IN: who, and what can be done. A true circle for the avatar (rule 603 keeps circles). */
       const info = a.info;
-      const who = (info.name || info.email || info.phone || 'PLAYER').toString();
-      const sub = info.email || info.phone || (info.provider ? info.provider.toUpperCase() : '');
-      const py = S.top, ph = 76;
-      ctx.save();
-      ctx.globalAlpha *= enter(1);
-      glass(x0, py, S.colW, ph, 0, { tint: 'rgba(8,12,18,0.7)', border: 'rgba(255,255,255,0.10)' });
-      const ax = x0 + 44, ay = py + ph / 2;
-      ctx.beginPath(); ctx.arc(ax, ay, 24, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(54,214,126,0.14)'; ctx.fill();
-      ctx.strokeStyle = 'rgba(54,214,126,0.7)'; ctx.lineWidth = 1.2; ctx.stroke();
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      setFont(900, 20, 0);
-      ctx.fillStyle = C.orangeSoft;
-      ctx.fillText(who.trim().charAt(0).toUpperCase() || 'P', ax, ay + 1);
-      ctx.textAlign = 'left';
-      fitFont(700, 15, 1.6, who.toUpperCase(), S.colW - 84 - 96);   // clear of the SYNCED corner
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
-      ctx.fillText(who.toUpperCase(), x0 + 84, ay - 11);
-      fitFont(500, 11.5, 0.6, sub, S.colW - 110);
-      ctx.fillStyle = 'rgba(255,255,255,0.46)';
-      ctx.fillText(sub, x0 + 84, ay + 13);
-      /* cloud save state: a dot and one word, set INSIDE the panel's top-right corner (request 638:
-       * the word was placed from a fixed offset and ran out past the edge). Right-aligned on the
-       * measured ink, so SAVING / RETRY / SYNCED all keep the same margin. */
-      const saved = info.sync === 'saved' || info.sync === 'idle';
-      const word = info.sync === 'saving' ? 'SAVING' : info.sync === 'error' ? 'RETRY' : 'SYNCED';
-      setFont(600, 9, 2);
-      const ww = ctx.measureText(word).width - fontTrack;
-      const wr = x0 + S.colW - 16, wy = py + 17;
-      ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(255,255,255,0.42)';
-      ctx.fillText(word, wr + fontTrack, wy + 0.5);
-      ctx.beginPath(); ctx.arc(wr - ww - 9, wy, 3.2, 0, Math.PI * 2);
-      ctx.fillStyle = info.sync === 'error' ? '#ff6a5a' : saved ? C.orange : C.gold; ctx.fill();
-      ctx.restore();
-      let y = py + ph + 16;
-      items.forEach((it, i) => {
-        if (it.key === 'privacy') return;
-        ctx.save();
-        ctx.globalAlpha *= enter(2 + i);
-        if (it.key === 'acct' || it.key === 'forget') { ctx.restore(); return; }
-        signInRow(it, i, x0, y, S.colW, S.rowH, false);
-        ctx.restore();
-        y += S.rowH + S.gap;
+      const who = (info.name || (info.email ? info.email.split('@')[0] : '') || info.phone || 'Player').toString();
+      const sub = info.email || info.phone || (info.provider ? `${info.provider[0].toUpperCase()}${info.provider.slice(1)} account` : '');
+      const py = S.top, ph = 80;
+      card(1, () => {
+        glass(x0, py, S.colW, ph, 0, { tint: 'rgba(8,12,18,0.72)', border: 'rgba(255,255,255,0.10)' });
+        signinSheen(x0, py, S.colW, ph, 1, 0.4);
+        const ax = x0 + 44, ay = py + ph / 2;
+        ctx.beginPath(); ctx.arc(ax, ay, 25, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(54,214,126,0.14)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(54,214,126,0.75)'; ctx.lineWidth = 1.2; ctx.stroke();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        setFont(900, 21, 0);
+        ctx.fillStyle = C.orangeSoft;
+        ctx.fillText(who.trim().charAt(0).toUpperCase() || 'P', ax, ay + 1);
+        const tx = x0 + 86;
+        /* cloud save state, top right INSIDE the panel (request 638): a dot and one tracked word,
+         * right-aligned on the measured ink so SAVING / RETRY / SYNCED keep the same margin */
+        const saved = info.sync === 'saved' || info.sync === 'idle';
+        const word = info.sync === 'saving' ? 'SAVING' : info.sync === 'error' ? 'RETRY' : 'SYNCED';
+        setFont(700, 8.5, 2.2);
+        const ww = ctx.measureText(word).width - fontTrack;
+        const wr = x0 + S.colW - 16, wy = py + 18;
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255,255,255,0.46)';
+        ctx.fillText(word, wr + fontTrack, wy + 0.5);
+        ctx.beginPath(); ctx.arc(wr - ww - 9, wy, 3, 0, Math.PI * 2);
+        ctx.fillStyle = info.sync === 'error' ? '#ff6a5a' : saved ? C.orange : C.gold; ctx.fill();
+        // the kicker, the player name (with a sheen now and then), the address
+        ctx.textAlign = 'left';
+        setFont(700, 8.5, 2.6);
+        ctx.fillStyle = 'rgba(54,214,126,0.85)';
+        ctx.fillText('SIGNED IN', tx, py + 18.5);
+        fitFont(800, 18, 0.1, who, S.colW - 86 - 20);
+        sheenText(ctx, who, tx, py + 41, 'rgba(255,255,255,0.94)', sheenAt(phaseT, 0.5, 4.8, 0.8));
+        fitFont(400, 11.5, 0.1, sub, S.colW - 86 - 20);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(sub, tx, py + 61);
+        ctx.textBaseline = 'alphabetic';
       });
-      drawDeviceAccounts(x0, deviceY, items, enter(6));
+      let y = py + ph + 14, n = 0;
+      items.forEach((it, i) => {
+        if (it.key === 'privacy' || it.key === 'acct' || it.key === 'forget') return;
+        const ry = y;
+        card(2 + n, () => signInRow(it, i, x0, ry, S.colW, S.rowH, false));
+        y += S.rowH + S.gap; n++;
+      });
+      card(7, () => drawDeviceAccounts(x0, y + 14, items)   /* signed in: straight under the rows, no gap */);
     } else {
       // THE METHODS
       S.rows.forEach((it, i) => {
         const y = S.top + i * (S.rowH + S.gap);
-        ctx.save();
-        ctx.globalAlpha *= enter(1 + i);
-        ctx.translate(0, (1 - enter(1 + i)) * 12);
-        signInRow(it, i, x0, y, S.colW, S.rowH, !!(prov && prov.read && !prov[it.key]));
-        ctx.restore();
+        card(1 + i, () => signInRow(it, i, x0, y, S.colW, S.rowH, !!(prov && prov.read && !prov[it.key])));
       });
       // OR
       const orY = S.top + S.rows.length * (S.rowH + S.gap) + 14;
-      ctx.save();
-      ctx.globalAlpha *= enter(4);
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.fillRect(x0, orY, S.colW / 2 - 26, 1);
-      ctx.fillRect(cx + 26, orY, S.colW / 2 - 26, 1);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      setFont(600, 10, 3);
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      fillCentred('OR', cx, orY + 1);
-      ctx.restore();
-      // EMAIL · GUEST
+      card(4, () => {
+        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+        ctx.fillRect(x0, orY, S.colW / 2 - 26, 1);
+        ctx.fillRect(cx + 26, orY, S.colW / 2 - 26, 1);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        setFont(300, 11, 1.2);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        fillCentred('or', cx, orY);
+        ctx.textBaseline = 'alphabetic';
+      });
+      // PHONE · GUEST
       const my = orY + 18, mw = (S.colW - S.gap) / 2;
       S.minor.forEach((it, j) => {
         const i = S.rows.length + j;
-        ctx.save();
-        ctx.globalAlpha *= enter(5 + j);
-        signInRow(it, i, x0 + j * (mw + S.gap), my, mw, S.minorH, it.key !== 'guest' && !!(prov && prov.read && !prov[it.key]));
-        ctx.restore();
+        card(5 + j, () => signInRow(it, i, x0 + j * (mw + S.gap), my, mw, S.minorH, it.key !== 'guest' && !!(prov && prov.read && !prov[it.key])));
       });
-      drawDeviceAccounts(x0, deviceY, items, enter(6));
+      card(7, () => drawDeviceAccounts(x0, deviceY, items));
     }
 
-    // THE FOOT: one dim legal line (a link), and the connection state when there is no connection
+    // THE FOOT: one dim legal line in sentence case (a link), and the connection state when there is none
     const pi = items.findIndex((it) => it.key === 'privacy');
-    const ly = H - 74;
-    ctx.save();
-    ctx.globalAlpha *= enter(7);
-    const pf = getFx('signin:privacy');
-    pf.target = pi === selection ? 1 : 0;
-    const lead = 'BY CONTINUING YOU ACCEPT THE ', link = 'TERMS & PRIVACY POLICY';
-    setFont(500, 9.5, 1.4);
-    const lw = ctx.measureText(lead).width, kw = ctx.measureText(link).width;
-    const lx = Math.round(cx - (lw + kw) / 2);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(255,255,255,0.36)';
-    ctx.fillText(lead, lx, ly);
-    ctx.fillStyle = `rgba(${Math.round(lerp(255, 123, pf.focus))},${Math.round(lerp(255, 227, pf.focus))},${Math.round(lerp(255, 166, pf.focus))},${lerp(0.62, 1, pf.focus).toFixed(3)})`;
-    ctx.fillText(link, lx + lw, ly);
-    ctx.fillRect(lx + lw, ly + 8, kw - fontTrack, 1);
-    hitboxes.push({ x: lx - 8, y: ly - 16, w: lw + kw + 16, h: 32, index: pi, id: 'signin:privacy' });
-    const st = a?.info?.status;
-    if (!a || st === 'offline' || st === 'unavailable' || st === 'connecting') {
-      setFont(600, 9.5, 2.4);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = 'rgba(255,255,255,0.32)';
-      fillCentred(st === 'connecting' ? 'CONNECTING…' : 'OFFLINE · PROGRESS IS KEPT ON THIS DEVICE', cx, ly + 26);
-    }
-    ctx.restore();
-    ctx.textBaseline = 'alphabetic';
+    const ly = H - 86;                   // request 639: clear of the control bar hairline
+    const msgK = messageT > 0 && message ? Math.min(1, messageT * 3.4) : 0;   // the legal line steps aside for a message
+    card(8, () => {
+      ctx.globalAlpha *= 1 - msgK;
+      const pf = getFx('signin:privacy');
+      pf.target = pi === selection ? 1 : 0;
+      const lead = 'By continuing you accept the ', link = 'Terms & Privacy Policy';
+      setFont(400, 10.5, 0.15);
+      const lw = ctx.measureText(lead).width;
+      setFont(600, 10.5, 0.15);
+      const kw = ctx.measureText(link).width;
+      const lx = Math.round(cx - (lw + kw) / 2);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      setFont(400, 10.5, 0.15);
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
+      ctx.fillText(lead, lx, ly);
+      setFont(600, 10.5, 0.15);
+      ctx.fillStyle = `rgba(${Math.round(lerp(255, 123, pf.focus))},${Math.round(lerp(255, 227, pf.focus))},${Math.round(lerp(255, 166, pf.focus))},${lerp(0.7, 1, pf.focus).toFixed(3)})`;
+      ctx.fillText(link, lx + lw, ly);
+      ctx.fillRect(lx + lw, ly + 8, kw - fontTrack, 1);
+      hitboxes.push({ x: lx - 8, y: ly - 16, w: lw + kw + 16, h: 32, index: pi, id: 'signin:privacy' });
+      const st = a?.info?.status;
+      if (!a || st === 'offline' || st === 'unavailable' || st === 'connecting') {
+        setFont(600, 9, 2.4);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,255,255,0.34)';
+        fillCentred(st === 'connecting' ? 'CONNECTING…' : 'OFFLINE · PROGRESS IS KEPT ON THIS DEVICE', cx, ly + 22);
+      }
+      ctx.textBaseline = 'alphabetic';
+    });
 
     endScreen();
     drawControlBar([MENU_HINTS[2]]);
-    messagePlate();
+    messagePlate(ly);
     drawGrain();
     transitionVeil();
   }
@@ -7973,6 +8035,7 @@ export function createFrontEnd({
     keepAwake('video', phase === 'splash' || phase === 'intro');   // no dimming under a video (request 349)
     if (inputLock > 0) inputLock = Math.max(0, inputLock - dt);
     if (messageT > 0) messageT = Math.max(0, messageT - dt);
+    tickSignInLeave(dt);
     /* Tied to the prompt, not to its own clock — see requestQuit. */
     if (quitArmedT > 0) quitArmedT = Math.max(0, quitArmedT - dt);
     if (rejectT > 0) rejectT = Math.max(0, rejectT - dt);
@@ -8283,6 +8346,7 @@ export function createFrontEnd({
      * "PRESS QUIT AGAIN TO EXIT". A two-press confirmation is only honest if
      * the prompt is really on screen, so a test has to be able to read it. */
     get message() { return messageT > 0 ? message : ''; },
+    get leaving() { return signinLeave ? +signinLeave.t.toFixed(3) : 0; },   // request 639: the SIGN IN exit beat
     /* The VIRTUAL frame the menus are laid out in. 1280x720 normally, wider on
      * Android where the viewport grows to the device aspect — so anything
      * converting a drawn hitbox back into a screen point has to ask rather than

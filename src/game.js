@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v155';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v156';
 import { createAftermath } from './aftermath.js?v=ratelrage-v150';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -25165,7 +25165,7 @@ const headlineBuf = { c: null, g: null };
 function drawSummaryHeadline(text, cx, baseY, C) {
   const px = parseFloat((/([\d.]+)px/.exec(ctx.font) || [0, 40])[1]);
   const track = 'letterSpacing' in ctx ? ctx.letterSpacing : '0px';
-  const mainFont = ctx.font, italFont = `400 ${px}px 'RR Uni Heavy Italic', ${FONT_BOLD}`;
+  const mainFont = ctx.font, italFont = `400 ${px}px 'RR Inter Black Italic', ${FONT_BOLD}`;   // request 639: Inter Display Black Italic
   const split = / DEFEATED$/.test(text);
   const lead = split ? text.slice(0, -' DEFEATED'.length) : text, tail = split ? 'DEFEATED' : '';
   const wLead = ctx.measureText(lead).width, wGap = split ? ctx.measureText(' ').width : 0;
@@ -29143,7 +29143,9 @@ const FONT_FACES = ["40px 'RR Pixel'", "40px 'RR Pixel Bold'"];
 /* Uni Sans (request 602) leads every stack but is OPTIONAL at boot: until its files are in
  * frontend/fonts the pixel faces above carry the text, so its load is awaited separately and a
  * missing file is a note, not an error. calibrateFontFit() then sizes whichever face loaded. */
-const UNI_FACES = ["40px 'RR Uni Heavy'", "40px 'RR Uni'", "40px 'RR Uni Heavy Italic'", "40px 'RR Uni Thin'"];   // + the italic (request 623), the thin (request 626)
+/* Request 639: Inter (every cut the canvas names) + Uni Sans Heavy, which only the KenCrafts wordmark uses. */
+const UNI_FACES = ["40px 'RR Inter 300'", "40px 'RR Inter 400'", "40px 'RR Inter 500'", "40px 'RR Inter 600'", "40px 'RR Inter 700'",
+  "40px 'RR Inter 800'", "40px 'RR Inter Black'", "40px 'RR Inter Black Italic'", "40px 'RR Uni Heavy'"];
 let fontFit = null;
 /* THE FONT MAY NEVER BLOCK BOOT. This ceiling is not belt-and-braces.
  *
@@ -29189,9 +29191,9 @@ async function loadFont() {
     }
   }
   fontFit = calibrateFontFit();
-  if (!fontFit.uniBold) {
-    console.warn('[ratel-ui] Uni Sans is not loaded (request 602) — add frontend/fonts/uni-sans-heavy.woff2 '
-      + '(or .otf); the pixel faces stand in until then.');
+  if (!fontFit.interBody || !fontFit.interBold) {
+    console.warn('[ratel-ui] Inter is not loaded (request 639) — check frontend/fonts/inter/*.woff2 is served; '
+      + 'the pixel faces stand in until then.');
   }
 }
 

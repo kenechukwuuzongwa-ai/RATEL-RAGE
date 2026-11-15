@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-15 — Inter everywhere, sign-in motion + sheen, player name, landscape from the first frame (v156, request 639)
+
+- Typeface: Inter 4.1 (SIL OFL, frontend/fonts/inter) replaces Uni Sans in every canvas and DOM text. Each weight is its own canvas family (Light 300 … ExtraBold 800, Inter Display Black for headlines/hit counter, Display Black Italic for DEFEATED); pixelFont maps the weight a call site asks for. INTER_FIT (body 0.882, bold 1.15, measured in _chromakey/req639/metrics.js) keeps every UPPERCASE line as wide as under Uni Sans, so nothing overflows. Real lowercase: subtitles, notes, identity lines now read in sentence case. Uni Sans Heavy stays only for the KenCrafts splash wordmark (a logo). Credits on privacy.html.
+- Balance fixes found by the sweep (_chromakey/req639/sweep.js): brief PROFILE value column clears the widest label; character tiles' LOCKED has a margin; SIGN IN foot clears the control bar and a message takes the legal line's place.
+- SIGN IN redesign: actions in tracked Inter Bold capitals, identity (name, email) as written; cards rise ~24 px into place staggered down the column (0.22 s) and drop back bottom-first when leaving (BACK, GUEST, the close button); a glimmer cascades down the cards; the player name has a periodic sheen. Signed-in panel: SIGNED IN kicker, name, address, SYNCED corner.
+- PLAYER NAME: CHANGE PLAYER NAME row + sheet (account.js view 'name'): the leaderboard alias (profiles.display_name, default Ratel-xxxxxx from the account id, never the email; 3–20 letters, numbers, spaces, - or _, same rule as the database).
+- Upright phones: the page is drawn landscape (turned) from the first frame on every load, not only after RETRY (webshell.js); the first tap still locks fullscreen + landscape (browsers forbid doing that without a tap). iPhone Safari (no fullscreen API) keeps the plain page.
+Checks: req639/sweep.js (all menus, sign-in rise/drop frames, HUD, pause, boss, summary; no errors), req639/account.js 5/5 on the real project (name saved to profiles, bad name refused), req638/signin.js 11/11 regression, req639/rotate.js (upright Android turned, landscape and desktop untouched).
+
 ## 2026-11-15 — Sign-in: no intros on return, one Google trip, accounts on this device (v155, requests 637-638)
 
 - Google sign-in switched on (Google Auth Platform web client; secret only in Supabase; build-web ships google: true).

@@ -76,7 +76,13 @@
     root.classList.toggle('rr-rot', on);
     root.classList.toggle('rr-rot-ccw', on && angle === 270);
   };
-  if (retrying && root.requestFullscreen && upright()) {
+  /* EVERY UPRIGHT LOAD, NOT ONLY A RETRY (request 639: "the game starts in portrait, needing a tap before it
+   * rotates"). No web page may rotate the screen or go fullscreen without a tap (Chrome's rule), so the page
+   * itself is drawn landscape from the first frame, turned a quarter: the studio card and the menus come up
+   * the right way for a player who turns the phone, with or without auto-rotate. The first tap is the
+   * gesture that locks fullscreen + landscape. Phones whose browser has no fullscreen (iPhone Safari) keep
+   * the plain page: they rotate on their own when the phone turns. */
+  if (root.requestFullscreen && upright()) {
     setTurned(true);
     var untilLandscape = function () { if (turned && !upright()) setTurned(false); };
     window.addEventListener('resize', untilLandscape);
@@ -88,7 +94,7 @@
       e.stopPropagation();
       if (e.cancelable && e.type !== 'touchend') e.preventDefault();
       // if the browser refused fullscreen the page cannot stay turned (touches would land wrong):
-      // fall back to the upright page and its ROTATE PHONE prompt
+      // fall back to the upright page
       if (e.type === 'touchend' && !tapped) { tapped = true; setTimeout(function () { if (upright()) setTurned(false); }, 1500); }
     };
     ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'].forEach(function (t) {

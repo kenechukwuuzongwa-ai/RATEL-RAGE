@@ -497,7 +497,10 @@
     if (!/^[A-Za-z0-9 _-]{3,20}$/.test(name)) throw { message: '3–20 letters, numbers, spaces, - or _.' };
     var r = await call(sb.from('profiles').update({ display_name: name }).eq('id', S.uid));
     if (r.error) throw r.error;
-    S.name = name; S.message = { text: 'Name saved.' };
+    S.name = name;
+    if (!S.anon) remember({ uid: S.uid, name: name });
+    // request 639: the sheet closes and the SIGN IN view says so
+    S.view = 'home'; S.notice = 'Player name saved';
   });
   /* SIGN OUT (request 638): this device becomes a fresh guest, and the account stays on its list,
    * one tap from coming back. A new guest REPLACES the session here without ending the account's
@@ -606,30 +609,30 @@
   function buildUi() {
     var css = document.createElement('style');
     /* The game's menu language: smoked glass, hairlines, SHARP corners (rule of request 603), the green
-     * accent (request 613), dim white type, Uni Sans. */
+     * accent (request 613), dim white type, Inter (request 639). */
     css.textContent = [
       '.rr-acct-overlay{position:fixed;inset:0;z-index:90;display:none;place-items:center;background:rgba(2,4,6,.58);',
       'touch-action:manipulation;-webkit-user-select:text;user-select:text}',
       '.rr-acct-panel{width:min(400px,90vw);max-height:92vh;overflow:auto;padding:20px 22px 16px;border-radius:0;color:rgba(255,255,255,.78);',
       'background:linear-gradient(180deg,rgba(16,22,30,.96),rgba(7,10,15,.97));border:1px solid rgba(255,255,255,.12);border-top:2px solid #36d67e;',
-      'box-shadow:0 18px 60px rgba(0,0,0,.6);font:400 16px/1.45 "RR Uni","RR Pixel",monospace;letter-spacing:.04em}',
-      '.rr-acct-panel h2{margin:0 0 .7em;font:400 15px/1.2 "RR Uni Heavy","RR Pixel Bold","RR Pixel",monospace;letter-spacing:.2em;color:rgba(255,255,255,.9)}',
+      'box-shadow:0 18px 60px rgba(0,0,0,.6);font:400 15px/1.5 "RR Inter",system-ui,sans-serif;letter-spacing:.005em}',
+      '.rr-acct-panel h2{margin:0 0 .7em;font:900 13px/1.2 "RR Inter",system-ui,sans-serif;letter-spacing:.22em;color:rgba(255,255,255,.92)}',
       '.rr-acct-panel p{margin:.3em 0 .8em;color:rgba(255,255,255,.62)}.rr-acct-panel .muted{color:rgba(255,255,255,.42);font-size:13px}',
       '.rr-acct-panel .msg{padding:.5em .7em;border-radius:0;background:rgba(54,214,126,.10);border:1px solid rgba(54,214,126,.4);margin:.1em 0 .8em;font-size:14px}',
       '.rr-acct-panel .msg.bad{background:rgba(255,90,90,.10);border-color:rgba(255,90,90,.45)}',
       '.rr-acct-panel input[type=email],.rr-acct-panel input[type=password],.rr-acct-panel input[type=text],.rr-acct-panel input[type=tel]{width:100%;box-sizing:border-box;margin:.2em 0 .55em;',
-      'padding:.7em .8em;border-radius:0;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.35);color:#fff;font:400 16px "RR Uni","RR Pixel",monospace;outline:none}',
+      'padding:.7em .8em;border-radius:0;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.35);color:#fff;font:500 16px "RR Inter",system-ui,sans-serif;outline:none}',
       '.rr-acct-panel input:focus{border-color:#36d67e}',
       '.rr-acct-panel label.chk{display:flex;gap:.6em;align-items:flex-start;margin:.1em 0 .7em;font-size:13px;color:rgba(255,255,255,.55)}',
       '.rr-acct-panel .btn{display:block;width:100%;margin:.4em 0;padding:.75em;border-radius:0;border:1px solid rgba(255,255,255,.18);',
-      'background:rgba(255,255,255,.04);color:rgba(255,255,255,.82);font:400 15px "RR Uni Heavy","RR Uni","RR Pixel",monospace;letter-spacing:.16em;cursor:pointer}',
+      'background:rgba(255,255,255,.04);color:rgba(255,255,255,.82);font:800 13px "RR Inter",system-ui,sans-serif;letter-spacing:.18em;cursor:pointer}',
       '.rr-acct-panel .btn.primary{background:#36d67e;color:#04140b;border-color:#36d67e}',
       '.rr-acct-panel .btn.ghost{background:transparent;color:rgba(255,255,255,.55)}',
       '.rr-acct-panel .btn:disabled{opacity:.45;cursor:default}',
       '.rr-acct-panel .links{display:flex;justify-content:space-between;gap:1em;margin:.3em 0 .2em}',
       '.rr-acct-panel .link{all:unset;cursor:pointer;color:rgba(255,255,255,.55);font-size:13px;letter-spacing:.06em}',
       '.rr-acct-panel .link:hover,.rr-acct-panel .link:focus{color:#7be3a6}',
-      '.rr-acct-panel .x{all:unset;float:right;cursor:pointer;font:400 18px/1 "RR Uni","RR Pixel",monospace;color:rgba(255,255,255,.5);padding:2px 4px}',
+      '.rr-acct-panel .x{all:unset;float:right;cursor:pointer;font:300 18px/1 "RR Inter",system-ui,sans-serif;color:rgba(255,255,255,.5);padding:2px 4px}',
       /* PHONE (request 615: the form turns the screen to PORTRAIT so typing is easy): docked to the top and
        * kept to the room the keyboard leaves; in landscape (a screen that cannot turn), the headings step aside. */
       '.rr-acct-overlay.phone{place-items:start center;padding:8px 0 0}',
@@ -676,6 +679,7 @@
     if (a === 'forgot-send') return forgot(v('email'));
     if (a === 'phone-send') return phoneSend(v('phone'));
     if (a === 'phone-verify') return phoneVerify(v('code'));
+    if (a === 'name-save') return rename(v('name'));
     if (a.indexOf('view:') === 0) { S.view = a.slice(5); S.message = null; render(); focusFirst(); }
   }
 
@@ -715,6 +719,13 @@
       h += '<h2>SET PASSWORD</h2>' + msg
         + '<form data-a="password"><input type="password" name="password" autocomplete="new-password" placeholder="8+ characters">'
         + '<button class="btn primary" type="submit"' + dis + '>SAVE</button></form><button class="btn ghost" data-a="close">LATER</button>';
+    } else if (v === 'name') {
+      /* PLAYER NAME (request 639): the alias other players see on the leaderboard. Never the email: it
+       * starts as Ratel-xxxxxx, made from the account id, and the player can change it here. */
+      h += '<h2>PLAYER NAME</h2>' + msg + '<p>Shown to other players on the leaderboard. Your email is never shown.</p>'
+        + '<form data-a="name-save"><input type="text" name="name" autocomplete="nickname" maxlength="20" spellcheck="false" placeholder="3–20 letters or numbers" value="' + esc(S.name || '') + '">'
+        + '<button class="btn primary" type="submit"' + dis + '>SAVE NAME</button></form>'
+        + '<button class="btn ghost" data-a="close">CANCEL</button>';
     } else if (v === 'phone') {
       h += '<h2>PHONE NUMBER</h2>' + msg + mergeBox
         + '<form data-a="phone-send"><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="+234 801 234 5678" value="' + esc(S.pendingPhone || '') + '">'

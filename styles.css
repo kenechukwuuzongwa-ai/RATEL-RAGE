@@ -37,31 +37,33 @@
   font-display: block;
   src: url('frontend/fonts/uni-sans-heavy.otf?v=uni137b') format('opentype');
 }
-/* REQUEST 623: Uni Sans Heavy ITALIC (same Fontfabric free cut, shipped unmodified, gitignored like Heavy),
- * for the red DEFEATED on the level summary. A real italic, never a synthesised slant. */
-@font-face {
-  font-family: 'RR Uni Heavy Italic';
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: block;
-  src: url('frontend/fonts/uni-sans-heavy-italic.otf?v=uni623') format('opentype');
-}
-/* REQUEST 626: Uni Sans THIN (same Fontfabric free cut, unmodified, gitignored), for the text LEFT of every
- * '|' separator (fillSplit in frontend.js). */
-@font-face {
-  font-family: 'RR Uni Thin';
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: block;
-  src: url('frontend/fonts/uni-sans-thin.otf?v=uni626') format('opentype');
-}
-@font-face {
-  font-family: 'RR Uni';
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: block;
-  src: url('frontend/fonts/uni-sans-heavy.otf?v=uni137b') format('opentype');
-}
+/* REQUEST 639 — INTER EVERYWHERE (rsms/inter 4.1, SIL OFL 1.1: frontend/fonts/inter/OFL-Inter.txt).
+ * Uni Sans Heavy above stays for ONE thing: the KenCrafts studio wordmark on the splash, which is a logo
+ * drawn to match the filmed clip, not UI text.
+ *
+ * THE CANVAS asks for a FAMILY, not a weight (frontend.js pixelFont writes "400 Npx <family>" and
+ * many call sites hard-code 400), so each weight is its own family over its own static cut, declared
+ * for the whole 100-900 range so nothing is ever synthesised:
+ *   'RR Inter 300' Light · 400 Regular · 500 Medium · 600 SemiBold (body) · 700 Bold · 800 ExtraBold
+ *   'RR Inter Black' Inter DISPLAY Black (headlines, the hit counter: the Display cut is drawn for big sizes)
+ *   'RR Inter Black Italic' Inter Display Black Italic (the summary's DEFEATED)
+ * THE DOM (account sheet, touch layouts, privacy/quit pages) uses one normal family, 'RR Inter',
+ * with the same files at their real weights. Same URLs, so each file is fetched once. */
+@font-face { font-family: 'RR Inter 300'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/Inter-Light.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter 400'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/Inter-Regular.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter 500'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/Inter-Medium.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter 600'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/Inter-SemiBold.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter 700'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/Inter-Bold.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter 800'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/Inter-ExtraBold.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter Black'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/InterDisplay-Black.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter Black Italic'; font-weight: 100 900; font-display: block; src: url('frontend/fonts/inter/InterDisplay-BlackItalic.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter'; font-weight: 300; font-display: swap; src: url('frontend/fonts/inter/Inter-Light.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter'; font-weight: 400; font-display: swap; src: url('frontend/fonts/inter/Inter-Regular.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter'; font-weight: 500; font-display: swap; src: url('frontend/fonts/inter/Inter-Medium.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter'; font-weight: 600; font-display: swap; src: url('frontend/fonts/inter/Inter-SemiBold.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter'; font-weight: 700; font-display: swap; src: url('frontend/fonts/inter/Inter-Bold.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter'; font-weight: 800; font-display: swap; src: url('frontend/fonts/inter/Inter-ExtraBold.woff2?v=i639') format('woff2'); }
+@font-face { font-family: 'RR Inter'; font-weight: 900; font-display: swap; src: url('frontend/fonts/inter/InterDisplay-Black.woff2?v=i639') format('woff2'); }
 @font-face {
   font-family: 'RR Pixel';
   font-style: normal;
@@ -79,7 +81,7 @@
 
 :root {
   color-scheme: dark;
-  font-family: 'RR Uni', 'RR Pixel', monospace;
+  font-family: 'RR Inter', system-ui, sans-serif;
   background: #05070b;
 }
 
@@ -151,6 +153,7 @@ canvas {
   place-items: center;
   color: #ffe45e;
   background: #080b12;
+  font-weight: 800;
   letter-spacing: .16em;
   text-align: center;
   font-size: clamp(20px, 2.4vw, 32px);

@@ -453,7 +453,7 @@
     wrap.id = 'ror-touch';
     wrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:60;'
       + 'display:none;user-select:none;-webkit-user-select:none;'
-      + 'font:400 12px/1 "RR Uni","RR Pixel",monospace;color:#eaf0ff;letter-spacing:.06em;'
+      + 'font:600 12px/1 "RR Inter",system-ui,sans-serif;color:#eaf0ff;letter-spacing:.06em;'
       + 'opacity:1;';
     /* IN-GAME CUTSCENES (request 519): the pad is 100% transparent and takes no
      * touches for the whole scene, then dissolves back in once control returns.
@@ -915,7 +915,7 @@
       + 'background:rgba(18,24,38,.72);border:1px solid rgba(255,255,255,.22);'
       + 'backdrop-filter:blur(16px) saturate(1.4);'
       + '-webkit-backdrop-filter:blur(16px) saturate(1.4);pointer-events:auto;'
-      + 'box-shadow:0 10px 40px rgba(0,0,0,.45);font:400 11px/1.5 "RR Uni","RR Pixel",monospace;';
+      + 'box-shadow:0 10px 40px rgba(0,0,0,.45);font:500 11px/1.5 "RR Inter",system-ui,sans-serif;';
     const style = document.createElement('style');
     style.textContent = '#ror-hud-panel input[type=range]{width:130px;accent-color:#ffe45e;}'
       + '#ror-hud-panel button{padding:7px 12px;border-radius:0;cursor:pointer;'
@@ -1037,7 +1037,7 @@
     slotsEl.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;'
       + 'flex-direction:column;gap:10px;padding:16px 18px;border-radius:0;min-width:min(420px,calc(100vw - 32px));'
       + 'background:rgba(18,24,38,.94);border:1px solid rgba(255,255,255,.22);pointer-events:auto;'
-      + 'box-shadow:0 10px 40px rgba(0,0,0,.55);font:400 12px/1.5 "RR Uni","RR Pixel",monospace;color:#eaf0ff;z-index:5;';
+      + 'box-shadow:0 10px 40px rgba(0,0,0,.55);font:500 12px/1.5 "RR Inter",system-ui,sans-serif;color:#eaf0ff;z-index:5;';
     wrap.appendChild(slotsEl);
     slotsEl.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
@@ -1052,7 +1052,7 @@
   function renderSlots(got, status) {
     const rec = got ? got.rec : slotsLocal();
     slotsEl.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">'
-      + '<span style="font-family:&quot;RR Uni Heavy&quot;,&quot;RR Pixel Bold&quot;,monospace;letter-spacing:.08em;color:#ffe45e">LAYOUTS</span>'
+      + '<span style="font-family:&quot;RR Inter&quot;,system-ui,sans-serif;font-weight:900;letter-spacing:.14em;color:#ffe45e">LAYOUTS</span>'
       + '<span class="lab" id="ror-hud-slots-status" style="color:#9fb2d8">' + status + '</span></div>'
       + rec.slots.map((e, i) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:0;background:rgba(255,255,255,.06)">'
         + '<span style="flex:1">LAYOUT ' + (i + 1) + '<br><span style="color:#9fb2d8">' + (e ? fmtAt(e.at) : 'EMPTY') + '</span></span>'

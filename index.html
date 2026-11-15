@@ -11,7 +11,10 @@
   <link rel="apple-touch-icon" href="favicon.png" />
   <!-- Uni Sans Heavy first, ahead of the art (request 630): the studio splash waits for it. Same URL as styles.css. -->
   <link rel="preload" href="frontend/fonts/uni-sans-heavy.otf?v=uni137b" as="font" type="font/otf" crossorigin />
-  <link rel="stylesheet" href="styles.css?v=ratelrage-uni-v155" />
+  <!-- Inter (request 639): the body cut and the headline cut, ahead of the art. Same URLs as styles.css. -->
+  <link rel="preload" href="frontend/fonts/inter/Inter-SemiBold.woff2?v=i639" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="frontend/fonts/inter/InterDisplay-Black.woff2?v=i639" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="styles.css?v=ratelrage-inter-v156" />
 </head>
 <body>
   <main class="game-shell" aria-label="RATEL RAGE game">
@@ -29,9 +32,9 @@
   <script src="src/analytics.js?v=ratelrage-mobile-v84"></script>
   <!-- Progress: local first; account sync is off unless supabase-config.js names a project. -->
   <script src="src/progress.js?v=ratelrage-mobile-v84"></script>
-  <script src="src/account.js?v=ratelrage-mobile-v155"></script>
-  <script src="src/webshell.js?v=ratelrage-mobile-v128"></script>
-  <script src="src/touch.js?v=ratelrage-mobile-v140"></script>
-  <script type="module" src="src/game.js?v=ratelrage-mobile-v155"></script>
+  <script src="src/account.js?v=ratelrage-mobile-v156"></script>
+  <script src="src/webshell.js?v=ratelrage-mobile-v156"></script>
+  <script src="src/touch.js?v=ratelrage-mobile-v156"></script>
+  <script type="module" src="src/game.js?v=ratelrage-mobile-v156"></script>
 </body>
 </html>
