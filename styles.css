@@ -173,29 +173,12 @@ canvas {
   .game-shell { width: min(100vw, calc(100dvh * 16 / 9)); }
 }
 
-/* Held upright, a phone gets a prompt instead of a postage-stamp game. (The
-   Android app is locked to landscape and never shows it.) */
-.rotate-hint {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  place-items: center;
-  padding: 24px;
-  text-align: center;
-  color: #ffe45e;
-  background: #080b12;
-  font: 400 20px/1.6 'RR Uni', 'RR Pixel', monospace;
-  letter-spacing: .14em;
-}
-@media (orientation: portrait) and (pointer: coarse) {
-  .rotate-hint { display: grid; }
-}
+/* NO ROTATE PHONE CARD (request 638): held upright, a phone just shows the game; players turn
+   the phone themselves once it starts. */
 
 /* A RETRY THAT CAME BACK UPRIGHT (request 572, webshell.js): the reload dropped the landscape
    lock, so the page is drawn turned a quarter, the way the phone is still held, until the first
-   tap brings fullscreen + landscape back. No ROTATE PHONE card in between. */
-html.rr-rot .rotate-hint { display: none !important; }
+   tap brings fullscreen + landscape back. */
 html.rr-rot body {
   position: fixed;
   top: 0;

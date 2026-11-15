@@ -74,9 +74,16 @@ game.js ──rrGameEvent──► progress.js (localStorage, always) ──chan
 - **Offline / failures**: local progress is always written first. A failed cloud
   write is marked pending (`rr.cloud.dirty:<uid>`) and retried when the browser goes
   online, the tab comes back, or the next save happens.
-- **Guest → account keeps the same user id**:
-  - Google: `linkIdentity()` (needs *Manual linking* on, see §3).
-  - Email: `updateUser({ email })`, then the confirmation link, then a password.
+- **Guest → account**:
+  - Google / Facebook (request 638): always `signInWithOAuth()` with Google's account chooser. It lands in
+    the existing account (Supabase joins a Google login to the account with the same verified email) or
+    makes a new one; the guest's progress is merged in. (It used to `linkIdentity()`, which failed with
+    "account exists" for any Google account or email that already had a profile.)
+  - Email: `updateUser({ email })`, then the confirmation link, then a password (same user id).
+- **Accounts on this device** (request 638): every account signed in here is kept in `rr.acct.known`.
+  SIGN OUT and switching *park* the session (a new anonymous sign-in replaces it locally; the server
+  session is not ended), so tapping the account on the SIGN IN view signs straight back in with
+  `setSession()`. A dead session falls back to Google (`login_hint`) or the email form. FORGET drops it.
 - **Conflicts**: if that Google account or email already belongs to another account,
   nothing is changed. The player is offered to sign in to it, with an explicit,
   visible choice: add this device's guest progress to that account, or keep them separate.
@@ -84,8 +91,8 @@ game.js ──rrGameEvent──► progress.js (localStorage, always) ──chan
   the same guest and is told that nothing was changed. The error is removed from the
   URL before supabase-js sees it, because for most errors supabase-js would drop
   the stored session.
-- **Sign out** → a new guest. The account's progress stays in its cloud save, and the
-  new guest does not inherit it.
+- **Sign out** → a new guest. The account's progress stays in its cloud save, the new
+  guest does not inherit it, and the account stays listed on this device (see above).
 - **Leaderboard** (registered players only): `start_run()` at level start (server
   clock), `submit_score()` at completion. The server checks that the parts add up,
   that the time fits the real elapsed time, that the rank is right, and that each run

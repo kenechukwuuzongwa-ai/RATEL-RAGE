@@ -62,6 +62,7 @@
   var jdel = function (s, k) { try { if (s) s.removeItem(k); } catch (e) {} };
 
   var WHO = 'rr.acct.who';          // { uid, anon } the identity this device last used
+  var KNOWN = 'rr.acct.known';      // accounts signed in on this device (request 638), newest first
   var PENDING = 'rr.acct.pending';  // a sign-in / link that leaves the page and comes back
   var VER = 'rr.cloud.ver:';        // + uid: the cloud version the local record is based on
   var DIRTY = 'rr.cloud.dirty:';    // + uid: a save that has not reached the cloud yet
@@ -107,6 +108,13 @@
   // stored session, which would turn this guest into a new one. We read it
   // ourselves (readReturn), so strip it now. Token returns are left for it.
   if (ret.error || ret.code) cleanUrl();
+  /* BACK FROM A SIGN-IN, STRAIGHT TO THE SIGN IN VIEW (request 638). Google, Facebook and an email
+   * link all come back by loading the page again, and that used to replay the studio card and the
+   * title. The front end reads this flag (the same one QUIT TO MENU uses) and opens on SIGN IN, where
+   * the account it just signed in to is shown. This script runs before the game module. */
+  if (ret.tokens || ret.error || ret.code) {
+    try { window.sessionStorage.setItem('rorSkipSplash', 'signin'); } catch (e) {}
+  }
 
   // ------------------------------------------------------------- client ----
   var sb = null, session = null;
@@ -244,6 +252,8 @@
     // A guest who confirmed an email has no password yet; one who signed in with a password has.
     S.hasPassword = !!(user.user_metadata && user.user_metadata.rr_pw) || !!jget(ls, 'rr.acct.pw:' + user.id);
     S.status = anon ? 'guest' : 'registered';
+    // On this device's account list. Its parked session (if any) was just used or is stale: drop it.
+    if (!anon) remember({ uid: user.id, email: S.email, phone: S.phone, provider: S.provider, at: Date.now(), s: null });
     if (S.view === 'sent' && !anon) S.view = S.hasPassword ? 'home' : 'password';
     if (switching || adoptedThisPage !== user.id) {
       adoptedThisPage = user.id;
@@ -258,8 +268,45 @@
     if (!sb || !S.uid) return;
     var uid = S.uid;
     var r = await call(sb.from('profiles').select('display_name').eq('id', uid).maybeSingle());
-    if (!r.error && r.data && uid === S.uid) { S.name = r.data.display_name; changed(); }
+    if (!r.error && r.data && uid === S.uid) {
+      S.name = r.data.display_name;
+      if (!S.anon) remember({ uid: uid, name: S.name });
+      changed();
+    }
   }
+
+  /* ACCOUNTS ON THIS DEVICE (request 638: "have the previously signed-in accounts as buttons players
+   * can tap to sign into"). Every account signed in here is listed. SIGN OUT and switching PARK the
+   * account's session (its tokens, like the one supabase-js already keeps in 'rr.auth') instead of
+   * ending it, so tapping the account later signs straight back in with no Google trip or password.
+   * A parked session that no longer works (expired, revoked, used elsewhere) falls back to the
+   * account's own way in: Google again, or the email form filled in. FORGET drops it from the list. */
+  function known() { var k = jget(ls, KNOWN); return Array.isArray(k) ? k.filter(function (e) { return e && e.uid; }) : []; }
+  function remember(entry) {
+    var list = known(), old = null;
+    list = list.filter(function (e) { if (e.uid === entry.uid) { old = e; return false; } return true; });
+    var next = {}, k;
+    for (k in (old || {})) next[k] = old[k];
+    for (k in entry) if (entry[k] !== undefined) next[k] = entry[k];
+    if (old && entry.at === undefined) {            // a detail changed: keep its place in the list
+      var i = known().findIndex(function (e) { return e.uid === entry.uid; });
+      list.splice(i, 0, next);
+    } else list.unshift(next);
+    jset(ls, KNOWN, list.slice(0, 6));
+  }
+  function forget(uid) { jset(ls, KNOWN, known().filter(function (e) { return e.uid !== uid; })); changed(); }
+  // Park the signed-in account's session before this device moves to another identity.
+  async function park() {
+    if (!sb || !session || S.anon || !S.uid) return;
+    var r = await call(sb.auth.getSession());
+    var s = r.data && r.data.session;
+    if (s && s.user && s.user.id === S.uid && s.refresh_token) {
+      remember({ uid: S.uid, email: S.email, phone: S.phone, name: S.name, provider: S.provider, at: Date.now(), s: { a: s.access_token, r: s.refresh_token } });
+    }
+  }
+  // The game's best-score keys belong to whoever is signed in (they are in that account's record);
+  // the next identity must not inherit them.
+  function dropGameBests() { P.DIFFS.forEach(function (d) { jdel(ls, 'ror.best.l1.' + d); }); }
 
   // ----------------------------------------------------------- cloud save ----
   var syncing = null, again = false, syncTimer = 0;
@@ -411,18 +458,6 @@
   }
   var guestHasProgress = function () { return !P.same(P.get(), P.blank()); };
 
-  var linkGoogle = act(async function () {
-    jset(ls, PENDING, { kind: 'link', from: S.uid, merge: true, method: 'google', at: Date.now() });
-    var r = await call(sb.auth.linkIdentity({ provider: 'google', options: { redirectTo: redirectTo } }));
-    if (r.error) { jdel(ls, PENDING); throw r.error; }
-    S.message = { text: 'Opening Google…' };
-  });
-  var signInGoogle = act(async function (merge) {
-    jset(ls, PENDING, { kind: 'signin', from: S.anon ? S.uid : null, merge: !!merge, method: 'google', at: Date.now() });
-    var r = await call(sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: redirectTo } }));
-    if (r.error) { jdel(ls, PENDING); throw r.error; }
-    S.message = { text: 'Opening Google…' };
-  });
   var saveWithEmail = act(async function (email) {
     email = String(email || '').trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw { code: 'validation_failed' };
@@ -464,16 +499,40 @@
     if (r.error) throw r.error;
     S.name = name; S.message = { text: 'Name saved.' };
   });
+  /* SIGN OUT (request 638): this device becomes a fresh guest, and the account stays on its list,
+   * one tap from coming back. A new guest REPLACES the session here without ending the account's
+   * session on the server (signOut() would end it, and the parked one with it). */
   var signOut = act(async function () {
     await syncNow();
+    await park();
     jset(ls, WHO, null);
-    // The game's own best-score keys belong to whoever is signed in; they are in
-    // the account's record already, and the next guest must not inherit them.
-    P.DIFFS.forEach(function (d) { jdel(ls, 'ror.best.l1.' + d); });
+    dropGameBests();
     P.setOwner('device');            // anything played before the new guest exists stays with it
-    await call(sb.auth.signOut({ scope: 'local' }));
+    var g = await call(sb.auth.signInAnonymously());
+    if (g.error) await call(sb.auth.signOut({ scope: 'local' }));   // offline: just leave locally
     S.view = 'home';
-    S.message = { text: 'Signed out. Progress stays in your account; this device is now a guest.' };
+    S.message = { text: 'Signed out. Tap your account to come back.' };
+  });
+  /* Tap an account on this device's list. A guest's progress here is carried into it, as a sign-in
+   * always does. */
+  var switchTo = act(async function (uid) {
+    var e = known().filter(function (x) { return x.uid === uid; })[0];
+    if (!e || uid === S.uid) return;
+    var fromGuest = S.anon ? S.uid : null;
+    var merge = !!(S.anon && guestHasProgress());
+    await syncNow();
+    if (!S.anon) { await park(); dropGameBests(); }
+    if (e.s && e.s.r) {
+      jset(ls, PENDING, { kind: 'signin', from: fromGuest, merge: merge, method: 'device', at: Date.now() });
+      var r = await call(sb.auth.setSession({ access_token: e.s.a, refresh_token: e.s.r }));
+      if (!r.error && r.data && r.data.session) return;          // onAuthStateChange adopts it
+      jdel(ls, PENDING);
+      remember({ uid: uid, s: null });                           // spent: sign in the long way
+    }
+    if (!S.anon) P.absorb(P.get());                              // still here: put this account's bests back
+    if (e.provider === 'google' || e.provider === 'facebook') { await oauthGo(e.provider, e.email); return; }
+    S.pendingEmail = e.email || null;
+    openPanel('email');
   });
   var retry = act(async function () {
     if (!sb) await boot();
@@ -504,19 +563,22 @@
   }
   readProviders();
 
-  /* Google / Facebook. A guest LINKS the provider (same user id, so the progress on this device stays
-   * theirs); a registered player, or a guest whose provider account already exists, signs in to it. */
-  var signInOAuth = act(async function (provider, signInOnly) {
-    if (S.anon && !signInOnly) {
-      jset(ls, PENDING, { kind: 'link', from: S.uid, merge: true, method: provider, at: Date.now() });
-      var r = await call(sb.auth.linkIdentity({ provider: provider, options: { redirectTo: redirectTo } }));
-      if (!r.error) return;
-      jdel(ls, PENDING);
-      if (r.error.code !== 'manual_linking_disabled') throw r.error;
-    }
-    jset(ls, PENDING, { kind: 'signin', from: S.anon ? S.uid : null, merge: true, method: provider, at: Date.now() });
-    var s = await call(sb.auth.signInWithOAuth({ provider: provider, options: { redirectTo: redirectTo } }));
+  /* Google / Facebook: always a SIGN-IN (request 638). It used to LINK the provider to the guest,
+   * which failed whenever that Google account (or its email) already had a profile: "account
+   * exists", then SIGN IN TO IT sent the player to Google a second time. A sign-in lands in the
+   * existing account in one trip (Supabase joins a Google login to the account with the same
+   * verified email), or makes a new one; either way the guest's progress here is carried over
+   * (progress.js merge, nothing lost). Google is asked to show its account chooser, or to go
+   * straight to the account tapped on this device's list. */
+  async function oauthGo(provider, hint) {
+    jset(ls, PENDING, { kind: 'signin', from: S.anon ? S.uid : null, merge: !!(S.anon && guestHasProgress()), method: provider, at: Date.now() });
+    var q = provider === 'google' ? (hint ? { login_hint: hint } : { prompt: 'select_account' }) : undefined;
+    var s = await call(sb.auth.signInWithOAuth({ provider: provider, options: { redirectTo: redirectTo, queryParams: q } }));
     if (s.error) { jdel(ls, PENDING); throw s.error; }
+  }
+  var signInOAuth = act(async function (provider) {
+    if (!S.anon) { await park(); dropGameBests(); }
+    await oauthGo(provider);
   });
   /* Phone: a code by SMS. A guest adds the number to its own account (phone_change); a number that
    * already has an account is signed in to instead (sms). */
@@ -572,7 +634,6 @@
        * kept to the room the keyboard leaves; in landscape (a screen that cannot turn), the headings step aside. */
       '.rr-acct-overlay.phone{place-items:start center;padding:8px 0 0}',
       '.rr-acct-overlay.phone .rr-acct-panel{width:min(420px,94vw);padding:16px 18px 14px}',
-      'body.rr-acct-open .rotate-hint{display:none!important}',
       '.rr-acct-overlay.tight .rr-acct-panel>p,.rr-acct-overlay.tight .rr-acct-panel h2{display:none}',
       '.rr-acct-overlay.tight .rr-acct-panel{padding-top:8px}.rr-acct-overlay.tight .rr-acct-panel .btn{margin:.2em 0;padding:.55em}',
     ].join('');
@@ -856,6 +917,15 @@
       return Promise.resolve();
     },
     signOut: function () { return signOut(); },
+    /* Request 638: the accounts signed in on this device, newest first, without the current one.
+     * No tokens leave this file. `parked` = one tap signs straight in. */
+    get accounts() {
+      return known().filter(function (e) { return e.uid !== S.uid; }).map(function (e) {
+        return { uid: e.uid, email: e.email || null, phone: e.phone || null, name: e.name || null, provider: e.provider || null, parked: !!(e.s && e.s.r) };
+      });
+    },
+    switchTo: function (uid) { return switchTo(uid); },
+    forget: function (uid) { forget(uid); return Promise.resolve(); },
     on: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     syncNow: syncNow,
     getLeaderboard: function (level, difficulty, limit) {

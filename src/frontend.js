@@ -1629,7 +1629,9 @@ export function createFrontEnd({
    * focus/press eases instead of snapping, and cheap enough to never clear. */
   const fx = new Map();
 
-  let phase = sessionStorage.getItem('rorSkipSplash') ? 'menu' : 'splash';
+  /* 'signin' = account.js saw this load come back from Google / an email link (request 638): open
+   * on the SIGN IN view, showing the account, instead of replaying the studio card and the title. */
+  let phase = sessionStorage.getItem('rorSkipSplash') ? (sessionStorage.getItem('rorSkipSplash') === 'signin' ? 'signin' : 'menu') : 'splash';
   sessionStorage.removeItem('rorSkipSplash');
   let phaseT = 0;
   let clock = 0;
@@ -4944,14 +4946,19 @@ export function createFrontEnd({
     const a = Math.min(1, messageT * 3.4);
     ctx.save();
     ctx.globalAlpha = a;
+    /* NO BOX (request 638: "remove the placeholders on all info text popups"): the words alone,
+     * held off the picture by a soft shadow, as the subtitles are (request 597). */
     setFont(700, 12.5, 2.4);
-    const tw = ctx.measureText(message).width;
-    const bw = tw + 44, bx = W / 2 - bw / 2, by = H - 116;
-    glass(bx, by, bw, 34, 6, { tint: 'rgba(9,13,20,0.88)', border: 'rgba(224,67,44,0.55)' });
+    const by = H - 116;
     ctx.fillStyle = C.cream;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(message, W / 2, by + 18);
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 1;
+    fillCentred(message, W / 2, by + 18);
+    ctx.shadowBlur = 3;
+    fillCentred(message, W / 2, by + 18);
     ctx.restore();
     ctx.textBaseline = 'alphabetic';
   }
@@ -7121,26 +7128,41 @@ export function createFrontEnd({
   }
   const account = () => (window.RRAccount && window.RRAccount.enabled ? window.RRAccount : null);
   const signedIn = () => account()?.info?.status === 'registered';
+  /* ON THIS DEVICE (request 638): the other accounts signed in here, as tappable cards under the
+   * methods, each with a small FORGET cross. Two at most, newest first. */
+  function deviceAccounts() {
+    const list = account()?.accounts;
+    return Array.isArray(list) ? list.slice(0, 2) : [];
+  }
+  function deviceItems() {
+    const out = [];
+    for (const acc of deviceAccounts()) {
+      out.push({ key: 'acct', uid: acc.uid, acc });
+      out.push({ key: 'forget', uid: acc.uid, acc });
+    }
+    return out;
+  }
   function signInItems() {
     const info = account()?.info;
     if (info && info.status === 'registered') {
       const out = [];
       if (info.email && !info.hasPassword) out.push({ key: 'password', label: 'SET PASSWORD', glyph: 'lock' });
       out.push({ key: 'signout', label: 'SIGN OUT', glyph: 'power' });
+      out.push(...deviceItems());
       out.push({ key: 'privacy' });
       return out;
     }
-    return [...SIGNIN.rows, ...SIGNIN.minor, { key: 'privacy' }];
+    return [...SIGNIN.rows, ...SIGNIN.minor, ...deviceItems(), { key: 'privacy' }];
   }
   /* Why a press on this row would do nothing, or null. Read BEFORE the press beat so a refusal
    * sounds like a refusal (as a disabled main-menu row does), not like a step forward. */
   function signInRefusal(it) {
-    if (!it || it.key === 'guest' || it.key === 'privacy') return null;
+    if (!it || it.key === 'guest' || it.key === 'privacy' || it.key === 'forget') return null;
     const a = account();
     const st = a?.info?.status;
     if (!a || !(st === 'guest' || st === 'registered')) return st === 'connecting' ? 'CONNECTING…' : 'SIGN-IN IS OFFLINE';
     if (a.info.busy) return 'ONE MOMENT…';
-    if (it.key === 'signout' || it.key === 'password') return null;
+    if (it.key === 'signout' || it.key === 'password' || it.key === 'acct') return null;
     if (a.providers.read && !a.providers[it.key]) return `${it.label.replace('CONTINUE WITH ', '')} SIGN-IN IS COMING SOON`;
     return null;
   }
@@ -7158,10 +7180,28 @@ export function createFrontEnd({
     if (it.key === 'guest') { toMenu(); return; }
     if (it.key === 'privacy') { openLink(SIGNIN.privacy); return; }
     if (it.key === 'signout') {
-      a.signOut().then(() => { if (phase === 'signin') { selection = 0; showMessage('SIGNED OUT'); } });
+      a.signOut().then(() => { if (phase === 'signin') { selection = 0; showMessage('SIGNED OUT. TAP YOUR ACCOUNT BELOW TO COME BACK'); } });
       return;
     }
     if (it.key === 'password') { a.open('password'); return; }
+    if (it.key === 'forget') {
+      a.forget(it.uid).then(() => {
+        if (phase !== 'signin') return;
+        selection = Math.max(0, Math.min(selection - 1, signInItems().length - 1));
+        showMessage('REMOVED FROM THIS DEVICE');
+      });
+      return;
+    }
+    if (it.key === 'acct') {
+      showMessage(it.acc.parked ? 'SIGNING IN…' : it.acc.provider === 'google' ? 'OPENING GOOGLE…' : 'SIGN IN TO CONTINUE');
+      Promise.resolve(a.switchTo(it.uid)).then(() => {
+        if (phase !== 'signin') return;
+        selection = 0;
+        const n = a.takeNotice?.();
+        if (n) showMessage(n.toUpperCase());
+      });
+      return;
+    }
     if (it.key === 'google' || it.key === 'facebook') showMessage(`OPENING ${it.key === 'google' ? 'GOOGLE' : 'FACEBOOK'}…`);
     Promise.resolve(a.signIn(it.key)).then(() => {
       const n = a.info?.status === 'registered' ? null : a.takeNotice?.();
@@ -7221,6 +7261,78 @@ export function createFrontEnd({
     hitboxes.push({ x, y, w, h, index, id });
   }
 
+  /* One account card from ON THIS DEVICE (request 638): the initial in a ring, the name and how it
+   * signs in, and a FORGET cross at the right that is its own target (the next item in the list). */
+  function accountCard(it, index, x, y, w, h) {
+    const acc = it.acc;
+    const id = `signin:acct:${acc.uid}`, xid = `signin:forget:${acc.uid}`;
+    const s = getFx(id), sx = getFx(xid);
+    s.target = index === selection ? 1 : 0;
+    sx.target = index + 1 === selection ? 1 : 0;
+    const f = s.focus, p = s.press;
+    const shake = index === selection && rejectT > 0 ? Math.sin(clock * 62) * rejectT * 3 : 0;
+    const xw = 34;                                   // the FORGET strip
+    ctx.save();
+    ctx.translate(shake, 0);
+    glass(x, y, w, h, 0, { tint: `rgba(8,12,18,${(0.62 + 0.12 * Math.max(f, sx.focus)).toFixed(3)})`, shadow: f > 0.5, border: 'rgba(0,0,0,0)' });
+    ctx.strokeStyle = `rgba(255,255,255,${(0.12 * (1 - Math.max(f, sx.focus))).toFixed(3)})`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    focusOverlay(x, y, w - xw, h, f, p);
+    // the ring and initial (rule 603 keeps circles)
+    const who = (acc.name || (acc.email ? acc.email.split('@')[0] : '') || acc.phone || 'PLAYER').toString();
+    const ax = x + 12 + 14, ay = y + h / 2;
+    ctx.beginPath(); ctx.arc(ax, ay, 14, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(54,214,126,0.14)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(54,214,126,0.7)'; ctx.lineWidth = 1.1; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    setFont(900, 12.5, 0);
+    ctx.fillStyle = C.orangeSoft;
+    ctx.fillText(who.trim().charAt(0).toUpperCase() || 'P', ax, ay + 1);
+    // name over the way in
+    const lx = ax + 24, room = x + w - xw - lx - 8;
+    // the second line tells two accounts apart: the address (or number), else the way in
+    const how = (acc.email || acc.phone || (acc.provider === 'google' ? 'GOOGLE' : acc.provider === 'facebook' ? 'FACEBOOK' : 'EMAIL')).toUpperCase();
+    ctx.textAlign = 'left';
+    fitFont(700, 12.5, 1.4, who.toUpperCase(), room);
+    ctx.fillStyle = `rgba(255,255,255,${(0.7 + 0.25 * f).toFixed(3)})`;
+    ctx.fillText(who.toUpperCase(), lx, ay - 7);
+    fitFont(500, 9, 1.6, how, room);
+    ctx.fillStyle = 'rgba(255,255,255,0.42)';
+    ctx.fillText(how, lx, ay + 9);
+    // FORGET: a hairline and a cross
+    const fx0 = x + w - xw;
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(fx0, y + 8, 1, h - 16);
+    if (sx.focus > 0.01) { ctx.fillStyle = `rgba(255,106,90,${(0.16 * sx.focus).toFixed(3)})`; ctx.fillRect(fx0 + 1, y, xw - 1, h); }
+    const cx0 = fx0 + xw / 2, r = 4.5;
+    ctx.strokeStyle = `rgba(255,255,255,${(0.42 + 0.5 * sx.focus).toFixed(3)})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(cx0 - r, ay - r); ctx.lineTo(cx0 + r, ay + r);
+    ctx.moveTo(cx0 + r, ay - r); ctx.lineTo(cx0 - r, ay + r);
+    ctx.stroke();
+    ctx.restore();
+    ctx.textBaseline = 'alphabetic';
+    hitboxes.push({ x, y, w: w - xw, h, index, id });
+    hitboxes.push({ x: fx0, y, w: xw, h, index: index + 1, id: xid });
+  }
+  /* The ON THIS DEVICE block: a small heading and one or two cards, side by side. */
+  function drawDeviceAccounts(x0, y, items, enterK) {
+    const cards = items.map((it, i) => ({ it, i })).filter((o) => o.it.key === 'acct');
+    if (!cards.length) return;
+    const S = SIGNIN;
+    ctx.save();
+    ctx.globalAlpha *= enterK;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    setFont(600, 9.5, 2.6);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillText('ON THIS DEVICE', x0, y);
+    const cw = cards.length > 1 ? (S.colW - S.gap) / 2 : S.colW;
+    cards.forEach((o, j) => accountCard(o.it, o.i, x0 + j * (cw + S.gap), y + 12, cw, 46));
+    ctx.restore();
+  }
+
   /* The Ratel Rage mark, centred on (cx, cy), `inkW` wide: the full lockup when it loaded, else the wordmark. */
   function drawMarkCentred(cx, cy, inkW) {
     ctx.save();
@@ -7250,6 +7362,8 @@ export function createFrontEnd({
     const a = account();
     const prov = a?.providers;
     const items = signInItems();
+    // ON THIS DEVICE sits under the PHONE · GUEST row in both views, so it never moves
+    const deviceY = S.top + S.rows.length * (S.rowH + S.gap) + 14 + 18 + S.minorH + 22;
 
     // THE MARK
     ctx.save();
@@ -7277,29 +7391,37 @@ export function createFrontEnd({
       ctx.fillStyle = C.orangeSoft;
       ctx.fillText(who.trim().charAt(0).toUpperCase() || 'P', ax, ay + 1);
       ctx.textAlign = 'left';
-      fitFont(700, 15, 1.6, who.toUpperCase(), S.colW - 110);
+      fitFont(700, 15, 1.6, who.toUpperCase(), S.colW - 84 - 96);   // clear of the SYNCED corner
       ctx.fillStyle = 'rgba(255,255,255,0.88)';
       ctx.fillText(who.toUpperCase(), x0 + 84, ay - 11);
       fitFont(500, 11.5, 0.6, sub, S.colW - 110);
       ctx.fillStyle = 'rgba(255,255,255,0.46)';
       ctx.fillText(sub, x0 + 84, ay + 13);
-      // cloud save state: a dot and one word
+      /* cloud save state: a dot and one word, set INSIDE the panel's top-right corner (request 638:
+       * the word was placed from a fixed offset and ran out past the edge). Right-aligned on the
+       * measured ink, so SAVING / RETRY / SYNCED all keep the same margin. */
       const saved = info.sync === 'saved' || info.sync === 'idle';
-      ctx.beginPath(); ctx.arc(x0 + S.colW - 74, py + 16, 3.2, 0, Math.PI * 2);
-      ctx.fillStyle = info.sync === 'error' ? '#ff6a5a' : saved ? C.orange : C.gold; ctx.fill();
+      const word = info.sync === 'saving' ? 'SAVING' : info.sync === 'error' ? 'RETRY' : 'SYNCED';
       setFont(600, 9, 2);
+      const ww = ctx.measureText(word).width - fontTrack;
+      const wr = x0 + S.colW - 16, wy = py + 17;
+      ctx.textAlign = 'right';
       ctx.fillStyle = 'rgba(255,255,255,0.42)';
-      ctx.fillText(info.sync === 'saving' ? 'SAVING' : info.sync === 'error' ? 'RETRY' : 'SYNCED', x0 + S.colW - 66, py + 16.5);
+      ctx.fillText(word, wr + fontTrack, wy + 0.5);
+      ctx.beginPath(); ctx.arc(wr - ww - 9, wy, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = info.sync === 'error' ? '#ff6a5a' : saved ? C.orange : C.gold; ctx.fill();
       ctx.restore();
       let y = py + ph + 16;
       items.forEach((it, i) => {
         if (it.key === 'privacy') return;
         ctx.save();
         ctx.globalAlpha *= enter(2 + i);
+        if (it.key === 'acct' || it.key === 'forget') { ctx.restore(); return; }
         signInRow(it, i, x0, y, S.colW, S.rowH, false);
         ctx.restore();
         y += S.rowH + S.gap;
       });
+      drawDeviceAccounts(x0, deviceY, items, enter(6));
     } else {
       // THE METHODS
       S.rows.forEach((it, i) => {
@@ -7331,6 +7453,7 @@ export function createFrontEnd({
         signInRow(it, i, x0 + j * (mw + S.gap), my, mw, S.minorH, it.key !== 'guest' && !!(prov && prov.read && !prov[it.key]));
         ctx.restore();
       });
+      drawDeviceAccounts(x0, deviceY, items, enter(6));
     }
 
     // THE FOOT: one dim legal line (a link), and the connection state when there is no connection

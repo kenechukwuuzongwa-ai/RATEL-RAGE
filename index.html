@@ -11,14 +11,13 @@
   <link rel="apple-touch-icon" href="favicon.png" />
   <!-- Uni Sans Heavy first, ahead of the art (request 630): the studio splash waits for it. Same URL as styles.css. -->
   <link rel="preload" href="frontend/fonts/uni-sans-heavy.otf?v=uni137b" as="font" type="font/otf" crossorigin />
-  <link rel="stylesheet" href="styles.css?v=ratelrage-uni-v150" />
+  <link rel="stylesheet" href="styles.css?v=ratelrage-uni-v155" />
 </head>
 <body>
   <main class="game-shell" aria-label="RATEL RAGE game">
     <canvas id="game" width="1280" height="720" tabindex="0" aria-label="RATEL RAGE arcade game canvas"></canvas>
     <div id="loading" class="loading">PREPARING THE STREETS…</div>
   </main>
-  <div id="rotate-hint" class="rotate-hint" aria-hidden="true">ROTATE PHONE TO PLAY</div>
   <noscript>This game requires JavaScript.</noscript>
   <!-- Optional analytics: off unless analytics-config.js names an endpoint
        (or supabase-config.js names a project). -->
@@ -30,9 +29,9 @@
   <script src="src/analytics.js?v=ratelrage-mobile-v84"></script>
   <!-- Progress: local first; account sync is off unless supabase-config.js names a project. -->
   <script src="src/progress.js?v=ratelrage-mobile-v84"></script>
-  <script src="src/account.js?v=ratelrage-mobile-v143"></script>
+  <script src="src/account.js?v=ratelrage-mobile-v155"></script>
   <script src="src/webshell.js?v=ratelrage-mobile-v128"></script>
   <script src="src/touch.js?v=ratelrage-mobile-v140"></script>
-  <script type="module" src="src/game.js?v=ratelrage-mobile-v154"></script>
+  <script type="module" src="src/game.js?v=ratelrage-mobile-v155"></script>
 </body>
 </html>

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-15 — Sign-in: no intros on return, one Google trip, accounts on this device (v155, requests 637-638)
+
+- Google sign-in switched on (Google Auth Platform web client; secret only in Supabase; build-web ships google: true).
+- Coming back from Google / an email link opens straight on SIGN IN (account.js sets rorSkipSplash='signin'); no studio card or title replay.
+- GOOGLE / FACEBOOK are always a sign-in (signInWithOAuth, Google account chooser), never a link to the guest. Fixes "account already exists" for a Google account whose email already had a profile, and the second Google trip from SIGN IN TO IT. Guest progress is carried over (progress.js merge).
+- ON THIS DEVICE: accounts signed in here are listed on the SIGN IN view (two at most, with a FORGET cross). SIGN OUT and switching park the session (a new guest replaces it locally instead of ending it on the server), so tapping the account signs straight back in; a dead session falls back to Google (login_hint) or the email form filled in.
+- SYNCED is right-aligned inside the account panel; the info popup (messagePlate) has no box, words over a shadow; the ROTATE PHONE TO PLAY card is gone.
+Checks: _chromakey/req638/signin.js against the real project (11/11: return opens on SIGN IN, sign out parks A, B then tap A with no form, reload, forget, GOOGLE -> /authorize with prompt=select_account, no rotate card, no page errors; test users deleted). A real Google round trip needs the owner.
+
 ## 2026-11-14 — iPhone crash on load, old KenCrafts splash on slow links (v154, request 630)
 
 - iPhone/iPad ("A problem repeatedly occurred" in Safari, "Can't open this page" in Chrome for iOS): iOS now gets the phone art Android gets (RR_WEB.lowres, half-res sky/background with the x2 compensation, the idle twin) instead of the desktop sheets (~2.9 GB decoded for those sheets; darki-jump alone 12288x10056). PHONE_ART flag in game.js; iPadOS counts (touch Mac).
