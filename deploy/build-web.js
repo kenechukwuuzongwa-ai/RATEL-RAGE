@@ -229,9 +229,10 @@ if (!process.argv.includes('--no-ads')) {
 /* Player accounts (src/account.js, docs/ACCOUNTS.md): the WEB build connects to the
  * Supabase project "Ratel Rage". The key is the PUBLISHABLE one (public by design;
  * RLS protects the data). The source supabase-config.js stays empty, so the editor
- * and the APK stay device-only. Google stays hidden until its provider is set up.
+ * and the APK stay device-only. Google provider set up in request 637 (Google Auth
+ * Platform project "Ratel Rage", web client; secret only in Supabase).
  * `--no-accounts` leaves it off. */
-const SUPABASE = { url: 'https://xnnygfkzagqoxuhqervm.supabase.co', anonKey: 'sb_publishable_-bUEkA2cHSVcg4g1qsLXSQ_kNw7MgWr', google: false };
+const SUPABASE = { url: 'https://xnnygfkzagqoxuhqervm.supabase.co', anonKey: 'sb_publishable_-bUEkA2cHSVcg4g1qsLXSQ_kNw7MgWr', google: true };
 if (!process.argv.includes('--no-accounts')) {
   if (/^sb_secret_/.test(SUPABASE.anonKey)) { console.error('build-web: refusing a SECRET Supabase key'); process.exit(1); }
   const sbPath = path.join(OUT, 'supabase-config.js');

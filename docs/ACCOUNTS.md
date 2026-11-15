@@ -20,7 +20,10 @@ empty, the game behaves exactly as before: progress is kept on the device
     allow-list: `https://ratelrage.com/`, `/**`, `https://www.ratelrage.com/**`, and the old
     `https://ratel-rage.pages.dev/`, `/**`, `https://*.ratel-rage.pages.dev/**`. `redirectTo` stays
     empty, so links return to whichever of those addresses the player is on.
-  - Google: OFF, and the game hides its buttons (`google: false`).
+  - Google: ON since 2026-11-15 (request 637). Google Auth Platform project "Ratel Rage", Web client
+    `1012181181633-o3sg6d1u4jpla6pmhf9v8pqekbtmo0jf.apps.googleusercontent.com`, origins
+    `https://ratelrage.com` + `https://www.ratelrage.com`, redirect the Supabase callback; published
+    (External), no logo, so no Google review. The secret lives only in Supabase. `build-web.js` ships `google: true`.
 * **Wiring:** `deploy/build-web.js` writes the URL and the **publishable** key into
   `deploy/dist/supabase-config.js` only. It refuses a `sb_secret_` key, and `--no-accounts`
   leaves accounts off. The source `supabase-config.js` stays empty, so the editor and the
@@ -30,7 +33,6 @@ empty, the game behaves exactly as before: progress is kept on the device
   in Resend (DKIM/SPF records in Cloudflare DNS). Email rate limit raised from 2 to 100 an hour. Proven
   with a sign-up to Resend's test inbox `delivered@resend.dev` (that test user was then deleted).
 * **Still to do before heavy traffic:**
-  - Google provider (§3.6);
   - CAPTCHA support in `account.js`, then switch it on;
   - a contact address on `privacy.html`.
 * **Live checks run:** `_chromakey/_brand/liveauth.js` (11/11: guest sign-up, save/load,
