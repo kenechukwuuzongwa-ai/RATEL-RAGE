@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-16 — KenCrafts splash sting comes back on the first touch (v162, request 647)
+
+- A launch with no tap (the home-screen app, a fresh tab) lets the browser refuse sound, and the studio card then rolls silent; its whole sting is in the first 3 s of the clip. Now, when that happens, the player's first tap or key press while the card is still in its sting restarts the card from the top with sound (src/frontend.js regainSplashSound). A later tap, or a card that already has sound, is left alone. Test: _chromakey/req647/regain.js 6/6.
+
 ## 2026-11-15 — Reminder card waits for its logo (v161, request 645)
 
 - src/reminders.js: the REMIND ME card is built hidden as soon as the menu opens and slides in only once the ratel logo has loaded, so it never shows an empty logo slot. Verified end to end on ratelrage.com: a real push through Google's push service reached the game's service worker in about 2 s and showed the reminder.

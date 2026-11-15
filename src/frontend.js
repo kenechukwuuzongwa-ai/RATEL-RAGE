@@ -2855,6 +2855,38 @@ export function createFrontEnd({
     }
   }
 
+  /* THE STING COMES BACK ON THE FIRST TOUCH (request 647: "the KenCrafts splash SFX is gone").
+   * A launch with no tap at all (the home-screen app of request 643, a fresh tab) gives the browser
+   * grounds to refuse sound, and the card then rolls muted. Its whole sting sits in the first
+   * SPLASH_SOUND_END seconds of the clip (the rest is silent), so unmuting in place on a later touch
+   * would play nothing. Instead, the player's first real gesture (a tap, the fullscreen tap, a key)
+   * while the muted card is still inside its sting restarts the card from the top WITH sound; the
+   * gesture is what makes sound allowed. Later touches, or a card that already has sound, are left
+   * alone. Only events the browser counts as activation (touchend/pointerup/click/keydown/mousedown). */
+  const SPLASH_SOUND_END = 3.1;
+  function regainSplashSound() {
+    if (phase !== 'splash' || !splashStarted || splashFailed || splashMuted !== true) return;
+    if (navigator.userActivation && !navigator.userActivation.isActive) return;
+    if (splashHoldT >= 0 || splashVideo.currentTime >= SPLASH_SOUND_END) return;
+    splashMuted = null;
+    splashVideo.currentTime = 0;
+    splashRollAt = phaseT;
+    splashVideo.muted = false;
+    splashVideo.volume = clamp(settings.master * settings.sfx, 0, 1);
+    const p = splashVideo.play();
+    if (p?.then) {
+      p.then(() => { splashMuted = splashVideo.muted; }).catch(() => {
+        splashVideo.muted = true;
+        splashMuted = true;
+        const q = splashVideo.play();
+        if (q?.catch) q.catch(() => { splashFailed = true; });
+      });
+    } else splashMuted = splashVideo.muted;
+  }
+  for (const ev of ['touchend', 'pointerup', 'click', 'keydown', 'mousedown']) {
+    addEventListener(ev, regainSplashSound, { capture: true, passive: true });
+  }
+
   /* Nothing of the card may survive into the menus — a 6 s clip still decoding
    * behind the title is wasted power, and its audio outliving the screen is the
    * one way this can go audibly wrong. */
