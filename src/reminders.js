@@ -76,10 +76,13 @@
   // from a tap only: the browser's permission prompt, then the subscription
   function ask() {
     if (!S.supported || S.busy) return Promise.resolve(false);
-    S.busy = true; changed();
+    S.busy = true; answered = true; lset(ASKED, Date.now()); changed();
     var p;
     try { p = Notification.requestPermission(); } catch (e) { p = null; }
+    // request 648: the prompt can drop fullscreen + landscape; put the game back the moment it closes
+    var relandscape = function () { try { if (window.RR_WEB && window.RR_WEB.relandscape) window.RR_WEB.relandscape(); } catch (e) {} };
     return Promise.resolve(p).then(function (perm) {
+      relandscape();
       S.permission = perm || Notification.permission;
       lset(ASKED, Date.now());
       if (S.permission !== 'granted') return false;
@@ -103,7 +106,11 @@
   function playedOnce() {
     try { var d = window.RRProgress && window.RRProgress.get(); return !!(d && d.stats && d.stats.runs > 0); } catch (e) { return false; }
   }
+  // request 648: one tap on the card answers it for this session (it used to come back while the
+  // browser's prompt was still open, and stayed until REMIND ME was tapped a second time)
+  var answered = false;
   function shouldOffer() {
+    if (answered || S.busy) return false;
     if (!S.supported || S.on || S.permission !== 'default' || lget(OFF) === '1' || !playedOnce()) return false;
     var at = +lget(ASKED) || 0;
     return !at || Date.now() - at > ASK_AGAIN_MS;
@@ -111,19 +118,21 @@
   var card = null;
   function buildCard() {
     var css = document.createElement('style');
+    /* Request 648: a small card that drops in from the top edge (it was a large panel rising from the bottom). */
     css.textContent = [
-      '.rr-remind{position:fixed;left:50%;bottom:max(14px,4vh);transform:translate(-50%,24px);opacity:0;z-index:80;',
-      'width:min(460px,86vw);padding:16px 18px 14px;border-radius:0;color:rgba(255,255,255,.8);',
-      'background:linear-gradient(180deg,rgba(16,22,30,.96),rgba(7,10,15,.97));border:1px solid rgba(255,255,255,.12);border-top:2px solid #36d67e;',
-      'box-shadow:0 18px 60px rgba(0,0,0,.6);font:400 14px/1.45 "RR Inter",system-ui,sans-serif;transition:transform .22s ease-out,opacity .22s ease-out;',
-      'display:grid;grid-template-columns:52px 1fr;column-gap:14px;align-items:center;touch-action:manipulation}',
+      '.rr-remind{position:fixed;left:50%;top:max(8px,2vh);transform:translate(-50%,calc(-100% - 16px));opacity:0;z-index:80;',
+      'width:min(236px,40vw);padding:7px 8px;border-radius:0;color:rgba(255,255,255,.8);',
+      'background:linear-gradient(180deg,rgba(16,22,30,.96),rgba(7,10,15,.97));border:1px solid rgba(255,255,255,.12);border-bottom:2px solid #36d67e;',
+      'box-shadow:0 8px 28px rgba(0,0,0,.6);font:400 9.5px/1.3 "RR Inter",system-ui,sans-serif;',
+      'transition:transform .26s cubic-bezier(.2,.9,.3,1.15),opacity .2s ease-out;',
+      'display:grid;grid-template-columns:24px 1fr;column-gap:7px;align-items:center;touch-action:manipulation}',
       '.rr-remind.in{transform:translate(-50%,0);opacity:1}',
-      '.rr-remind img{width:52px;height:52px;object-fit:contain}',
-      '.rr-remind h3{margin:0 0 .2em;font:900 12.5px/1.2 "RR Inter",system-ui,sans-serif;letter-spacing:.22em;color:#fff}',
+      '.rr-remind img{width:24px;height:24px;object-fit:contain}',
+      '.rr-remind h3{margin:0 0 .15em;font:900 8.5px/1.2 "RR Inter",system-ui,sans-serif;letter-spacing:.18em;color:#fff}',
       '.rr-remind p{margin:0;color:rgba(255,255,255,.62)}',
-      '.rr-remind .row{grid-column:1/-1;display:flex;gap:10px;margin-top:12px}',
-      '.rr-remind button{flex:1;padding:.7em;border-radius:0;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.04);',
-      'color:rgba(255,255,255,.82);font:800 12.5px "RR Inter",system-ui,sans-serif;letter-spacing:.18em;cursor:pointer}',
+      '.rr-remind .row{grid-column:1/-1;display:flex;gap:6px;margin-top:6px}',
+      '.rr-remind button{flex:1;padding:.6em .3em;border-radius:0;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.04);',
+      'color:rgba(255,255,255,.82);font:800 8px "RR Inter",system-ui,sans-serif;letter-spacing:.15em;cursor:pointer}',
       '.rr-remind button.yes{background:#36d67e;color:#04140b;border-color:#36d67e}',
     ].join('');
     document.head.appendChild(css);
@@ -131,13 +140,13 @@
     card.className = 'rr-remind';
     card.setAttribute('role', 'dialog');
     card.innerHTML = '<img src="frontend/icons/notify-192.png" alt="">'
-      + '<div><h3>THE STREETS NEED YOU</h3><p>Get a heads-up when the Agberos are back on the streets. One reminder a day at most.</p></div>'
+      + '<div><h3>THE STREETS NEED YOU</h3><p>A heads-up when the Agberos are back. One a day at most.</p></div>'
       + '<div class="row"><button class="no" type="button">NOT NOW</button><button class="yes" type="button">REMIND ME</button></div>';
     ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'click'].forEach(function (t) {
       card.addEventListener(t, function (e) { e.stopPropagation(); });
     });
-    card.querySelector('.yes').addEventListener('click', function () { hideCard(); ask(); });
-    card.querySelector('.no').addEventListener('click', function () { lset(ASKED, Date.now()); hideCard(); });
+    card.querySelector('.yes').addEventListener('click', function () { answered = true; hideCard(); ask(); });
+    card.querySelector('.no').addEventListener('click', function () { answered = true; lset(ASKED, Date.now()); hideCard(); });
     card.style.display = 'none';
     document.body.appendChild(card);
   }
@@ -167,7 +176,7 @@
       if (!card) buildCard(); // hidden; starts loading the logo during the beat below
       if (Date.now() - onMenuSince > 1500) showCard();
     }
-    else if (!onMenu && shown) hideCard();
+    else if (shown && (!onMenu || !shouldOffer())) hideCard();
   }
 
   window.RRReminders = {

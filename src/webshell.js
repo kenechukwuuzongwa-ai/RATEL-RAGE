@@ -106,8 +106,7 @@
    * the right way for a player who turns the phone, with or without auto-rotate. The first tap is the
    * gesture that locks fullscreen + landscape. Phones whose browser has no fullscreen (iPhone Safari) keep
    * the plain page: they rotate on their own when the phone turns. */
-  if (root.requestFullscreen && upright()) {
-    setTurned(true);
+  if (root.requestFullscreen) {
     var untilLandscape = function () { if (turned && !upright()) setTurned(false); };
     window.addEventListener('resize', untilLandscape);
     window.addEventListener('orientationchange', function () { setTimeout(untilLandscape, 60); });
@@ -124,6 +123,22 @@
     ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'].forEach(function (t) {
       window.addEventListener(t, swallow, { capture: true, passive: false });
     });
+    if (upright()) setTurned(true);
+
+    /* BACK TO LANDSCAPE AFTER A SYSTEM DIALOG (request 648: the notification permission prompt "rotated
+     * the screen ... I had to tap the screen again before it returned to landscape"). A permission prompt
+     * (Chrome's, or Android's own the first time Chrome asks to notify) can drop fullscreen and with it the
+     * landscape lock, and no page can choose the orientation of the OS's dialog. When it closes: try to go
+     * straight back to fullscreen landscape (the browser allows it while the tap that opened the prompt still
+     * counts); if it will not, and the phone came back upright, draw the page turned so the game is still
+     * landscape and the next tap restores fullscreen. */
+    W.relandscape = function () {
+      if (document.fullscreenElement) return;
+      goFullscreen();
+      setTimeout(function () {
+        if (!document.fullscreenElement && upright()) { tapped = false; setTurned(true); }
+      }, 350);
+    };
   }
   W.turned = function () { return turned; };
 })();

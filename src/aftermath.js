@@ -1363,25 +1363,50 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
       { tint: 'rgba(16,7,7,0.86)', border: `rgba(224,67,44,${0.30 + 0.16 * Math.sin(ui.clock * 2.6)})` });
     ctx.fillStyle = C.red;
     ctx.fillRect(box.x, box.y, 3, box.h);
+    /* FITTED TO THE PANEL (request 648: "the connection to target BG ... is not well fitted"). The plate
+     * used to stack four short lines at the top of the shared 344 px panel and leave its lower half empty
+     * above the pager. It now uses the case page's layout: portrait + name block, a rule, the ROLE row,
+     * and the note anchored just above the pager rule, so the panel reads full like every other page. */
+    const key = file().target.character ?? 'jibril';
     ctx.textAlign = 'left';
-    ui.setFont(700, 9.5, 2.6);
+    ui.setFont(700, 10.5, 2.8);
     ctx.fillStyle = C.red;
-    ctx.fillText(file().target.tag, box.x + 26, box.y + 36);
-    ui.setFont(700, 12, 2.4);
-    ctx.fillStyle = C.muted;
-    ctx.fillText(assertPlayerSafe(jibril.rank, 'target.rank'), box.x + 26, box.y + 74);
-    ui.fitFont(700, 33, 1.2, jibril.shortName, box.w - 52, true);
-    ctx.fillStyle = C.paper;
-    ctx.fillText(assertPlayerSafe(jibril.shortName, 'target.plate'), box.x + 26, box.y + 112);
+    ctx.fillText(file().target.tag, box.x + 26, box.y + 33);
     ctx.fillStyle = 'rgba(255,255,255,0.09)';
-    ctx.fillRect(box.x + 26, box.y + 130, box.w - 52, 1);
-    ui.setFont(700, 9, 2.0);
+    ctx.fillRect(box.x + 24, box.y + 49, box.w - 48, 1);
+
+    panelPortrait(ui, box.x + 26 + 42, box.y + 116, 42, key);
+    const tx = box.x + 26 + 100, tw = box.x + box.w - 26 - tx;
+    ui.fitFont(700, 9, 2.2, jibril.rank, tw);
+    ctx.fillStyle = C.muted;
+    ctx.fillText(assertPlayerSafe(jibril.rank, 'target.rank'), tx, box.y + 88);
+    ui.fitFont(700, 22, 0.7, jibril.shortName, tw, true);
+    ctx.fillStyle = C.paper;
+    ctx.fillText(assertPlayerSafe(jibril.shortName, 'target.plate'), tx, box.y + 114);
+    ui.setFont(700, 8.6, 1.8);
     ctx.fillStyle = C.gold;
-    ctx.fillText(file().target.level, box.x + 26, box.y + 158);
-    ui.setFont(500, 11.5, 0.15);
+    ctx.fillText(file().target.level, tx, box.y + 134);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.055)';
+    ctx.fillRect(box.x + 26, box.y + 170, box.w - 52, 1);
+    if (jibril.role) {
+      ui.setFont(700, 8.6, 1.8);
+      ctx.fillStyle = C.muted;
+      ctx.fillText('ROLE', box.x + 26, box.y + 196);
+      ui.setFont(650, 11, 0.4);
+      ctx.fillStyle = C.text;
+      let vy = box.y + 214;
+      // only the office ("Senior police official"): what follows the '·' is what the note below says
+      const office = String(jibril.role).split(' · ')[0];
+      for (const line of ui.wrapLines(assertPlayerSafe(office, 'target.role'), box.w - 52)) { ctx.fillText(line, box.x + 26, vy); vy += 15; }
+    }
+    // the note, anchored above the pager's rule (box.h - 44) the way the case page anchors its own
+    ui.setFont(500, 13, 0.12);
+    const noteLines = ui.wrapLines(file().target.note, box.w - 52).length;
+    const ny = box.y + box.h - 58 - (noteLines - 1) * 18;
     ctx.fillStyle = C.text;
-    type.detail.draw(ctx, file().target.note, box.x + 26, box.y + 186, box.w - 52, 18, 1);
-    ui.setFont(500, 11.5, 0.15);
+    type.detail.draw(ctx, file().target.note, box.x + 26, ny, box.w - 52, 18, 1);
+    ui.setFont(500, 13, 0.12);
     ctx.fillStyle = C.muted;
     type.detail.layout(ctx, file().target.note, box.x + 26);
     ctx.restore();
@@ -1531,7 +1556,18 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
      * heading — rather than to the column, so the plate under it is not sitting
      * at the bottom of an empty pane. */
     // bigger, with bigger type, into the room the IDENTITY UNKNOWN plate left (request 571)
+    /* FITTED TO ITS COPY (request 648): the box is as tall as the longest thing it will show (the
+     * assessment, or any rung's dossier), not a fixed 300 px with an empty band under the text. Measured
+     * every frame from the same fonts and wrap widths the text is drawn with, so it cannot drift. */
     const box = { x: 56, y: 186, w: 540, h: 300 };
+    {
+      ui.setFont(500, 19, 0.1);
+      let need = 104 + (ui.wrapLines(K.narration, box.w - 60).length - 1) * 31 + 40;
+      ui.setFont(500, 11.5, 0.15);
+      // a rung's dossier: name, status, then at most two wrapped lines from y 172
+      need = Math.max(need, 172 + 25 + 34);
+      box.h = Math.max(200, Math.round(need));
+    }
     const bu = ease(clamp((stateT - 0.2) / 0.5, 0, 1));
     ctx.save();
     ctx.globalAlpha *= bu;

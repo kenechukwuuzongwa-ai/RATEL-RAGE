@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-16 — Clutch saves on the hit counter, smaller reminder card, fitted case panels (v163, request 648)
+
+- Hit counter: the crumble outro now starts before the streak's window runs out (about halfway through its fall when the window ends). A blow landed during the fall saves the streak: the letters snap back with a slight overshoot, the counter flashes green-white and CLUTCH shows beside the multiplier. Every further hit in a saved streak pays +25 per save (up to 4 saves stacked), counted in the combat score part (leaderboard check unchanged). Every hit now lands with a white-hot flash; falling letters cool to ember red.
+- The loosening wobble eases in from 20 hits to full strength at 30, smoothed in time (no jump).
+- Reminder card: small (236 px), drops in from the top; one tap on REMIND ME / NOT NOW answers it for the session (it used to come back while the permission prompt was open). When the prompt closes the game asks for fullscreen landscape back; if the browser will not, an upright phone gets the page drawn landscape until the next tap (RR_WEB.relandscape in webshell.js). The OS's own permission dialog orientation cannot be set by a page.
+- Evidence board: the NEXT TARGET page uses the case page layout (portrait, name block, ROLE, note above the pager) instead of leaving the lower half empty; the CONNECTION TO THE CABAL assessment box fits its text.
+- Tests: _chromakey/req648/hits.js 10/10, card.js 9/9; board shots via req572/aftershots.js and req571/l2after.js.
+
 ## 2026-11-16 — KenCrafts splash sting comes back on the first touch (v162, request 647)
 
 - A launch with no tap (the home-screen app, a fresh tab) lets the browser refuse sound, and the studio card then rolls silent; its whole sting is in the first 3 s of the clip. Now, when that happens, the player's first tap or key press while the card is still in its sting restarts the card from the top with sound (src/frontend.js regainSplashSound). A later tap, or a card that already has sound, is left alone. Test: _chromakey/req647/regain.js 6/6.

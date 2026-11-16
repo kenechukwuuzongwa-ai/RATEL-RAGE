@@ -1,5 +1,5 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v162';
-import { createAftermath } from './aftermath.js?v=ratelrage-v150';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v163';
+import { createAftermath } from './aftermath.js?v=ratelrage-v163';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -16424,6 +16424,14 @@ const COMBO = {
   stepMul: 0.25, maxMul: 3,
   milestones: [[10, 'BRUTAL!'], [20, 'SAVAGE!'], [35, 'UNSTOPPABLE!'], [50, 'RATEL RAGE!']],
 };
+/* CLUTCH (request 648). The hit counter starts falling apart BEFORE the streak's window runs out
+ * (outroLead: about halfway through its fall when the window actually ends). A blow landed while it is
+ * falling saves the streak: the letters snap back up with a little overshoot, and from then on every
+ * further hit in that streak pays CLUTCH.perHit extra per save (stacking to maxStack saves). The bonus
+ * is part of `combat` (run.comboScore), the score part the leaderboard already checks. */
+const CLUTCH = { perHit: 25, maxStack: 4, flash: 0.42, snap: 0.34 };
+// seconds before the window ends that the counter's fall begins, for an n-hit streak
+const outroLead = (n, win) => Math.min(0.5 * hitOutroDur(String(n).length + 3), 0.45 * win);
 const COMBO_SPLASH = { img: null, frame: 125, cols: 10, count: 100, draw: 124 };
 // Out of the fight this long (no blow landed or taken, nobody close) -> heal.
 const REGEN = { calm: 5, perSec: 0.06, nearX: 300, nearY: 120 };
@@ -16450,6 +16458,7 @@ function resetRun() {
   Object.assign(run, {
     time: 0, hits: 0, dmgDealt: 0, dmgTaken: 0, topHit: 0,
     combo: 0, comboT: 0, comboWin: COMBO.window, maxCombo: 0, comboScore: 0,
+    clutch: 0, clutchT: 0, clutchBonus: 0, clutchScore: 0, clutches: 0,
     popT: 0, milestone: null, milestoneT: 0,
     calmT: 0, regen: false, crewDropped: false, final: null,
   });
@@ -16465,6 +16474,14 @@ function registerHit(dmg) {
   run.hits++;
   run.dmgDealt += dmg;
   run.topHit = Math.max(run.topHit, dmg);
+  // a blow that lands while the counter is already falling apart saves the streak (request 648)
+  const saved = run.combo >= 2 && run.comboT > 0 && run.comboT < outroLead(run.combo, run.comboWin);
+  // every hit after a save pays the clutch bonus (the saving blow itself is the snap-back)
+  if (run.clutch > 0 && !saved) {
+    const b = CLUTCH.perHit * run.clutch;
+    run.comboScore += b; run.clutchBonus += b; run.clutchScore += b;
+  }
+  if (saved) { run.clutch = Math.min(CLUTCH.maxStack, run.clutch + 1); run.clutchT = CLUTCH.flash; run.clutches++; }
   run.combo++;
   run.comboWin = Math.max(COMBO.minWindow, COMBO.window - COMBO.shrinkPer * run.combo);
   run.comboT = run.comboWin;
@@ -16475,13 +16492,14 @@ function registerHit(dmg) {
   const m = COMBO.milestones.find(([n]) => n === run.combo);
   if (m) { run.milestone = m[1]; run.milestoneT = 1.4; }
 }
-const breakCombo = () => { run.combo = 0; run.comboT = 0; };
+const breakCombo = () => { run.combo = 0; run.comboT = 0; run.clutch = 0; run.clutchBonus = 0; };
 
 // Live play only: called from update() after the cutscene / outro early returns.
 function updateRun(dt) {
   run.time += dt;
   run.popT = Math.max(0, run.popT - dt);
   run.milestoneT = Math.max(0, run.milestoneT - dt);
+  run.clutchT = Math.max(0, run.clutchT - dt);
   if (run.combo > 0 && (run.comboT -= dt) <= 0) breakCombo();
   // "Away from the fight" also means nobody standing over him.
   const near = enemies.some((e) => !e.benched && e.hp > 0 && !e.dying && !e.offstage
@@ -24906,13 +24924,39 @@ function hitStyleArrow(x, y, h) {
  * hit, so the counter looks like it is working itself loose and could fall at any moment.
  * The yellow-to-red ramp, the white-hot crowns from 10 and the shimmer from 20 are unchanged. */
 const HIT_OUTRO = { hold: 0.22, stagger: 0.085, fall: 0.8, g: 1500, spinMin: 3.2, spinMax: 7.5, drift: 70, shrink: 0.68 };
-const HIT_WIGGLE = { from: 30, rateWin: 1.6, ampBase: 0.03, ampPerHit: 0.004, ampPerRate: 0.035, ampMax: 0.34,
+/* Request 648: the loosening no longer switches on at 30. It eases in from `easeFrom` (20 hits, no wobble
+ * yet) to full strength at `from` (30), and the strength is smoothed in time, so no single hit makes the
+ * letters jump. The fall now starts before the streak's window ends (outroLead) and a hit during it
+ * snaps the letters back (CLUTCH). */
+const HIT_WIGGLE = { easeFrom: 20, from: 30, rateWin: 1.6, ampBase: 0.03, ampPerHit: 0.004, ampPerRate: 0.035, ampMax: 0.34,
   hzBase: 1.6, hzPerRate: 0.9, hzMax: 10, droop: 9 };
 const hitRnd = (i, salt) => { const v = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453; return v - Math.floor(v); };
 const hitOutroDur = (glyphs) => HIT_OUTRO.hold + HIT_OUTRO.stagger * Math.max(0, glyphs - 1) + HIT_OUTRO.fall;
 // one letter in the counter's ink, centred on (0, 0); `asc` is the whole string's cap height, so every
 // letter shares one baseline and one ramp
-function hitGlyph(ch, px, asc, hot, hotter) {
+/* THE COUNTER REACTS (request 648: "make the hitcounter color effects react more prominently"), drawn over
+ * the letters' own fill in the current font/alignment: every blow lands WHITE-HOT and cools back over its
+ * pop (flash), a saving blow flashes a green-white glow (clutch), and while the count is falling apart the
+ * letters cool to a dark ember red (cool). */
+function hitFxLayer(text, x, y, fx) {
+  if (!fx) return;
+  if (fx.cool > 0.01) { ctx.fillStyle = `rgba(64, 6, 4, ${(0.6 * fx.cool).toFixed(3)})`; ctx.fillText(text, x, y); }
+  const hit = 0.8 * fx.flash, f = Math.max(hit, fx.clutch);
+  if (f > 0.01) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha *= Math.min(1, f);
+    const green = fx.clutch >= hit;
+    if (green) { ctx.shadowColor = '#36d67e'; ctx.shadowBlur = 22 * fx.clutch; }
+    ctx.fillStyle = green ? '#c6ffd9' : '#fff3c8';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+}
+// a snap with a little overshoot: 0 -> ~1.08 -> 1
+const hitSnap = (u) => { const c = 1.25, t = u - 1; return 1 + (c + 1) * t * t * t + c * t * t; };
+const smooth01 = (u) => { const v = Math.max(0, Math.min(1, u)); return v * v * (3 - 2 * v); };
+function hitGlyph(ch, px, asc, hot, hotter, fx) {
   ctx.font = pixelFont(900, px);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
@@ -24922,6 +24966,7 @@ function hitGlyph(ch, px, asc, hot, hotter) {
   ctx.strokeStyle = HIT_INK; ctx.lineWidth = Math.max(2, 7 * k); ctx.strokeText(ch, 0, y);
   ctx.fillStyle = hitInkFill(y - asc, y + 2 * k, hot);
   ctx.fillText(ch, 0, y);
+  hitFxLayer(ch, 0, y, fx);
   if (hotter) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -24941,19 +24986,38 @@ function drawHitCounter() {
   hitCtr.seenN = n;
   while (hitCtr.times.length && mobClock - hitCtr.times[0] > HIT_WIGGLE.rateWin) hitCtr.times.shift();
   const rate = hitCtr.times.length / HIT_WIGGLE.rateWin;
-  if (n >= 2) { hitCtr.last = n; hitCtr.breakT = 0; }
-  else if (hitCtr.last >= 2 && hitCtr.breakT === 0) { hitCtr.breakT = 0.0001; hitCtr.salt = (hitCtr.salt || 0) + 1; }
+  /* THE FALL'S CLOCK (request 648). While the streak lives, the outro runs on the streak's own timer: it
+   * starts outroLead seconds before the window ends (outT counts up from there). A hit refills the window,
+   * outT drops back to 0, and the letters SNAP back from wherever they had fallen (revFrom/revT). If the
+   * window runs out instead, the break carries on from exactly where the early fall had got to. */
+  if (n >= 2) {
+    const lead = outroLead(n, run.comboWin);
+    const outT = run.comboT < lead ? lead - run.comboT : 0;
+    if (outT > 0 && !hitCtr.outOn) { hitCtr.outOn = true; hitCtr.salt = (hitCtr.salt || 0) + 1; }
+    else if (outT === 0 && hitCtr.outOn) { hitCtr.outOn = false; hitCtr.revFrom = Math.max(0.0001, hitCtr.outT); hitCtr.revT = 0; }
+    hitCtr.outT = outT; hitCtr.lead = lead;
+    hitCtr.last = n; hitCtr.breakT = 0;
+  } else if (hitCtr.last >= 2 && hitCtr.breakT === 0) {
+    if (!hitCtr.outOn) hitCtr.salt = (hitCtr.salt || 0) + 1;
+    hitCtr.breakT = Math.max(0.0001, hitCtr.outT || 0);
+    hitCtr.outOn = false; hitCtr.outT = 0; hitCtr.revFrom = 0;
+  }
+  if (hitCtr.revFrom > 0 && (hitCtr.revT += dt) >= CLUTCH.snap) hitCtr.revFrom = 0;
   const breaking = n < 2 && hitCtr.breakT > 0;
   const lastText = `${hitCtr.last} HIT`;
   const glyphCount = lastText.replace(/ /g, '').length;
   if (breaking) hitCtr.breakT += dt;
   if (breaking && hitCtr.breakT > hitOutroDur(glyphCount)) { hitCtr.last = 0; hitCtr.breakT = 0; }
   const show = n >= 2 ? n : breaking ? hitCtr.last : 0;
+  // the loosening's strength: 0 at 20 hits, full at 30, eased in time so no single hit makes it jump
+  const wigGoal = !breaking && show >= HIT_WIGGLE.easeFrom ? smooth01((show - HIT_WIGGLE.easeFrom) / (HIT_WIGGLE.from - HIT_WIGGLE.easeFrom)) : 0;
+  hitCtr.wig = (hitCtr.wig || 0) + (wigGoal - (hitCtr.wig || 0)) * Math.min(1, dt * 5);
   const rx = VIEW_W - PHUD.side - (isTouchUI() ? PHUD.touchInset : 4);
   const by = Math.max(hudRightBottom + 64, isTouchUI() ? 268 : 0);
   if (show) {
     const text = `${show} HIT`;
-    const pop = breaking ? 1 : 1 + 0.45 * Math.pow(run.popT / 0.2, 2);
+    const clutchU = run.clutchT / CLUTCH.flash;          // 1 -> 0 over the save's flash
+    const pop = breaking ? 1 : 1 + 0.45 * Math.pow(run.popT / 0.2, 2) + 0.15 * clutchU * clutchU;
     ctx.save();
     ctx.font = pixelFont(900, 74);
     ctx.textAlign = 'right';
@@ -24964,11 +25028,19 @@ function drawHitCounter() {
     if (run.popT > 0.12 && !breaking) ctx.translate((Math.random() - 0.5) * 4, 0);
     const x = tw / 2, y = 22;
     const hot = show >= 10, hotter = show >= 20;
-    const loose = !breaking && show >= HIT_WIGGLE.from;
-    if (!breaking && !loose) {
+    const falling = !breaking && hitCtr.outT > 0;        // the early fall (request 648)
+    const snapping = !breaking && hitCtr.revFrom > 0;    // saved: snapping back
+    const wig = breaking ? 0 : hitCtr.wig;
+    const fx = {
+      flash: breaking ? 0 : Math.pow(run.popT / 0.2, 1.5),
+      clutch: breaking ? 0 : clutchU,
+      cool: breaking ? Math.min(1, hitCtr.breakT / 0.3) : falling ? Math.min(1, hitCtr.outT / Math.max(0.05, hitCtr.lead)) : 0,
+    };
+    if (!breaking && !falling && !snapping && wig < 0.002) {
       // a tight counter: the whole word at once (exact kerning) — the shared recipe
       hitStyleText(text, x, y, 74, { align: 'right', hot });
       ctx.font = pixelFont(900, 74);
+      hitFxLayer(text, x, y, fx);
       if (hotter) {                                    // the heat shimmer
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha *= 0.28 + 0.18 * Math.sin(mobClock * 31);
@@ -24979,9 +25051,9 @@ function drawHitCounter() {
       // letter by letter: each one's centre from the measured run of the string
       const asc = ctx.measureText(text).actualBoundingBoxAscent || 74 * 0.7;
       const cy = y - asc / 2;
-      const W = HIT_WIGGLE, O = HIT_OUTRO;
-      const amp = loose ? Math.min(W.ampMax, W.ampBase + W.ampPerHit * (show - W.from) + W.ampPerRate * rate) * (1 + 0.6 * (run.popT / 0.2)) : 0;
-      const hz = Math.min(W.hzMax, W.hzBase + W.hzPerRate * rate);
+      const Wg = HIT_WIGGLE, O = HIT_OUTRO;
+      const amp = wig > 0 ? wig * Math.min(Wg.ampMax, Wg.ampBase + Wg.ampPerHit * Math.max(0, show - Wg.from) + Wg.ampPerRate * rate) * (1 + 0.6 * (run.popT / 0.2)) : 0;
+      const hz = Math.min(Wg.hzMax, Wg.hzBase + Wg.hzPerRate * rate);
       const glyphs = [];
       for (let i = 0; i < text.length; i++) if (text[i] !== ' ') glyphs.push(i);
       glyphs.forEach((i, gi) => {
@@ -24996,16 +25068,10 @@ function drawHitCounter() {
           ctx.translate(gx + dx, cy + dy);
           ctx.rotate(rot);
           ctx.scale(sc, sc);
-          hitGlyph(ch, 74, asc, hot, hotter);
+          hitGlyph(ch, 74, asc, hot, hotter, fx);
           ctx.restore();
         };
-        if (loose) {
-          const ph = gi * 1.7 + hitRnd(gi, 3) * 6.28;
-          const w = Math.sin(mobClock * hz * Math.PI * 2 + ph);
-          draw(0, amp * W.droop * (0.5 + 0.5 * Math.abs(w)), amp * w, 1, 1);
-          return;
-        }
-        // breaking: the reference's crumble, right to left
+        // the reference's crumble, right to left
         const j = glyphs.length - 1 - gi;
         const s = hitCtr.salt || 0;
         const spin = (O.spinMin + (O.spinMax - O.spinMin) * hitRnd(gi, s)) * (hitRnd(gi, s + 7) > 0.5 ? 1 : -1);
@@ -25015,9 +25081,25 @@ function drawHitCounter() {
           const u = Math.min(1, tl / O.fall);
           return [drift * tl, 0.5 * O.g * tl * tl, spin * (tl + 0.8 * tl * tl), 1 - O.shrink * u * u * (3 - 2 * u), 1 - Math.max(0, (u - 0.6) / 0.4)];
         };
-        const tl = hitCtr.breakT - O.hold - O.stagger * j;
-        if (tl > 0.02) draw(...state(tl - 1 / 30).slice(0, 4), state(tl)[4] * 0.32);   // the motion trail
-        draw(...state(tl));
+        let st = [0, 0, 0, 1, 1], trail = null;
+        if (breaking || falling) {
+          const tl = (breaking ? hitCtr.breakT : hitCtr.outT) - O.hold - O.stagger * j;
+          st = state(tl);
+          if (tl > 0.02) trail = state(tl - 1 / 30);
+        } else if (snapping) {
+          // saved: from where it had fallen back to its place, overshooting a touch (request 648)
+          const s0 = state(hitCtr.revFrom - O.hold - O.stagger * j);
+          const e = hitSnap(Math.min(1, hitCtr.revT / CLUTCH.snap));
+          st = [s0[0] * (1 - e), s0[1] * (1 - e), s0[2] * (1 - e), s0[3] + (1 - s0[3]) * e, Math.min(1, s0[4] + (1 - s0[4]) * e)];
+        }
+        if (amp > 0) {                                  // the loosening wobble, on top of all of it
+          const ph = gi * 1.7 + hitRnd(gi, 3) * 6.28;
+          const w = Math.sin(mobClock * hz * Math.PI * 2 + ph);
+          st[1] += amp * Wg.droop * (0.5 + 0.5 * Math.abs(w));
+          st[2] += amp * w;
+        }
+        if (trail) draw(...trail.slice(0, 4), st[4] * 0.32);   // the motion trail
+        draw(...st);
       });
     }
     ctx.restore();
@@ -25026,11 +25108,24 @@ function drawHitCounter() {
        * chain's window still runs (run.comboT); it is just no longer drawn. The multiplier the streak
        * is earning keeps its place under the count, right-aligned with it. */
       const mul = comboMul(show);
+      let mulW = 0;
       if (mul > 1) {
         ctx.save();
         ctx.font = pixelFont(400, 18);
         ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-        pixText(`x${mul.toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`, rx, by + 14, '#ffe27c', '#140604');
+        const mt = `x${mul.toFixed(2).replace(/0$/, '').replace(/\.0$/, '')}`;
+        pixText(mt, rx, by + 14, '#ffe27c', '#140604');
+        ctx.font = `400 ${fontPx(ctx.font)}px ${FONT_BOLD}`;   // the face hitInk draws in
+        mulW = ctx.measureText(mt).width + 16;
+        ctx.restore();
+      }
+      // a saved streak shows what the saves are paying, left of the multiplier, in the UI green (request 648)
+      if (run.clutch > 0) {
+        ctx.save();
+        ctx.font = pixelFont(400, 18 + 5 * clutchU);
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        const ct = `CLUTCH${run.clutch > 1 ? ' x' + run.clutch : ''}${run.clutchBonus > 0 ? ' +' + run.clutchBonus : '!'}`;
+        hitInk(ct, rx - mulW, by + 14, { green: true });
         ctx.restore();
       }
     }
@@ -27610,6 +27705,8 @@ window.__ror = {
   tko() { const e = enemies.find((x) => !x.benched && x.hp > 0); if (e) onEnemyDefeated(Object.assign(e, { hp: 0 })); return waveState; },
   // harness only (request 611): land `n` 1-damage blows so the hit counter can be shot without a brawl
   testHits(n = 12) { for (let i = 0; i < n; i++) registerHit(1); return run.combo; },
+  // harness only (request 648): the counter's fall / snap / wiggle state and the streak's outro lead
+  get hitCtr() { return { ...hitCtr, lead: run.combo >= 2 ? outroLead(run.combo, run.comboWin) : 0 }; },
   // harness only (request 611): re-show the FIGHT! banner
   testFightBanner() { fightBanner = 1.1; return fightBanner; },
   leftJab() { input.leftJabPressed = true; },
