@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v166';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v167';
 import { createAftermath } from './aftermath.js?v=ratelrage-v163';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -24784,12 +24784,10 @@ function drawPixelHud() {
     const sHit = l2m.compFlash > 0.2;
     pixBar(bx, y2, P.barW, P.barH, sf, sg, sHit ? '#ffffff' : sLow ? P.low : P.hp,
       sLow ? '#ffc07a' : P.hpHi, P.hpLo, P.back);
+    // request 652: no number, and the name sits INSIDE the bar (left end), in the outlined HUD ink like RECOVERING
     ctx.textAlign = 'left';
-    ctx.font = pixelFont(400, 16);
-    pixText('SERVER', bx + P.barW + 14, y2 + P.barH / 2 + 1, '#f4f1ea');
-    ctx.textAlign = 'right';
     ctx.font = pixelFont(400, 13);
-    pixText(String(Math.ceil(l2m.compHp)), bx + P.barW - 8, y2 + P.barH / 2 + 1, 'rgba(24,12,4,0.9)', 'rgba(255,255,255,0.35)', 1);
+    pixText('SERVER', bx + 8, y2 + P.barH / 2 + 1, '#f4f1ea');
   }
 
   /* ---- THE SCORE, top centre: counts up to the live figure */
