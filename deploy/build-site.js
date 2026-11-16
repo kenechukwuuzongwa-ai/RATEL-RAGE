@@ -99,10 +99,11 @@ var q=L.search,h=L.hash;
 if(/[?&](app|from|code|error|error_description)=/.test(q)||/^#(access_token|refresh_token|error|rr-carry)=/.test(h)||/[#&](access_token|error)=/.test(h)){L.replace('/play/'+q+h);}
 })();`;
 
-/* Pages carried over from the old root build that live elsewhere now. */
+/* Pages carried over from the old root build that live elsewhere now. Cloudflare Pages itself serves
+ * /privacy.html at /privacy (it 308s the .html name there), so /privacy must NOT point back at
+ * /privacy.html: that was a redirect loop in the first v170 deploy. */
 const REDIRECTS = [
-  '/privacy/ /privacy.html 301',
-  '/privacy /privacy.html 301',
+  '/privacy/ /privacy 301',
   '/quit.html /play/quit.html 301',
   '/index.html / 301',
   '/how-to-play/combos /how-to-play/combos/ 301',
