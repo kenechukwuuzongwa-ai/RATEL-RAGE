@@ -26,8 +26,13 @@
    * simply widens when fullscreen arrives. One rule for game.js (VIEW_W), frontend.js (W) and the shell CSS
    * (--rr-vw, touch.js). Not while a form field has focus: the keyboard is not a new screen shape. */
   var lastVW = 1280;
+  /* WHO WIDENS (request 654: "the game doesn't scale to fit in iPhone 13"). Android only, until now, so an
+   * iPhone (19.5:9) got the 16:9 picture with black bars down both sides. iPhone and iPad widen by the same
+   * rule; an iPad's window is 4:3-ish, under 16:9, so it simply keeps 1280. iPadOS reports a Mac. */
+  var UA = navigator.userAgent;
+  W.wide = /Android|iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
   W.viewW = function () {
-    if (!/Android/.test(navigator.userAgent)) return 1280;
+    if (!W.wide) return 1280;
     var a = document.activeElement;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) return lastVW;
     var iw = window.innerWidth || 0, ih = window.innerHeight || 0;

@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v168';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v169';
 import { createAftermath } from './aftermath.js?v=ratelrage-v163';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -110,7 +110,7 @@ const VIEW_H = 720;
 /* Request 641: the VISIBLE WINDOW's shape (webshell.js RR_WEB.viewW, shared with frontend.js and the shell
  * CSS), re-read on resize: a browser that has not gone fullscreen yet still gets a picture that fills its
  * window, and fullscreen simply widens it. VIEW_W is read per frame everywhere (camera clamps, HUD). */
-if (IS_ANDROID) {
+if (IS_ANDROID || IS_IOS) {          // iPhone too (request 654)
   const viewWNow = () => { try { const f = window.RR_WEB && window.RR_WEB.viewW; return f ? f() : 1280; } catch { return 1280; } };
   VIEW_W = viewWNow();
   addEventListener('resize', () => { const w = viewWNow(); if (w) VIEW_W = w; });
@@ -24640,6 +24640,31 @@ const PHUD = {
   rage: '#ff8193', rageHi: '#ffc4cc', rageLo: '#c84d60', rageFull: '#ff3d57', fire: '#ff8a1e', fireHi: '#ffd25a',
   touchInset: 118,        // rows under the top one keep clear of the phone's pause button
 };
+/* THE HUD'S SIDE MARGIN, CLEAR OF AN iPHONE'S NOTCH AND CORNERS (request 654). Now that the picture fills
+ * an iPhone's whole landscape window, its rounded corners and notch sit over the side edges; the street can
+ * run under them, the HUD cannot (the portrait's corner was clipped). The safe-area inset (CSS env(), read
+ * off a hidden probe once a second) is added to PHUD.side in view px. 0 everywhere else. */
+let hudSafeX = 0, hudSafeAt = -1e9, hudSafeProbe = null;
+function hudSide() {
+  if (!IS_IOS) return PHUD.side;
+  const now = performance.now();
+  if (now - hudSafeAt > 1000) {
+    hudSafeAt = now;
+    try {
+      if (!hudSafeProbe) {
+        hudSafeProbe = document.createElement('div');
+        hudSafeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+          + 'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);';
+        document.body.appendChild(hudSafeProbe);
+      }
+      const cs = getComputedStyle(hudSafeProbe);
+      const css = Math.max(parseFloat(cs.paddingLeft) || 0, parseFloat(cs.paddingRight) || 0);
+      const shell = canvas.getBoundingClientRect().width || window.innerWidth || 1;
+      hudSafeX = css * VIEW_W / shell;
+    } catch { hudSafeX = 0; }
+  }
+  return PHUD.side + hudSafeX;
+}
 const FOE_NAMES = { ginger: 'AGBERO', shaved: 'AYE', senior: 'TASKFORCE', sars: 'SARS', olodo: 'MC OLODO' };
 /* The man the HUD is showing: the last one Darki hit or was hit by. */
 const hudFoe = { e: null, t: 0, ghost: 1, fade: 1 };
@@ -24774,7 +24799,7 @@ function drawPixelHud() {
   ctx.textBaseline = 'middle';
   /* ---- DARKI, top left */
   const kick = hpKickPx();
-  const ox = P.side + kick, oy = P.top;
+  const ox = hudSide() + kick, oy = P.top;
   drawPortrait(darkiPortrait(), ox, oy, P.port);
   const bx = ox + P.port + P.gap + 4;
   const yHp = oy + 6 + P.thinH + 14;                  // the thick HP bar's row
@@ -24847,7 +24872,7 @@ function drawPixelHud() {
   hitStyleText(String(Math.round(hudScoreShown)).padStart(7, '0'), VIEW_W / 2, oy + 38, 34, { baseline: 'middle' });
 
   /* ---- THE OTHER END: the boss on Darki's row, the man under it */
-  const RX = VIEW_W - P.side;                      // the right edge everything hangs from
+  const RX = VIEW_W - hudSide();                      // the right edge everything hangs from
   let rowY = oy, rightBottom = oy;
   if (waveState === 'boss' && boss) {
     const bp = RX - P.port;
@@ -25061,7 +25086,7 @@ function drawHitCounter() {
   // the loosening's strength: 0 at 20 hits, full at 30, eased in time so no single hit makes it jump
   const wigGoal = !breaking && show >= HIT_WIGGLE.easeFrom ? smooth01((show - HIT_WIGGLE.easeFrom) / (HIT_WIGGLE.from - HIT_WIGGLE.easeFrom)) : 0;
   hitCtr.wig = (hitCtr.wig || 0) + (wigGoal - (hitCtr.wig || 0)) * Math.min(1, dt * 5);
-  const rx = VIEW_W - PHUD.side - (isTouchUI() ? PHUD.touchInset : 4);
+  const rx = VIEW_W - hudSide() - (isTouchUI() ? PHUD.touchInset : 4);
   const by = Math.max(hudRightBottom + 64, isTouchUI() ? 268 : 0);
   if (show) {
     const text = `${show} HIT`;

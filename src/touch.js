@@ -103,7 +103,7 @@
   }
 
   /* Full-screen shell on wide phones (both renderers widen on Android). */
-  if (/Android/.test(navigator.userAgent)) {
+  if (window.RR_WEB && window.RR_WEB.wide !== undefined ? window.RR_WEB.wide : /Android/.test(navigator.userAgent)) {   // iPhone too (request 654)
     const sw = Math.max(window.screen.width || 0, window.screen.height || 0);
     const sh = Math.min(window.screen.width || 0, window.screen.height || 0);
     if (sh > 0 && sw / sh > 16 / 9 + 0.01) {
@@ -392,7 +392,7 @@
       if (Math.hypot(dx, dy) < DRAG_SLOP) return null;
       drag.live = true;                       // …and from here it tracks the whole travel,
     }                                         // so the grabbed spot stays under the thumb
-    return { x: clamp01(drag.ox + dx / window.innerWidth), y: clamp01(drag.oy + dy / window.innerHeight) };
+    return { x: clamp01(drag.ox + dx / padW()), y: clamp01(drag.oy + dy / padH()) };
   }
   /* Which key each control is currently holding down — see the press handler. */
   const held_code = {};
@@ -419,7 +419,24 @@
     return c.code;
   }
 
-  const shortEdge = () => Math.min(window.innerWidth, window.innerHeight);
+  /* The safe area's insets, read off a hidden probe (env() is only readable through CSS). */
+  let safeProbe = null;
+  function safeInsets() {
+    try {
+      if (!safeProbe) {
+        safeProbe = document.createElement('div');
+        safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+          + 'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);padding-bottom:env(safe-area-inset-bottom,0px);';
+        document.body.appendChild(safeProbe);
+      }
+      const cs = getComputedStyle(safeProbe);
+      return { l: parseFloat(cs.paddingLeft) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0 };
+    } catch (e) { return { l: 0, r: 0, b: 0 }; }
+  }
+  const padW = () => { const s = safeInsets(); return Math.max(1, window.innerWidth - s.l - s.r); };
+  const padH = () => Math.max(1, window.innerHeight - safeInsets().b);
+  const padL = () => safeInsets().l;          // a touch's clientX minus this = its x in the pad
+  const shortEdge = () => Math.min(padW(), padH());
 
   function placeControl(el, id) {
     const s = HUDS[id];
@@ -428,8 +445,8 @@
     el.style.width = w + 'px';
     el.style.height = size + 'px';
     el.style.borderRadius = '0';   // sharp corners (request 603): the glass-sphere art stays round, any plate is square
-    el.style.left = (s.x * window.innerWidth - w / 2) + 'px';
-    el.style.top = (s.y * window.innerHeight - size / 2) + 'px';
+    el.style.left = (s.x * padW() - w / 2) + 'px';
+    el.style.top = (s.y * padH() - size / 2) + 'px';
     el.style.opacity = editing ? Math.max(0.35, s.opacity) : s.opacity;
     el.style.display = (s.visible || editing) ? 'flex' : 'none';
     /* A CONTROL WITH ART IS THE ART. The supplied buttons are finished glass
@@ -454,7 +471,12 @@
   function build() {
     wrap = document.createElement('div');
     wrap.id = 'ror-touch';
-    wrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:60;'
+    /* INSIDE THE SAFE AREA (request 654): with the game filling an iPhone's wide window, the screen's
+     * notch and rounded corners sit over the side edges in landscape, where the punch/kick/grab column
+     * lives. The pad is laid out in the safe rectangle (env() is 0 everywhere else, so nothing moves on
+     * Android or desktop); padW()/padH()/padL() are that rectangle in px. */
+    wrap.style.cssText = 'position:fixed;top:0;left:env(safe-area-inset-left,0px);right:env(safe-area-inset-right,0px);'
+      + 'bottom:env(safe-area-inset-bottom,0px);pointer-events:none;z-index:60;'
       + 'display:none;user-select:none;-webkit-user-select:none;'
       + 'font:600 12px/1 "RR Inter",system-ui,sans-serif;color:#eaf0ff;letter-spacing:.06em;'
       + 'opacity:1;';
@@ -538,8 +560,8 @@
         /* clamp so the whole body stays in a usable region */
         const size = s.base * s.scale * (shortEdge() / REF_SHORT);
         const w = size * (c.pill || 1);
-        s.x = Math.max((w / 2 + 6) / window.innerWidth, Math.min(1 - (w / 2 + 6) / window.innerWidth, s.x));
-        s.y = Math.max((size / 2 + 6) / window.innerHeight, Math.min(1 - (size / 2 + 6) / window.innerHeight, s.y));
+        s.x = Math.max((w / 2 + 6) / padW(), Math.min(1 - (w / 2 + 6) / padW(), s.x));
+        s.y = Math.max((size / 2 + 6) / padH(), Math.min(1 - (size / 2 + 6) / padH(), s.y));
         placeControl(el, id);
         /* …and if you drag it up under the bar, the bar leaves. */
         parkPanel();
@@ -756,7 +778,7 @@
       moveOrigin = { x: cx, y: cy };
       if (stickEl) {
         const z = stickSize();
-        stickEl.style.left = (cx - z / 2) + 'px';
+        stickEl.style.left = (cx - padL() - z / 2) + 'px';
         stickEl.style.top = (cy - z / 2) + 'px';
       }
       if (knob) knob.style.transform = 'translate(0,0)';
@@ -785,8 +807,8 @@
     const s = HUDS.stick;
     const z = stickSize();
     stickEl.style.width = z + 'px'; stickEl.style.height = z + 'px';
-    stickEl.style.left = (s.x * window.innerWidth - z / 2) + 'px';
-    stickEl.style.top = (s.y * window.innerHeight - z / 2) + 'px';
+    stickEl.style.left = (s.x * padW() - z / 2) + 'px';
+    stickEl.style.top = (s.y * padH() - z / 2) + 'px';
     stickEl.style.opacity = editing ? Math.max(0.35, s.opacity) : s.opacity;
     stickEl.style.display = (s.visible || editing) ? 'block' : 'none';
     /* Outline in the EDITOR only — the D-pad art carries its own gold rim, and
@@ -840,7 +862,7 @@
       try { region.setPointerCapture(e.pointerId); } catch {}
       /* the graphic follows the touch origin while the finger is down */
       const z = stickSize();
-      stickEl.style.left = (e.clientX - z / 2) + 'px';
+      stickEl.style.left = (e.clientX - padL() - z / 2) + 'px';
       stickEl.style.top = (e.clientY - z / 2) + 'px';
       applyStick(0, 0);
     });
@@ -1114,7 +1136,7 @@
     let low = false;
     if (s) {
       const size = s.base * s.scale * (shortEdge() / REF_SHORT);
-      const top = s.y * window.innerHeight - size / 2;
+      const top = s.y * padH() - size / 2;
       low = top < 108;                       // …it would sit under the bar
     }
     panel.style.top = low ? 'auto' : '14px';

@@ -53,7 +53,7 @@ let W = 1280;
 /* Request 641: the shape of the VISIBLE WINDOW (webshell.js RR_WEB.viewW), re-read on resize, so the view
  * fills the window before the first tap and widens when fullscreen arrives. Every W use is per frame. */
 const viewWNow = () => { try { const f = window.RR_WEB && window.RR_WEB.viewW; return f ? f() : 1280; } catch { return 1280; } };
-if (/Android/.test(navigator.userAgent)) {
+if (window.RR_WEB?.wide ?? /Android/.test(navigator.userAgent)) {     // iPhone too (request 654)
   W = viewWNow();
   addEventListener('resize', () => { const w = viewWNow(); if (w) W = w; });
 }

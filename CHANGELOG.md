@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-16 — Fills an iPhone screen (v169, request 654)
+
+- iPhone (and iPad) now widen the view to the window's shape like Android does (webshell.js RR_WEB.wide), so an iPhone 13 in landscape is filled edge to edge instead of a 16:9 picture with black bars. iPads (about 4:3) still get 1280.
+- The touch pad is laid out inside the iOS safe area (notch, rounded corners, home bar): touch.js padW/padH/padL. The in-game HUD keeps its side margin clear of the notch (game.js hudSide). env() is 0 elsewhere, so Android and desktop are unchanged (req641/fit.js 2/2).
+- Test: _chromakey/req654/iphone.js [bars] (9/9 from source; the built-site run only fails on the usual external CORS lines).
+
 ## 2026-11-16 — iPad load failures, menu video retry, cleaner error board (v168, request 653)
 
 - iPhone/iPad: the level no longer fails to load with "null is not an object (evaluating 'cc.imageSmoothingEnabled = true')" or "sprite sheet is fully transparent after keying". WebKit refuses new canvases once live canvases reach RAM/4, and a world load kept ~1 GB of frame canvases. On iOS each prepared frame (and each rage bead mask) is now an ImageBitmap; live canvas memory falls from ~989 MB to a 142 MB peak. Android/desktop unchanged. Test: _chromakey/req653/cap.js (emulated 512 MB cap: iOS 6/6; the canvas path reproduces the players' error).
