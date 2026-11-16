@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-16 — Longer clutch window (v166, request 651)
+
+- A falling hit counter (2+ hits) no longer breaks the instant its window runs out: it keeps falling for 0.3 s more (CLUTCH.grace), and a blow in that time still saves the streak and snaps the letters back. By the end of the grace the letters are around the middle of the screen. Test: _chromakey/req651/clutch.js (5/5).
+
 ## 2026-11-16 — Darki on CONTROLS, menu street under the summary, grade key (v165, request 650)
 
 - The CONTROLS list page shows Darki's idle sprite where OPTIONS has him (not under the layout editor; HOW TO PLAY stays plain).

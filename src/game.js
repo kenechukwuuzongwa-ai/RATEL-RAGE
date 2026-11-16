@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v165';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v166';
 import { createAftermath } from './aftermath.js?v=ratelrage-v163';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -16429,7 +16429,10 @@ const COMBO = {
  * falling saves the streak: the letters snap back up with a little overshoot, and from then on every
  * further hit in that streak pays CLUTCH.perHit extra per save (stacking to maxStack saves). The bonus
  * is part of `combat` (run.comboScore), the score part the leaderboard already checks. */
-const CLUTCH = { perHit: 25, maxStack: 4, flash: 0.42, snap: 0.34 };
+/* `grace` (request 651: "extend the clutch window slightly so the outro can still be reversed when the texts
+ * have actually fallen half way down the screen"): a 2+ streak whose window has run out is not broken yet;
+ * it keeps falling for this many more seconds (run.comboT goes negative) and a blow in that time still saves. */
+const CLUTCH = { perHit: 25, maxStack: 4, flash: 0.42, snap: 0.34, grace: 0.3 };
 // seconds before the window ends that the counter's fall begins, for an n-hit streak
 const outroLead = (n, win) => Math.min(0.5 * hitOutroDur(String(n).length + 3), 0.45 * win);
 const COMBO_SPLASH = { img: null, frame: 125, cols: 10, count: 100, draw: 124 };
@@ -16475,7 +16478,7 @@ function registerHit(dmg) {
   run.dmgDealt += dmg;
   run.topHit = Math.max(run.topHit, dmg);
   // a blow that lands while the counter is already falling apart saves the streak (request 648)
-  const saved = run.combo >= 2 && run.comboT > 0 && run.comboT < outroLead(run.combo, run.comboWin);
+  const saved = run.combo >= 2 && run.comboT > -CLUTCH.grace && run.comboT < outroLead(run.combo, run.comboWin);
   // every hit after a save pays the clutch bonus (the saving blow itself is the snap-back)
   if (run.clutch > 0 && !saved) {
     const b = CLUTCH.perHit * run.clutch;
@@ -16500,7 +16503,8 @@ function updateRun(dt) {
   run.popT = Math.max(0, run.popT - dt);
   run.milestoneT = Math.max(0, run.milestoneT - dt);
   run.clutchT = Math.max(0, run.clutchT - dt);
-  if (run.combo > 0 && (run.comboT -= dt) <= 0) breakCombo();
+  // a counter on screen (2+) gets the clutch grace past its window before it breaks (request 651)
+  if (run.combo > 0 && (run.comboT -= dt) <= (run.combo >= 2 ? -CLUTCH.grace : 0)) breakCombo();
   // "Away from the fight" also means nobody standing over him.
   const near = enemies.some((e) => !e.benched && e.hp > 0 && !e.dying && !e.offstage
     && Math.abs(e.x - player.x) < REGEN.nearX && Math.abs(e.y - player.y) < REGEN.nearY);
