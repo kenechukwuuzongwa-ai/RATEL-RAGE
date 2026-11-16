@@ -140,6 +140,18 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   const st = env.DB.raw.prepare("SELECT views, taps FROM ad_stats WHERE booking = ?").get(o.id);
   check('views and taps are summed per day; n capped at 20; strangers ignored', st.views === 23 && st.taps === 1, st);
   check('house art views are counted too', env.DB.raw.prepare("SELECT views FROM ad_stats WHERE slot = 'board-2' AND booking = ''").get().views === 2);
+  // request 657: dwell seconds (k 'd'), summed; capped at 6000 a batch item; strangers ignored
+  await e([{ slot: 'board-3', b: o.id, k: 'd', n: 46 }, { slot: 'board-3', b: o.id, k: 'd', n: 23 }, { slot: 'board-2', b: '', k: 'd', n: 9 }]);
+  await e([{ slot: 'board-3', b: o.id, k: 'd', n: 99999 }]);
+  await e([{ slot: 'board-3', b: o.id, k: 'd', n: 500 }], 'https://evil.example');
+  const dw = env.DB.raw.prepare("SELECT views, dwell FROM ad_stats WHERE booking = ?").get(o.id);
+  check('dwell seconds are summed, capped, strangers ignored', dw.dwell === 46 + 23 + 6000 && dw.views === 23, dw);
+  const pubB = await call(env, '/api/boards');
+  const ins = (await pubB.json()).boards.find((b) => b.id === 'board-2').insights;
+  check('the public board list carries insights (views, avg seconds, place) and is CORS-open',
+    pubB.headers.get('Access-Control-Allow-Origin') === '*' && ins.views30 === 2 && ins.avgSeconds === 4.5 && ins.days30 === 1 && ins.viewsPerDay === 2 && typeof ins.place === 'string' && ins.place.length > 0, ins);
+  const stp = await (await call(env, `/status/${o.token}`)).text();
+  check('the status page shows seconds on screen', /avgSeconds/.test(stp) && /s on screen per view/.test(stp));
   const data = await (await call(env, '/api/admin/data', { headers: admin })).json();
   check('admin data has the booking, live, with its numbers', data.bookings.find((b) => b.id === o.id)?.live === true && data.bookings.find((b) => b.id === o.id).views === 23);
   const price = await call(env, '/api/admin/boards/board-2', { method: 'POST', headers: { ...admin, 'Content-Type': 'application/json' }, body: { price: 45000, bookable: true } });

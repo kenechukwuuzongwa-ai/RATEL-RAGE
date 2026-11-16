@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-17 — The website; the game moves to /play/; keyboard kick and combos; board dwell (v170, request 657)
+
+- **Website at ratelrage.com** (site/, built by deploy/build-site.js, called from build-web.js): home, how to play (touch / keyboard and mouse / controller switch, game's own button art, no console glyphs), combos, grades, story (spoilers behind a switch), levels, enemies, weapons, gallery, leaderboards (live, public, registered players' names), advertise (live board chooser), help, updates, press, terms, credits, 404, sitemap, robots. Every number a page states about the game is a `data-fact` that the build checks against game.js (50 facts); a mismatch or a missing image stops the build.
+- **The game now lives at /play/.** The manifest (same id, start_url /play/?app=1) and media-sw.js (scope /, so the reminder push subscriptions survive) stay at the root; the root forwards ?app=1, sign-in returns (#access_token, ?code, error) and #rr-carry to /play/; www and pages.dev still go to ratelrage.com. /privacy.html stays at the root (Google consent screen). Quitting goes back to the site page the player came from.
+- **Keyboard:** I kicks (direction held away + I = back kick); J twice quickly = the 5-hit combo (or the weapon's double); J feeds the grab's fist combo. Test _chromakey/req657/keys.js (8/8).
+- **Touch:** hold KICK + tap JAB is a clean uppercut, no kick first (KICK waits 90 ms for a JAB). Test req657/touchupper.js (9/9).
+- **Options:** CRT EFFECT, TUTORIAL HINTS, COMBO ASSIST and HIGH CONTRAST UI removed (nothing read them).
+- **Board insights:** the game sends each board pass's seconds on screen (k 'd', capped 300 s); rr-ads stores them (migration 0004_dwell, applied) and /api/boards (CORS *) returns per-board place, stretch, scene, views a day, seconds on screen per view, 30-day views and tap rate. Tests: ads.test.mjs 97/97, req657/dwell.js.
+
 ## 2026-11-16 — Fills an iPhone screen (v169, request 654)
 
 - iPhone (and iPad) now widen the view to the window's shape like Android does (webshell.js RR_WEB.wide), so an iPhone 13 in landscape is filled edge to edge instead of a 16:9 picture with black bars. iPads (about 4:3) still get 1280.

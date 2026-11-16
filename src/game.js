@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v169';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v170';
 import { createAftermath } from './aftermath.js?v=ratelrage-v163';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -3401,6 +3401,7 @@ const kbDir = { left: false, right: false, up: false, down: false };
 // when the carry landed on it, so a pad releasing L2 has to be able to clear a
 // state the keyboard may never have set.
 const kbHeld = { block: false, execute: false };
+let kbJabCount = 0, kbJabLastT = -1;   // rapid-J run: the keyboard's own combo detector (request 657)
 
 const KEYMAP = {
   ArrowLeft: 'left', KeyA: 'left',
@@ -3410,7 +3411,8 @@ const KEYMAP = {
   Space: 'jump',
   KeyJ: 'leftjab',             // Left Jab (keyboard mirror of LMB)
   KeyK: 'upper',               // heavy: Uppercut
-  KeyG: 'grab',                // Grab (whiffs into GrabFail with nobody in reach)
+  KeyI: 'kick',                // High Kick (back+I = Back Kick), keyboard mirror of RMB (request 657)
+  KeyG: 'grab',               // Grab (whiffs into GrabFail with nobody in reach)
   KeyE: 'execute',             // EXECUTION on a boss already worn down
   KeyL: 'block',               // HOLD to guard (keyboard mirror of L1)
   ShiftLeft: 'block',
@@ -3457,8 +3459,21 @@ window.addEventListener('keydown', (e) => {
     if (live && !input.jumpHeld) input.jumpPressed = true;
     input.jumpHeld = true;
   } else if (act === 'leftjab') {
-    if (live && !input.leftJabHeld) input.leftJabPressed = true;
+    /* J is the keyboard's LMB in full (request 657): a second press inside
+     * COMBO_CLICK_WINDOW is the 5-hit combo (or the weapon's double), and every
+     * press is a raw HIT edge for the grab's punch sequence (the fist combo). */
+    if (live && !input.leftJabHeld) {
+      const now = performance.now();
+      kbJabCount = (kbJabLastT >= 0 && now - kbJabLastT <= COMBO_CLICK_WINDOW) ? kbJabCount + 1 : 1;
+      kbJabLastT = now;
+      if (kbJabCount >= 2) { input.comboPressed = true; kbJabCount = 0; }
+      else input.leftJabPressed = true;
+      input.lmbRaw = true;
+    }
     input.leftJabHeld = true;
+  } else if (act === 'kick') {
+    if (live && !input.kickHeldKb) { input.kickPressed = true; input.rmbRaw = true; }
+    input.kickHeldKb = true;
   } else if (act === 'upper') {
     if (live && !input.upperHeld) input.upperPressed = true;
     input.upperHeld = true;
@@ -3491,6 +3506,7 @@ window.addEventListener('keyup', (e) => {
   if (!act) return;
   if (act === 'jump') input.jumpHeld = false;
   else if (act === 'leftjab') input.leftJabHeld = false;
+  else if (act === 'kick') input.kickHeldKb = false;
   else if (act === 'upper') input.upperHeld = false;
   else if (act === 'grab') input.grabHeld = false;
   else if (act === 'execute') { kbHeld.execute = false; input.executeHeld = false; }
@@ -23292,10 +23308,21 @@ function drawAdvertFace(slot, x, top, k) {
   const iy = Math.max(0, Math.min(Math.max(ay, by), canvas.height) - Math.max(Math.min(ay, by), 0));
   ADS.vis.set(slot.id, area > 0 ? (ix * iy) / area : 0);
 }
-function queueAdCount(slotId, k) {
+function queueAdCount(slotId, k, n = 1) {
   const b = adLiveOf(slotId)?.id || '';
   const key = `${slotId}|${b}|${k}`;
-  ADS.queue.set(key, (ADS.queue.get(key) || 0) + 1);
+  ADS.queue.set(key, (ADS.queue.get(key) || 0) + n);
+}
+/* DWELL (request 657): the seconds a counted pass kept at least half the board's
+ * face on screen, sent as k 'd' when the pass ends. Summed per day and divided
+ * by the views, it is the "average time on screen" the website shows advertisers
+ * choosing a board: a board where the street makes players stop and fight is
+ * worth more than one they run past. Capped per pass so a player idling in front
+ * of a board for an hour cannot skew it. */
+const AD_DWELL_CAP = 300;
+function endAdPass(slotId, s) {
+  if (s.counted && s.t > 0) queueAdCount(slotId, 'd', Math.round(Math.min(AD_DWELL_CAP, s.t)));
+  s.t = 0; s.counted = false;
 }
 function flushAds() {
   if (!ADS.endpoint || !ADS.queue.size) return;
@@ -23318,7 +23345,7 @@ function updateAds(dt) {
       s.t += dt;
       ADS.last = { id: slot.id, at: now };
       if (s.t >= 1 && !s.counted) { s.counted = true; s.passed = true; queueAdCount(slot.id, 'v'); }
-    } else if (v < 0.25) { s.t = 0; s.counted = false; }   // gone (with slack) -> the next pass counts again
+    } else if (v < 0.25) endAdPass(slot.id, s);             // gone (with slack): its dwell is sent, the next pass counts again
     /* The rotation steps only once a counted pass is over AND the board is wholly
      * off screen — never in front of the player. */
     if (s.passed && v === 0) {
@@ -23510,7 +23537,8 @@ function openExternal(url) {
   try { window.open(url, '_blank', 'noopener'); } catch {}
 }
 if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', () => flushAds());
+  // leaving the page ends every open pass, so its dwell is not lost (request 657)
+  window.addEventListener('pagehide', () => { if (ADS.endpoint) for (const [id, s] of ADS.seen) endAdPass(id, s); flushAds(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAds(); });
 }
 
@@ -27987,6 +28015,8 @@ window.__ror = {
       videos: [...adDeck.videos].map(([url, v]) => ({ url, playing: !v.paused, muted: v.muted })),
       hits: adDeck.hits.map((h) => ({ ...h })), closeAt: adDeck.closeAt ? { ...adDeck.closeAt } : null };
   },
+  /* The counts waiting to be sent: 'slot|booking|k' -> n (k v view, t tap, d dwell seconds; request 657). */
+  get adQueue() { return Object.fromEntries(ADS.queue); },
   /* Stand in for the ad server: { slotId: [{ id, brand, link, url, video? }] }. */
   fakeAds(map) {
     ADS.endpoint = 'https://ads.test';

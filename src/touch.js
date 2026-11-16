@@ -397,6 +397,49 @@
   /* Which key each control is currently holding down — see the press handler. */
   const held_code = {};
 
+  /* KICK + JAB = UPPERCUT, WITHOUT A STRAY KICK (request 657).
+   *
+   * The uppercut is the hold-KICK-and-tap-JAB chord. KICK used to send its
+   * right-button press at once, so the high kick started before the JAB could
+   * turn the press into the uppercut. Now KICK waits KICK_CHORD_MS: a JAB inside
+   * that wait sends the uppercut key (K) instead, and no kick is thrown at all.
+   * With no JAB the kick goes out when the wait ends, or at once on release (a
+   * quick tap). While KICK stays down after a chord, every JAB is another
+   * uppercut; once a kick has gone out, the game's own RMB+LMB chord still
+   * applies, exactly as before. */
+  const KICK_CHORD_MS = 90;
+  const kickChord = { timer: null, down: false, chorded: false, sent: false, jabEaten: false };
+  function kickPress() {
+    kickChord.down = true; kickChord.chorded = false; kickChord.sent = false;
+    clearTimeout(kickChord.timer);
+    kickChord.timer = setTimeout(() => {
+      kickChord.timer = null;
+      if (kickChord.down && !kickChord.chorded) { kickChord.sent = true; sendMouse(2, true); }
+    }, KICK_CHORD_MS);
+  }
+  function kickRelease() {
+    kickChord.down = false;
+    if (kickChord.timer) {                       // released inside the wait: a quick tap
+      clearTimeout(kickChord.timer); kickChord.timer = null;
+      if (!kickChord.chorded) { sendMouse(2, true); sendMouse(2, false); }
+    } else if (kickChord.sent) sendMouse(2, false);
+    kickChord.sent = false; kickChord.chorded = false;
+  }
+  function uppercutTap() { send('KeyK', true); send('KeyK', false); }
+  function jabPress() {
+    if (kickChord.down && (kickChord.timer || kickChord.chorded)) {
+      if (kickChord.timer) { clearTimeout(kickChord.timer); kickChord.timer = null; }
+      kickChord.chorded = true; kickChord.jabEaten = true;
+      uppercutTap();
+      return;
+    }
+    sendMouse(0, true);
+  }
+  function jabRelease() {
+    if (kickChord.jabEaten) { kickChord.jabEaten = false; return; }
+    sendMouse(0, false);
+  }
+
   /* WHICH KEY A CONTROL SENDS RIGHT NOW.
    *
    * Almost always its own: the table in CONTROLS is the binding. The exception
@@ -538,7 +581,9 @@
            * released another would leave the first one held down for ever. */
           held_code[id] = codeFor(c);
           send(held_code[id], true);
-        } else sendMouse(c.button, true);
+        } else if (id === 'kick') kickPress();
+        else if (id === 'jab') jabPress();
+        else sendMouse(c.button, true);
       });
       const up = (e) => {
         el.style.filter = '';
@@ -546,7 +591,9 @@
         if (c.type === 'key') {
           send(held_code[id] || c.code, false);
           held_code[id] = null;
-        } else sendMouse(c.button, false);
+        } else if (id === 'kick') kickRelease();
+        else if (id === 'jab') jabRelease();
+        else sendMouse(c.button, false);
       };
       el.addEventListener('pointerup', up);
       el.addEventListener('pointercancel', up);

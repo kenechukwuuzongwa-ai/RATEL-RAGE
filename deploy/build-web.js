@@ -23,6 +23,12 @@
  *   5. _headers      cache + safety headers (Cloudflare Pages / Netlify syntax).
  *   6. media-sw.js   the media cache worker (deploy/media-sw.js) + its registration.
  *
+ *   7. THE WEBSITE   (request 657) the site (deploy/build-site.js, site/) takes the root and the
+ *                    game moves to /play/: every step above writes into OUT/play. The manifest and
+ *                    media-sw.js stay at the root (an installed app and the push subscriptions behind
+ *                    the return reminders belong to those URLs); the site's root page forwards the
+ *                    game's old links (?app=1, sign-in returns, #rr-carry) to /play/.
+ *
  * The source tree is never modified. Nothing here needs a server to build. */
 const fs = require('fs');
 const path = require('path');
@@ -35,6 +41,7 @@ const outAt = args.indexOf('--out');
 const OUT = outAt >= 0 ? path.resolve(args[outAt + 1]) : path.join(__dirname, 'dist');
 const MOBILE = path.join(ROOT, 'mobile', 'assets-mobile');
 const CF_FILE_LIMIT = 25 * 1024 * 1024;
+const GAME = path.join(OUT, 'play');            // request 657: the game's folder in the build
 
 const ALLOWLIST = ['index.html', 'privacy.html', 'quit.html','styles.css', 'analytics-config.js', 'supabase-config.js', 'ads-config.js', 'favicon.png', 'manifest.webmanifest', 'src', 'frontend',
   'layers', 'sprites', 'sounds', 'music', 'buildings', 'level1'];
@@ -61,17 +68,17 @@ if (!OUT.startsWith(path.join(ROOT, 'deploy')) && fs.existsSync(OUT) && !fs.exis
   process.exit(1);
 }
 fs.rmSync(OUT, { recursive: true, force: true });
-fs.mkdirSync(OUT, { recursive: true });
+fs.mkdirSync(GAME, { recursive: true });
 for (const item of ALLOWLIST) {
   const s = path.join(ROOT, item);
   if (!fs.existsSync(s)) { console.error(`MISSING: ${item}`); process.exit(1); }
-  if (fs.statSync(s).isDirectory()) copyDir(s, path.join(OUT, item));
-  else fs.copyFileSync(s, path.join(OUT, item));
+  if (fs.statSync(s).isDirectory()) copyDir(s, path.join(GAME, item));
+  else fs.copyFileSync(s, path.join(GAME, item));
 }
 
 // 2. touch-button art lowercased (Linux hosts are case-sensitive; see build-demo.js 2b)
 {
-  const ctrl = path.join(OUT, 'frontend', 'ui', 'controls');
+  const ctrl = path.join(GAME, 'frontend', 'ui', 'controls');
   if (fs.existsSync(ctrl)) for (const f of fs.readdirSync(ctrl)) {
     const lower = f.toLowerCase();
     if (f === lower) continue;
@@ -92,19 +99,19 @@ for (const kind of ['layers', 'sprites']) {
     if (!/\.png$/i.test(f)) continue;                       // metas are identical to the source's
     const mob = path.join(dir, f), src = path.join(ROOT, kind, f);
     if (!fs.existsSync(src)) {                              // asked for by name on Android only
-      fs.copyFileSync(mob, path.join(OUT, kind, f)); phoneOnly++;
+      fs.copyFileSync(mob, path.join(GAME, kind, f)); phoneOnly++;
       continue;
     }
     if (sha(mob) === sha(src)) continue;                    // kept full-res for the phone too
-    fs.mkdirSync(path.join(OUT, 'lowres', kind), { recursive: true });
-    fs.copyFileSync(mob, path.join(OUT, 'lowres', kind, f));
+    fs.mkdirSync(path.join(GAME, 'lowres', kind), { recursive: true });
+    fs.copyFileSync(mob, path.join(GAME, 'lowres', kind, f));
     lowres.push(`${kind}/${f}`);
   }
 }
 const mobFront = path.join(MOBILE, 'frontend');
 if (fs.existsSync(mobFront)) for (const f of walk(mobFront)) {
   const rel = path.relative(mobFront, f);
-  const dst = path.join(OUT, 'frontend', rel);
+  const dst = path.join(GAME, 'frontend', rel);
   if (fs.existsSync(dst)) continue;                         // only the phone twins, never an override
   fs.mkdirSync(path.dirname(dst), { recursive: true });
   fs.copyFileSync(f, dst); phoneOnly++;
@@ -117,8 +124,8 @@ if (fs.existsSync(mobFront)) for (const f of walk(mobFront)) {
 const INTRO_TWINS = [['Intro.mp4', 'intro-mobile.mp4'], ['level2-intro.mp4', 'level2-intro-mobile.mp4']];
 const introNotes = [];
 for (const [m, t] of INTRO_TWINS) {
-  const master = path.join(OUT, 'frontend', 'intro', m);
-  const twin = path.join(OUT, 'frontend', 'intro', t);
+  const master = path.join(GAME, 'frontend', 'intro', m);
+  const twin = path.join(GAME, 'frontend', 'intro', t);
   if (!FULL_INTRO && fs.existsSync(master) && fs.existsSync(twin)) {
     fs.copyFileSync(twin, master);
     introNotes.push(`${m}: 720p twin under the master's name`);
@@ -131,7 +138,7 @@ const intro = introNotes.join('; ');
  * leaves the build PNG-only. */
 let webp = [];
 if (!args.includes('--no-webp')) {
-  const r = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'webp-art.js'), OUT],
+  const r = require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'webp-art.js'), GAME],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] });
   if (r.status !== 0) { console.error('webp-art failed'); process.exit(1); }
   webp = JSON.parse(r.stdout.trim().split('\n').pop());
@@ -139,7 +146,7 @@ if (!args.includes('--no-webp')) {
 
 // 5. index.html: production flag + the lowres list, before any game script
 const build = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13);
-const idx = path.join(OUT, 'index.html');
+const idx = path.join(GAME, 'index.html');
 let html = fs.readFileSync(idx, 'utf8');
 const flag = `<script>window.RR_WEB = ${JSON.stringify({ production: true, build: `web-${build}`, lowres, webp })};</script>`;
 if (!html.includes('<meta charset="UTF-8" />')) { console.error('index.html: charset meta not found'); process.exit(1); }
@@ -185,14 +192,36 @@ const MOVE = `(function () {
       history.replaceState(history.state, '', location.pathname + location.search);
     }
   })();`;
-html = html.replace(flag, `<script>${MOVE}</script>\n  ${flag}\n  <link rel="canonical" href="${SITE}/" />`);
+html = html.replace(flag, `<script>${MOVE}</script>\n  ${flag}\n  <link rel="canonical" href="${SITE}/play/" />`);
+/* request 657: the manifest stays at the site root (an installed app is tied to its URL and id) */
+const MANIFEST_LINK = '<link rel="manifest" href="manifest.webmanifest" />';
+if (!html.includes(MANIFEST_LINK)) { console.error('index.html: manifest link not found'); process.exit(1); }
+html = html.replace(MANIFEST_LINK, '<link rel="manifest" href="../manifest.webmanifest" />');
+{
+  const man = JSON.parse(fs.readFileSync(path.join(GAME, 'manifest.webmanifest'), 'utf8'));
+  /* same id as before ("./" from /manifest.webmanifest = "/"), so an installed copy updates in place;
+   * it opens the game, and the whole site stays inside the app window */
+  man.id = '/';
+  man.start_url = '/play/?app=1';
+  man.scope = '/';
+  man.icons = man.icons.map((i) => ({ ...i, src: '/play/' + i.src }));
+  fs.writeFileSync(path.join(OUT, 'manifest.webmanifest'), JSON.stringify(man, null, 2));
+  fs.rmSync(path.join(GAME, 'manifest.webmanifest'));
+}
+/* the privacy notice keeps its old address too (Google's sign-in consent screen links to it) */
+{
+  let pv = fs.readFileSync(path.join(GAME, 'privacy.html'), 'utf8');
+  pv = pv.replace(/href="favicon\.png"/g, 'href="/play/favicon.png"').replace(/href="\.\/"/g, 'href="/play/"');
+  fs.writeFileSync(path.join(OUT, 'privacy.html'), pv);
+}
 /* Media cache (deploy/media-sw.js, request 537): Chrome never HTTP-caches audio
  * or video, so without it every reload and return visit downloads the sounds,
  * music and menu video again. Web build only. `--no-media-cache` leaves it out. */
 const MEDIA_CACHE = !args.includes('--no-media-cache');
 if (MEDIA_CACHE) {
+  // at the ROOT, scope / (request 657): the push subscriptions behind the reminders belong to it
   fs.copyFileSync(path.join(__dirname, 'media-sw.js'), path.join(OUT, 'media-sw.js'));
-  html = html.replace(flag, `${flag}\n  <script>if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('./media-sw.js').catch(function () {});</script>`);
+  html = html.replace(flag, `${flag}\n  <script>if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('../media-sw.js', { scope: '../' }).catch(function () {});</script>`);
 }
 /* Cloudflare Web Analytics (visits/page views for ratel-rage.pages.dev). Web build
  * only: the APK and local runs never load it. `--no-beacon` leaves it out. It is
@@ -209,7 +238,7 @@ fs.writeFileSync(idx, html);
  * plays in the editor and the APK are never counted. `--no-stats` leaves it off. */
 const STATS_ENDPOINT = 'https://rr-stats.kenechukwuuzongwa.workers.dev/e';
 if (!process.argv.includes('--no-stats')) {
-  const cfgPath = path.join(OUT, 'analytics-config.js');
+  const cfgPath = path.join(GAME, 'analytics-config.js');
   const cfg = fs.readFileSync(cfgPath, 'utf8');
   if (!/endpoint: '',/.test(cfg)) { console.error('analytics-config.js: empty endpoint line not found'); process.exit(1); }
   fs.writeFileSync(cfgPath, cfg.replace(/endpoint: '',/, `endpoint: '${STATS_ENDPOINT}',`));
@@ -220,7 +249,7 @@ if (!process.argv.includes('--no-stats')) {
  * keep the house art and count nothing. `--no-ads` leaves it off. */
 const ADS_ENDPOINT = 'https://rr-ads.kenechukwuuzongwa.workers.dev';
 if (!process.argv.includes('--no-ads')) {
-  const adsPath = path.join(OUT, 'ads-config.js');
+  const adsPath = path.join(GAME, 'ads-config.js');
   const cfg = fs.readFileSync(adsPath, 'utf8');
   if (!/endpoint: '',/.test(cfg)) { console.error('ads-config.js: empty endpoint line not found'); process.exit(1); }
   fs.writeFileSync(adsPath, cfg.replace(/endpoint: '',/, `endpoint: '${ADS_ENDPOINT}',`));
@@ -235,7 +264,7 @@ if (!process.argv.includes('--no-ads')) {
 const SUPABASE = { url: 'https://xnnygfkzagqoxuhqervm.supabase.co', anonKey: 'sb_publishable_-bUEkA2cHSVcg4g1qsLXSQ_kNw7MgWr', google: true };
 if (!process.argv.includes('--no-accounts')) {
   if (/^sb_secret_/.test(SUPABASE.anonKey)) { console.error('build-web: refusing a SECRET Supabase key'); process.exit(1); }
-  const sbPath = path.join(OUT, 'supabase-config.js');
+  const sbPath = path.join(GAME, 'supabase-config.js');
   let sb = fs.readFileSync(sbPath, 'utf8');
   if (!/url: '',/.test(sb) || !/anonKey: '',/.test(sb) || !/google: true,/.test(sb)) { console.error('supabase-config.js: expected empty url/anonKey lines not found'); process.exit(1); }
   sb = sb.replace(/url: '',/, `url: '${SUPABASE.url}',`).replace(/anonKey: '',/, `anonKey: '${SUPABASE.anonKey}',`)
@@ -243,7 +272,14 @@ if (!process.argv.includes('--no-accounts')) {
   fs.writeFileSync(sbPath, sb);
 }
 
-// 6. headers (Cloudflare Pages / Netlify `_headers`)
+// 6. the website at the root (request 657), then headers (Cloudflare Pages / Netlify `_headers`)
+const { buildSite, missingRefs } = require('./build-site.js');
+const siteInfo = buildSite(OUT, { ver: build });
+{
+  const miss = missingRefs(OUT);
+  if (miss.length) { console.error('site: pages name files the build does not have:\n  ' + miss.join('\n  ')); process.exit(1); }
+}
+const G = (p) => '/play' + p;            // the game's paths
 fs.writeFileSync(path.join(OUT, '_headers'), [
   '/*',
   '  X-Content-Type-Options: nosniff',
@@ -251,27 +287,29 @@ fs.writeFileSync(path.join(OUT, '_headers'), [
   '  Permissions-Policy: camera=(), microphone=(), geolocation=()',
   '/',
   '  Cache-Control: no-cache',
-  '/index.html',
-  '  Cache-Control: no-cache',
-  '/analytics-config.js',
-  '  Cache-Control: no-cache',
-  '/supabase-config.js',
-  '  Cache-Control: no-cache',
-  '/ads-config.js',
-  '  Cache-Control: no-cache',
   '/media-sw.js',
   '  Cache-Control: no-cache',
-  // request 643: the installable web app's manifest
+  // request 643: the installable web app's manifest (at the root since request 657)
   '/manifest.webmanifest',
   '  Content-Type: application/manifest+json',
   '  Cache-Control: no-cache',
-  '/src/*',
+  // the website: css/js carry ?v=<build>; images a day
+  '/assets/site.css',
   '  Cache-Control: public, max-age=300',
-  '/styles.css',
+  '/assets/site.js',
+  '  Cache-Control: public, max-age=300',
+  '/assets/img/*',
+  '  Cache-Control: public, max-age=86400',
+  // the game
+  ...['/', '/index.html', '/analytics-config.js', '/supabase-config.js', '/ads-config.js']
+    .flatMap((p) => [G(p), '  Cache-Control: no-cache']),
+  G('/src/*'),
+  '  Cache-Control: public, max-age=300',
+  G('/styles.css'),
   '  Cache-Control: public, max-age=300',
   // art and audio are not fingerprinted: a day, then revalidate
   ...['sprites', 'lowres', 'layers', 'sounds', 'music', 'frontend', 'buildings', 'level1']
-    .flatMap((d) => [`/${d}/*`, '  Cache-Control: public, max-age=86400']),
+    .flatMap((d) => [G(`/${d}/*`), '  Cache-Control: public, max-age=86400']),
   '',
 ].join('\n'));
 
@@ -280,9 +318,9 @@ const files = walk(OUT);
 const bytes = files.reduce((s, f) => s + fs.statSync(f).size, 0);
 const big = files.filter((f) => fs.statSync(f).size > CF_FILE_LIMIT).map((f) => path.relative(OUT, f));
 fs.writeFileSync(path.join(OUT, 'build-info.json'), JSON.stringify({
-  build: `web-${build}`, files: files.length + 1, bytes, lowres: lowres.length, webp: webp.length, phoneOnly, intro, overCfLimit: big,
+  build: `web-${build}`, files: files.length + 1, bytes, site: siteInfo, lowres: lowres.length, webp: webp.length, phoneOnly, intro, overCfLimit: big,
 }, null, 2));
 console.log(`web build -> ${OUT}`);
-console.log(`  ${files.length + 1} files, ${(bytes / 1048576).toFixed(1)} MB`);
+console.log(`  ${files.length + 1} files, ${(bytes / 1048576).toFixed(1)} MB; site: ${siteInfo.pages} pages, ${siteInfo.facts} facts match the game; game at /play/`);
 console.log(`  lowres (Android browsers): ${lowres.length} files; phone-only names: ${phoneOnly}; webp twins: ${webp.length}; intro: ${intro}`);
 if (big.length) console.log(`  WARNING over Cloudflare Pages' 25 MiB file limit: ${big.join(', ')}`);

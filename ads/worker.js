@@ -153,15 +153,35 @@ async function boardsPublic(env) {
   const boards = await boardRows(env);
   const taken = (await env.DB.prepare(`SELECT slot, start_day, end_day, shares FROM bookings WHERE status = 'approved' AND end_day > ? ORDER BY start_day`).bind(day).all()).results || [];
   const since = today(Date.now() - 30 * DAY);
-  const views = (await env.DB.prepare('SELECT slot, SUM(views) v, SUM(taps) t FROM ad_stats WHERE day >= ? GROUP BY slot').bind(since).all()).results || [];
+  const views = (await env.DB.prepare(`SELECT slot, SUM(views) v, SUM(taps) t, SUM(dwell) d, COUNT(DISTINCT day) n,
+    SUM(CASE WHEN dwell > 0 THEN views ELSE 0 END) dv FROM ad_stats WHERE day >= ? GROUP BY slot`).bind(since).all()).results || [];
   const vMap = new Map(views.map((r) => [r.slot, r]));
-  return boards.map((b) => ({
-    id: b.id, level: b.level, name: b.name, where: b.where, art: b.art, artW: b.artW, artH: b.artH,
-    face: b.face, upload: b.upload, safe: SAFE_MARGIN, price: b.price, bookable: b.bookable, shares: b.shares,
-    taken: taken.filter((t) => t.slot === b.id).map((t) => ({ start: t.start_day, end: t.end_day, shares: t.shares })),
-    freeToday: b.shares - peakShares(taken.filter((t) => t.slot === b.id), day, nextDay(day)),
-    views30: vMap.get(b.id)?.v || 0,
-  }));
+  return boards.map((b) => {
+    const s = vMap.get(b.id) || {};
+    return {
+      id: b.id, level: b.level, name: b.name, where: b.where, art: b.art, artW: b.artW, artH: b.artH,
+      face: b.face, upload: b.upload, safe: SAFE_MARGIN, price: b.price, bookable: b.bookable, shares: b.shares,
+      taken: taken.filter((t) => t.slot === b.id).map((t) => ({ start: t.start_day, end: t.end_day, shares: t.shares })),
+      freeToday: b.shares - peakShares(taken.filter((t) => t.slot === b.id), day, nextDay(day)),
+      views30: s.v || 0,
+      // request 657: the insights the website shows an advertiser choosing a board
+      insights: insightsFor(b, s),
+    };
+  });
+}
+/* What a board's last 30 days say, for an advertiser who will never play: its place
+ * on the street, how many passes it got, how long each pass kept it on screen, and
+ * how often it was opened from the pause menu. avgSeconds only counts days the game
+ * already measured dwell (request 657), so the older view-only days don't drag it down. */
+function insightsFor(b, s) {
+  const views = s.v || 0, taps = s.t || 0, days = s.n || 0;
+  return {
+    place: b.place || '', stretch: b.stretch || '', scene: b.scene || '', order: b.order || 0,
+    views30: views, taps30: taps, days30: days,
+    viewsPerDay: days ? Math.round(views / days) : 0,
+    avgSeconds: s.dv ? Math.round((s.d || 0) / s.dv * 10) / 10 : null,
+    tapRate: views ? Math.round(taps / views * 1000) / 10 : 0,          // percent
+  };
 }
 
 // ---- bookings
@@ -225,8 +245,11 @@ async function bookingByToken(env, token) {
   return env.DB.prepare('SELECT * FROM bookings WHERE token = ?').bind(token).first();
 }
 async function bookingStats(env, id) {
-  const rows = (await env.DB.prepare('SELECT day, views, taps FROM ad_stats WHERE booking = ? ORDER BY day').bind(id).all()).results || [];
-  return { days: rows, views: rows.reduce((a, r) => a + r.views, 0), taps: rows.reduce((a, r) => a + r.taps, 0) };
+  const rows = (await env.DB.prepare('SELECT day, views, taps, dwell FROM ad_stats WHERE booking = ? ORDER BY day').bind(id).all()).results || [];
+  // seconds on screen per view, over the days the game measured it (request 657)
+  const dv = rows.reduce((a, r) => a + (r.dwell > 0 ? r.views : 0), 0), d = rows.reduce((a, r) => a + (r.dwell || 0), 0);
+  return { days: rows, views: rows.reduce((a, r) => a + r.views, 0), taps: rows.reduce((a, r) => a + r.taps, 0),
+    avgSeconds: dv ? Math.round(d / dv * 10) / 10 : null };
 }
 const publicBooking = (r) => ({ id: r.id, slot: r.slot, business: r.business, brand: r.brand, link: r.link,
   start: r.start_day, end: r.end_day, months: r.months, shares: r.shares, amount: r.amount, status: r.status, paid: !!r.paid, reason: r.reason,
@@ -301,15 +324,17 @@ async function ingest(req, env) {
   for (const it of body.items.slice(0, 60)) {
     if (!it || !known.has(it.slot)) continue;
     const booking = typeof it.b === 'string' && /^rr[0-9a-f]{16}$/.test(it.b) ? it.b : '';
-    const n = Math.max(0, Math.min(20, Math.round(Number(it.n) || 1)));
+    // views and taps: at most 20 a batch; dwell (request 657): seconds, at most 20 passes of 300 s
+    const n = Math.max(0, Math.min(it.k === 'd' ? 6000 : 20, Math.round(Number(it.n) || 1)));
     const key = it.slot + '|' + booking;
-    const s = sum.get(key) || { slot: it.slot, booking, views: 0, taps: 0 };
-    if (it.k === 'v') s.views += n; else if (it.k === 't') s.taps += n; else continue;
+    const s = sum.get(key) || { slot: it.slot, booking, views: 0, taps: 0, dwell: 0 };
+    if (it.k === 'v') s.views += n; else if (it.k === 't') s.taps += n; else if (it.k === 'd') s.dwell += n; else continue;
     sum.set(key, s);
   }
   if (!sum.size) return nothing;
-  await env.DB.batch([...sum.values()].map((s) => env.DB.prepare(`INSERT INTO ad_stats (day, slot, booking, views, taps) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (day, slot, booking) DO UPDATE SET views = views + excluded.views, taps = taps + excluded.taps`).bind(day, s.slot, s.booking, s.views, s.taps)));
+  await env.DB.batch([...sum.values()].map((s) => env.DB.prepare(`INSERT INTO ad_stats (day, slot, booking, views, taps, dwell) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (day, slot, booking) DO UPDATE SET views = views + excluded.views, taps = taps + excluded.taps, dwell = dwell + excluded.dwell`)
+    .bind(day, s.slot, s.booking, s.views, s.taps, s.dwell)));
   return nothing;
 }
 
@@ -420,7 +445,9 @@ export default {
       // advertisers
       if (M === 'GET' && p === '/') return html(landingPage({ boards: await boardsPublic(env), gameOrigin: env.GAME_ORIGIN }));
       if (M === 'GET' && p === '/policy') return html(policyPage());
-      if (M === 'GET' && p === '/api/boards') return json({ today: today(), boards: await boardsPublic(env), payments: !!env.PAYSTACK_SECRET });
+      // public, CORS * (request 657): the website's board chooser reads it
+      if (M === 'GET' && p === '/api/boards') return json({ today: today(), boards: await boardsPublic(env), payments: !!env.PAYSTACK_SECRET },
+        200, { ...CORS, 'Cache-Control': 'public, max-age=300' });
       if (M === 'GET' && (m = /^\/b\/(board-\d+)$/.exec(p))) {
         const all = await boardsPublic(env);
         const board = all.find((b) => b.id === m[1]);

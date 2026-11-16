@@ -1268,7 +1268,13 @@ function webQuit() {
   try { window.close(); } catch {}
   const leave = () => {
     let fromElsewhere = false;
-    try { fromElsewhere = !!document.referrer && new URL(document.referrer).origin !== location.origin; } catch {}
+    /* request 657: the website shares the game's origin (site at /, game at /play/), so a
+     * player who came in from a site page counts as "from elsewhere" and goes back to it. */
+    try {
+      const ref = document.referrer ? new URL(document.referrer) : null;
+      const game = new URL('./', location.href).pathname;
+      fromElsewhere = !!ref && (ref.origin !== location.origin || !ref.pathname.startsWith(game));
+    } catch {}
     if (fromElsewhere && history.length > 1) {
       history.back();
       // a back that goes nowhere (a blocked or empty history) still ends on the goodbye page
@@ -3393,7 +3399,8 @@ export function createFrontEnd({
     if (page === 'VIDEO') return [
       { label: 'DISPLAY MODE', value: () => (document.fullscreenElement ? 'FULLSCREEN' : 'WINDOWED'), action: toggleFullscreen },
       { label: 'SCREEN SHAKE', key: 'screenShake', type: 'toggle' },
-      { label: 'CRT EFFECT', key: 'crt', type: 'toggle' },
+      /* CRT EFFECT, TUTORIAL HINTS, COMBO ASSIST and HIGH CONTRAST UI were rows
+       * nothing read (request 657): hidden until they do something. */
     ];
     if (page === 'AUDIO') return [
       { label: 'MASTER VOLUME', key: 'master', type: 'slider' },
@@ -3404,10 +3411,8 @@ export function createFrontEnd({
     ];
     if (page === 'GAMEPLAY') return [
       { label: 'DIFFICULTY', value: () => difficulty, action: cycleDifficulty },
-      { label: 'TUTORIAL HINTS', key: 'tutorialHints', type: 'toggle' },
       { label: 'VIBRATION', key: 'vibration', type: 'toggle' },
       { label: 'DAMAGE INDICATORS', key: 'damageIndicators', type: 'toggle' },
-      { label: 'COMBO ASSIST', key: 'comboAssist', type: 'toggle' },
       { label: 'AUTOPLAY VIDEO ADS', key: 'autoplayAds', type: 'toggle' },
       // request 644: the come-back reminders (src/reminders.js), only where the browser can receive them
       ...(window.RRReminders?.supported ? [{ label: 'RETURN REMINDERS', value: reminderValue, action: toggleReminders }] : []),
@@ -3415,7 +3420,6 @@ export function createFrontEnd({
     if (page === 'ACCESSIBILITY') return [
       { label: 'SUBTITLES', key: 'subtitles', type: 'toggle' },
       { label: 'SUBTITLE SIZE', key: 'subtitleSize', type: 'slider', min: 0.75, max: 1.5, step: 0.25 },
-      { label: 'HIGH CONTRAST UI', key: 'highContrast', type: 'toggle' },
       { label: 'SCREEN SHAKE', key: 'screenShake', type: 'toggle' },
     ];
     if (page === 'LANGUAGE') return [{ label: 'LANGUAGE', value: () => 'ENGLISH' }];

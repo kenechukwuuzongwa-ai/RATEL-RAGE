@@ -24,7 +24,12 @@ const CACHE = 'ror-media-v1';
 const MEDIA = /\.(mp3|wav|ogg|m4a|mp4|webm)$/i;
 /* The story cuts (7.6-16.8 MB) are watched once and often skipped: saving one
  * means downloading all of it, so they keep streaming straight from the network. */
-const STREAM_ONLY = /^\/frontend\/intro\//i;
+const STREAM_ONLY = /^\/(play\/)?frontend\/intro\//i;
+/* THE GAME LIVES AT /play/ (request 657): the website took the root. This worker
+ * stays at /media-sw.js with scope / — the push subscriptions behind the return
+ * reminders belong to this registration, so moving it would silently end them —
+ * and points its notification at the game. */
+const GAME = 'play/';
 const VALIDATE_MS = 4000;              // past this a revalidation gives up and the saved copy plays
 
 const validated = new Set();           // URLs checked against the server in this worker's life
@@ -155,19 +160,21 @@ self.addEventListener('push', (e) => {
     const [title, body] = RETURN_LINES[i];
     await self.registration.showNotification(title, {
       body,
-      icon: 'frontend/icons/notify-192.png',
-      badge: 'frontend/icons/badge-96.png',
+      icon: GAME + 'frontend/icons/notify-192.png',
+      badge: GAME + 'frontend/icons/badge-96.png',
       tag: 'rr-return', renotify: true,
-      data: { url: './?from=reminder' },
+      data: { url: GAME + '?from=reminder' },
     });
   })());
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   e.waitUntil((async () => {
-    const url = new URL((e.notification.data && e.notification.data.url) || './', self.registration.scope).href;
+    const url = new URL((e.notification.data && e.notification.data.url) || GAME, self.registration.scope).href;
     const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const c of open) if (new URL(c.url).origin === self.location.origin && 'focus' in c) return c.focus();
+    // an open GAME tab comes forward; a website tab is not the game
+    const game = new URL(GAME, self.registration.scope).pathname;
+    for (const c of open) { const u = new URL(c.url); if (u.origin === self.location.origin && u.pathname.startsWith(game) && 'focus' in c) return c.focus(); }
     return self.clients.openWindow(url);
   })());
 });

@@ -33,5 +33,6 @@ CREATE TABLE IF NOT EXISTS creatives (
 CREATE TABLE IF NOT EXISTS ad_stats (
   day TEXT NOT NULL, slot TEXT NOT NULL, booking TEXT NOT NULL DEFAULT '',   -- '' = the house art
   views INTEGER NOT NULL DEFAULT 0, taps INTEGER NOT NULL DEFAULT 0,
+  dwell INTEGER NOT NULL DEFAULT 0,    -- seconds on screen over the counted passes (request 657, migrations/0004_dwell.sql)
   PRIMARY KEY (day, slot, booking)
 );

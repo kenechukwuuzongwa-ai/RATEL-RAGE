@@ -1,0 +1,53 @@
+<section class="page-head">
+  <div class="wrap">
+    <span class="kicker">Field manual</span>
+    <h1>Combos and chains</h1>
+    <p class="lead">What can follow what, and the exact inputs. Each chain here is something the game is built to accept, not a trick.</p>
+  </div>
+</section>
+<div class="sticky-switch"><div class="wrap"><span>Show controls for</span><div class="switch" role="group" aria-label="Choose your controls"></div></div></div>
+
+<section class="band">
+  <div class="wrap">
+    <h2>The combo map</h2>
+    <div class="flow">
+      <div class="row"><div class="node">Jab</div><div class="arrow">→</div><div class="outs"><span>another jab</span><span>5-hit combo</span><span>kick</span><span>uppercut</span><span>grab</span></div></div>
+      <div class="row"><div class="node">Rush</div><div class="arrow">→</div><div class="outs"><span>JAB: beat-down</span><span>double-tap: 5-hit combo</span><span>KICK: rush kick</span><span>JUMP: running leap</span></div></div>
+      <div class="row"><div class="node">Grab</div><div class="arrow">→</div><div class="outs"><span>JAB at once: beat-down</span><span>JAB, JAB: fist combo</span><span>nothing: pick up</span></div></div>
+      <div class="row"><div class="node">Pick up</div><div class="arrow">→</div><div class="outs"><span>carry (hold)</span><span>throw (let go)</span><span>charged throw (hold longer)</span></div></div>
+      <div class="row"><div class="node">Jump</div><div class="arrow">→</div><div class="outs"><span>air kick</span></div></div>
+      <div class="row"><div class="node">Full stamina</div><div class="arrow">→</div><div class="outs"><span>back, forward: RamRage</span></div></div>
+      <div class="row"><div class="node">Machete + Rage</div><div class="arrow">→</div><div class="outs"><span>HIT, HIT and hold: Rage Tornado</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="band alt">
+  <div class="wrap">
+    <h2>Chains</h2>
+    <div class="grid g2">
+      <div class="card move"><span class="tag g">Starter</span><h3>5-hit combo</h3><div data-in="combo5"></div><p class="dim">Two taps inside about a third of a second. The second tap cuts the first jab short and runs four punches and a finishing kick. It can't be interrupted, so start it when the man is already in front of you.</p></div>
+      <div class="card move"><span class="tag g">Starter</span><h3>Beat-down</h3><div data-in="beatdown"></div><p class="dim">GRAB, then JAB within about a fifth of a second. If you are too slow, the GRAB becomes a pick-up instead.</p></div>
+      <div class="card move"><span class="tag">Skilled</span><h3>Fist combo (long beat-down)</h3><div data-in="fist"></div><p class="dim">A second punch early in the beat-down (in the first half second) locks in the long version: four rounds of three punches before the six strikes and the uppercut. Its length is fixed, so there is no need to mash.</p></div>
+      <div class="card move"><span class="tag">Skilled</span><h3>Rush into a beat-down</h3><div data-in="rushjab"></div><p class="dim">Rush at a man, then JAB in the window after you arrive. The quickest way to grab someone across the street.</p></div>
+      <div class="card move"><span class="tag">Skilled</span><h3>Rush into the 5-hit combo</h3><div data-in="rushcombo"></div><p class="dim">The same window takes a double-tap: you arrive already throwing the combo.</p></div>
+      <div class="card move"><span class="tag">Skilled</span><h3>Rush kick</h3><div data-in="rushkick"></div><p class="dim">A flying kick out of any rush. The man you hit is sent into the man behind him.</p></div>
+      <div class="card move"><span class="tag">Skilled</span><h3>Running leap</h3><div data-in="leap"></div><p class="dim">Jump during a rush and you keep most of the speed. An air kick from a running leap hits harder: the faster you were going, the more it does.</p></div>
+      <div class="card move"><span class="tag r">Heavy</span><h3>RamRage</h3><div data-in="ram"></div><p class="dim">A short tap back, then forward straight after. The stamina gauge must be full (it costs most of it). It hits men standing, in the air and on the ground, and it won't stop for anything. Free during Rage.</p></div>
+      <div class="card move"><span class="tag r">Heavy</span><h3>Bowling</h3><div data-in="grab"></div><p class="dim">Pick a man up, hold to charge, let go. The body knocks down whoever it hits, and damage from bodies hitting other men counts in your score.</p></div>
+      <div class="card move"><span class="tag r">Heavy</span><h3>Rage Tornado</h3><div data-in="tornado"></div><p class="dim">Machete in hand, during Rage (or with a full Rage bar). Hold the second press: Darki spins, hitting everyone around him, and you can steer it. It lasts while you hold and Rage lasts.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>Keep the hit counter alive</h2>
+    <div class="grid g3">
+      <div class="card"><h3>The streak</h3><p class="dim">Each landed hit adds to the counter. It breaks if you stop hitting for too long (the window gets shorter as the streak grows) or the moment you take damage.</p></div>
+      <div class="card"><h3>The multiplier</h3><p class="dim">Every <b data-fact="combo.step">10</b> hits in a streak, the damage you deal scores 0.25× more, up to <b data-fact="combo.max">3</b>×. Callouts at 10 BRUTAL!, 20 SAVAGE!, 35 UNSTOPPABLE! and 50 RATEL RAGE!</p></div>
+      <div class="card accent"><h3>Clutch</h3><p class="dim">When the counter starts falling apart, land a hit before it is gone and you save the streak. Each save adds <b data-fact="clutch.per">25</b> points to every later hit in that streak, up to <b data-fact="clutch.max">4</b> saves.</p></div>
+    </div>
+    <div class="btns"><a class="btn" href="/grades/">How this becomes your grade</a><a class="btn ghost" href="/play/">Practise now</a></div>
+  </div>
+</section>

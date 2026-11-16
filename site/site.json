@@ -1,0 +1,34 @@
+{
+  "nav": [
+    ["/how-to-play/", "How to play"],
+    ["/how-to-play/combos/", "Combos"],
+    ["/grades/", "Grades"],
+    ["/story/", "Story"],
+    ["/levels/", "Levels"],
+    ["/enemies/", "Enemies"],
+    ["/weapons/", "Weapons"],
+    ["/gallery/", "Gallery"],
+    ["/leaderboards/", "Leaderboards"],
+    ["/advertise/", "Advertise"],
+    ["/help/", "Help"]
+  ],
+  "pages": [
+    { "src": "home.html", "path": "/", "title": "Ratel Rage: Streets of Justice. A beat-'em-up on the streets of Lagos", "desc": "Fight the street tax as Darki in Ratel Rage, a free 2D arcade beat-'em-up set in Lagos. Play in your browser on phone or computer.", "og": "og-home.jpg" },
+    { "src": "how-to-play.html", "path": "/how-to-play/", "title": "How to play Ratel Rage: controls, moves and systems", "desc": "Every control and move in Ratel Rage for touch, keyboard and mouse, and controller: jabs, kicks, grabs, rush, RamRage, rage, blocking and more.", "og": "og-howto.jpg" },
+    { "src": "combos.html", "path": "/how-to-play/combos/", "title": "Ratel Rage combos and chains", "desc": "The 5-hit combo, the grab beat-down and fist combo, rush follow-ups, RamRage, air kicks, throws and the machete Rage Tornado, with the exact inputs.", "og": "og-howto.jpg" },
+    { "src": "grades.html", "path": "/grades/", "title": "Scoring and grades in Ratel Rage (S, A, B, C, D)", "desc": "What the S, A, B, C and D grades mean in Ratel Rage, what earns points, and how to raise your score.", "og": "og-home.jpg" },
+    { "src": "story.html", "path": "/story/", "title": "The story of Ratel Rage", "desc": "Darki, MC Olodo, AIG Moshun Jimoh and The Cabal: the case files behind Ratel Rage.", "og": "og-story.jpg" },
+    { "src": "levels.html", "path": "/levels/", "title": "Ratel Rage levels and difficulty", "desc": "Level 01 The Street Tax, Level 02 Operation Clean Sweep, Level 03 The Sponsor, checkpoints and the four difficulty settings.", "og": "og-home.jpg" },
+    { "src": "enemies.html", "path": "/enemies/", "title": "Ratel Rage enemies and bosses", "desc": "Agbero, Taskforce, Aye, SARS and MC Olodo: what each enemy does and how to beat them.", "og": "og-home.jpg" },
+    { "src": "weapons.html", "path": "/weapons/", "title": "Ratel Rage weapons: bat and machete", "desc": "Where to find the bat and machete in Ratel Rage and every move each one has, including the Rage Tornado.", "og": "og-home.jpg" },
+    { "src": "gallery.html", "path": "/gallery/", "title": "Ratel Rage screenshots", "desc": "Screenshots of Ratel Rage on computer and phone.", "og": "og-home.jpg" },
+    { "src": "leaderboards.html", "path": "/leaderboards/", "title": "Ratel Rage leaderboards", "desc": "The best Ratel Rage scores for each level and difficulty.", "og": "og-home.jpg" },
+    { "src": "advertise.html", "path": "/advertise/", "title": "Advertise on a Ratel Rage billboard", "desc": "Put your brand on a billboard inside Ratel Rage. Compare boards by location, daily views and seconds on screen, then book online.", "og": "og-ads.jpg" },
+    { "src": "help.html", "path": "/help/", "title": "Ratel Rage help: install, sound, saves and problems", "desc": "Install Ratel Rage on Android, iPhone or computer, get sound working, keep your saves, and fix loading problems.", "og": "og-home.jpg" },
+    { "src": "updates.html", "path": "/updates/", "title": "Ratel Rage updates", "desc": "What changed in Ratel Rage recently.", "og": "og-home.jpg" },
+    { "src": "press.html", "path": "/press/", "title": "Ratel Rage press kit", "desc": "Fact sheet, description, logo and screenshots of Ratel Rage for press and creators.", "og": "og-home.jpg" },
+    { "src": "terms.html", "path": "/terms/", "title": "Ratel Rage terms of use", "desc": "The terms for playing Ratel Rage and using its website.", "og": "og-home.jpg" },
+    { "src": "credits.html", "path": "/credits/", "title": "Ratel Rage credits and licences", "desc": "Who made Ratel Rage and the licences of the fonts and code it uses.", "og": "og-home.jpg" },
+    { "src": "404.html", "path": "/404.html", "title": "Page not found · Ratel Rage", "desc": "This page does not exist.", "og": "og-home.jpg", "file": true }
+  ]
+}

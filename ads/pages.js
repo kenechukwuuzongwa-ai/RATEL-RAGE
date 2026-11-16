@@ -293,8 +293,8 @@ if(b.status!=='rejected'&&b.status!=='cancelled'&&b.end>D.today){
     const r=await fetch('/api/cancel/'+b.token,{method:'POST'});const o=await r.json().catch(()=>({}));
     if(r.ok)location.reload();else{btn.disabled=false;alert(o.error||'The booking could not be cancelled.')}};
   cx.append(btn);$('#cancelbox').append(cx)}
-$('#nums').append(mk('p',{text:D.stats.views.toLocaleString()+' views, '+D.stats.taps.toLocaleString()+' taps so far'}),
-  mk('p',{cls:'small dim',text:'A view is your board at least half on screen for at least one second. A tap is a player opening your link from the pause menu.'}));
+$('#nums').append(mk('p',{text:D.stats.views.toLocaleString()+' views, '+D.stats.taps.toLocaleString()+' taps so far'+(D.stats.avgSeconds!=null?', '+D.stats.avgSeconds+' s on screen per view':'')}),
+  mk('p',{cls:'small dim',text:'A view is your board at least half on screen for at least one second. Seconds on screen is how long each view kept it there. A tap is a player opening your link from the pause menu.'}));
 if(!b.paid&&b.status!=='rejected'&&b.status!=='cancelled'){
   if(D.payments){const btn=mk('button',{cls:'btn',type:'button',text:'Pay '+naira(b.amount)+' with Paystack'});
     btn.onclick=async()=>{btn.disabled=true;const r=await fetch('/api/pay/'+b.token,{method:'POST'});const p=await r.json();if(p.url)location.href=p.url;else{btn.disabled=false;alert(p.error||'Payment could not start.')}};$('#pay').append(btn)}

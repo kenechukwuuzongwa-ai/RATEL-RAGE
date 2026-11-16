@@ -1,0 +1,133 @@
+<section class="page-head">
+  <div class="wrap">
+    <span class="kicker">Field manual</span>
+    <h1>How to play</h1>
+    <p class="lead">Every move in the game, for the way you play. Choose your controls once and the whole page follows.</p>
+    <div class="toc"><a href="#basics">Basics</a><a href="#attacks">Attacks</a><a href="#grab">Grab and throw</a><a href="#rush">Rush and RamRage</a><a href="#rage">Rage</a><a href="#defence">Block and health</a><a href="#finishers">Finishers</a><a href="#rules">Street rules</a><a href="/how-to-play/combos/">Combos</a></div>
+  </div>
+</section>
+<div class="sticky-switch"><div class="wrap"><span>Show controls for</span><div class="switch" role="group" aria-label="Choose your controls"></div></div></div>
+
+<section class="band" id="basics">
+  <div class="wrap">
+    <h2>Basics</h2>
+    <div class="grid g3">
+      <div class="card move"><h3>Move</h3><div data-in="move"></div><p class="dim">Left and right, plus toward and away from the camera. Enemies come from both sides, so keep moving.</p></div>
+      <div class="card move"><h3>Jump</h3><div data-in="jump"></div><p class="dim">Attack in the air for an air kick. Jump out of a rush for a running leap.</p></div>
+      <div class="card move"><h3>Pause</h3><div data-in="pause"></div><p class="dim">Resume, restart from the last checkpoint, options, or quit. Your controls layout is under Options.</p></div>
+    </div>
+    <div class="card" data-platform="touch" style="margin-top:16px"><h3>Your touch buttons</h3><p class="dim">The left half of the screen is the movement stick: put your thumb down anywhere and drag. Every button can be moved, resized and faded in <b>Options › Controls › Customize controls</b>, with three saved layouts.</p></div>
+    <div class="card" data-platform="kbd" style="margin-top:16px"><h3>All keys</h3><div class="table-wrap"><table>
+      <tr><th>Key</th><th>Does</th></tr>
+      <tr><td>W A S D or arrows</td><td>Move</td></tr><tr><td>Space</td><td>Jump</td></tr>
+      <tr><td>J</td><td>Jab (twice quickly: 5-hit combo)</td></tr><tr><td>I</td><td>Kick (with the direction held away: back kick)</td></tr>
+      <tr><td>K</td><td>Uppercut</td></tr><tr><td>G</td><td>Grab beat-down</td></tr>
+      <tr><td>E</td><td>Pick up, carry (hold), throw (let go), take weapons, start a finisher</td></tr>
+      <tr><td>L or Left Shift</td><td>Block (hold)</td></tr><tr><td>P or Enter</td><td>Pause (skips a cutscene)</td></tr><tr><td>M</td><td>Mute during a fight</td></tr>
+      <tr><td>Mouse</td><td>Left click jab, right click kick, hold right and click left for an uppercut, middle click grab</td></tr>
+    </table></div></div>
+    <div class="card" data-platform="pad" style="margin-top:16px"><h3>Controller layout</h3><p class="dim">Plug in or pair any standard controller and press a button. Face buttons: bottom jumps, left jabs, right kicks, top uppercuts. Left shoulder blocks, right shoulder throws the 5-hit combo. Left trigger picks up, carries and throws, and starts finishers. Right trigger grabs for the beat-down. Start pauses. Rumble can be turned off in Options › Gameplay › Vibration.</p></div>
+  </div>
+</section>
+
+<section class="band alt" id="attacks">
+  <div class="wrap">
+    <h2>Attacks</h2>
+    <div class="grid g3">
+      <div class="card move"><h3>Jab</h3><div data-in="jab"></div><p class="dim">Quick and hard to punish. Chains into any other move.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i></i><i></i><i></i><i></i></span></div></div>
+      <div class="card move"><h3>5-hit combo</h3><div data-in="combo5"></div><p class="dim">Four punches and a kick that can't be interrupted. Land all five on a boss and it opens his finisher.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></div></div>
+      <div class="card move"><h3>High kick</h3><div data-in="kick"></div><p class="dim">Knocks the man down.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></div></div>
+      <div class="card move"><h3>Back kick</h3><div data-in="backkick"></div><p class="dim">Hits the man <b>behind</b> you without turning. Press the direction and the kick together.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></div></div>
+      <div class="card move"><h3>Uppercut</h3><div data-in="uppercut"></div><p class="dim">Heavy, knocks down, and cuts into a move that hasn't committed yet.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div></div>
+      <div class="card move"><h3>Air kick</h3><div data-in="air"></div><p class="dim">Once per jump. Knocks down and sends men further. From a running leap it hits harder still.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div></div>
+    </div>
+    <details><summary>Exact damage</summary><div class="table-wrap"><table>
+      <tr><th>Move</th><th class="num">Damage</th></tr>
+      <tr><td>Jab</td><td class="num">7</td></tr><tr><td>5-hit combo</td><td class="num">6 + 7 + 8 + 9 + 18</td></tr>
+      <tr><td>High kick</td><td class="num">15</td></tr><tr><td>Back kick</td><td class="num">14</td></tr>
+      <tr><td>Uppercut</td><td class="num">20</td></tr><tr><td>Air kick</td><td class="num">26 (up to ×1.4 from a running leap)</td></tr>
+    </table></div><p class="dim" style="margin-top:10px">Before difficulty. Rage multiplies all of it by <span data-fact="rage.mul">1.6</span>.</p></details>
+  </div>
+</section>
+
+<section class="band" id="grab">
+  <div class="wrap">
+    <h2>Grab and throw</h2>
+    <div class="grid g3">
+      <div class="card move"><h3>Pick up and throw</h3><div data-in="grab"></div><p class="dim">Lift the man in front of you. Hold to carry him (slower, no attacks). Let go to throw. Hold longer before letting go and the throw is up to twice as strong. The body knocks down whoever it hits.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div></div>
+      <div class="card move"><h3>Beat-down</h3><div data-in="beatdown"></div><p class="dim">Pull him in, six quick strikes, then a grab uppercut. Press JAB within a fifth of a second of GRAB.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></div></div>
+      <div class="card move"><h3>Fist combo</h3><div data-in="fist"></div><p class="dim">Punch again early in the beat-down and it becomes the long version: twelve more punches first. Mashing doesn't make it longer.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div></div>
+    </div>
+    <p class="dim" style="margin-top:14px">Pressing a direction during a grab breaks out of it and turns you that way, so you are never stuck when someone comes from behind. Bosses can't be lifted, and can only be grabbed once every 4 seconds.</p>
+  </div>
+</section>
+
+<section class="band alt" id="rush">
+  <div class="wrap">
+    <h2>Rush and RamRage</h2>
+    <div class="grid g3">
+      <div class="card move"><h3>Rush</h3><div data-in="rush"></div><p class="dim">With a man in range, Darki charges straight at him and stops just short. With nobody there, it is a sprint. Rushing uses the stamina gauge.</p></div>
+      <div class="card move"><h3>Rush follow-ups</h3><div data-in="rushjab rushkick"></div><p class="dim">Within a second of a rush: JAB pulls him into the beat-down, KICK is a flying rush kick that sends him into the man behind, a double-tap is the 5-hit combo.</p></div>
+      <div class="card move"><h3>RamRage</h3><div data-in="ram"></div><p class="dim">A shoulder charge that ploughs through standing, airborne and fallen men. Needs a full stamina gauge and empty hands. Nothing can stop it once it starts. During Rage it is free.</p><div class="meta"><span>Power</span><span class="power"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>The stamina gauge</h3><p class="dim">Starting a rush costs a slice of it and running drains it. It refills after a short pause. Run it to empty and Darki is winded: the refill waits longer. A full gauge is about a second and a half of running. During Rage it never runs out.</p></div>
+  </div>
+</section>
+
+<section class="band" id="rage">
+  <div class="wrap split">
+    <figure><img class="shot" src="/assets/img/shots/rage.webp" alt="Darki in Rage, glowing gold" width="1280" height="720" loading="lazy" /><figcaption>Rage</figcaption></figure>
+    <div>
+      <h2>Rage</h2>
+      <p>The bar fills as you land hits and as you take them. Hits you take can fill it, but never set it off: the burst waits for <b>your</b> next landed blow.</p>
+      <ul>
+        <li>A shockwave in front of you knocks men down.</li>
+        <li>For <b data-fact="rage.dur">7</b> seconds every hit does <b data-fact="rage.mul">1.6</b>× damage.</li>
+        <li>You move <b data-fact="rage.speed">1.3</b>× faster and the stamina gauge never empties.</li>
+        <li>RamRage costs nothing, and with the machete you can spin the Rage Tornado.</li>
+      </ul>
+      <p class="dim">Damage dealt in Rage counts at its full raged value in your score.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band alt" id="defence">
+  <div class="wrap">
+    <h2>Block and health</h2>
+    <div class="grid g3">
+      <div class="card move"><h3>Block</h3><div data-in="block"></div><p class="dim">Blocked hits from the front do no damage. Hits from behind still land. The Agbero side kick breaks your guard for half a second. You can't block in the air or while carrying.</p></div>
+      <div class="card"><h3>Recovering</h3><p class="dim">Stay out of the fight for <b data-fact="regen.calm">5</b> seconds (no hits landed or taken, nobody close) and health starts coming back. The bar says + RECOVERING.</p></div>
+      <div class="card"><h3>Medpacks</h3><p class="dim">One drops on your 6th and 15th knockout of a level and when the first of the boss's crew falls. Each heals <b data-fact="medpack.heal">35%</b> of your health, and is only picked up when you are hurt.</p></div>
+    </div>
+    <div class="card warn" style="margin-top:16px"><h3>One life</h3><p class="dim">If Darki goes down, it is game over. RETRY starts you from the last checkpoint: each street gate, the boss, and the Level 02 strong room.</p></div>
+  </div>
+</section>
+
+<section class="band" id="finishers">
+  <div class="wrap split rev">
+    <figure><img class="shot" src="/assets/img/shots/boss.webp" alt="Darki facing MC Olodo" width="1280" height="720" loading="lazy" /><figcaption>MC Olodo</figcaption></figure>
+    <div>
+      <h2>Boss finishers</h2>
+      <div data-in="exec"></div>
+      <p>When the boss is worn down to half health, stand close in front of him in his lane and press GRAB. A finisher starts and rings appear: press on each one as it closes.</p>
+      <ul>
+        <li><b>PERFECT</b> adds 30% damage, <b>GOOD</b> 15%, a miss nothing.</li>
+        <li>The last blow lands at ×0.7 (failed) up to ×1.4 (perfect).</li>
+        <li>Landing a full 5-hit combo on him also opens a finisher.</li>
+      </ul>
+      <p class="dim">One finisher doesn't end him. It takes several, or good old punching in between.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band alt" id="rules">
+  <div class="wrap">
+    <h2>Street rules</h2>
+    <div class="grid g3">
+      <div class="card"><h3>Gates</h3><p class="dim">The street is split into stretches. The way forward opens when a wave is cleared.</p></div>
+      <div class="card"><h3>No running away</h3><p class="dim">You can go back at most one cleared stretch. Further back is closed, so camping to heal doesn't work.</p></div>
+      <div class="card"><h3>Weapons</h3><p class="dim">One at a time. You drop it when knocked down. See <a href="/weapons/">weapons</a>.</p></div>
+    </div>
+    <div class="btns"><a class="btn" href="/how-to-play/combos/">Next: combos</a><a class="btn ghost" href="/play/">Try it now</a></div>
+  </div>
+</section>
