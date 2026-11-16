@@ -2723,6 +2723,20 @@ export function createFrontEnd({
   document.body.appendChild(bgVideo);
   let bgReady = false;
   bgVideo.addEventListener('loadeddata', () => { bgReady = true; });
+  /* A FAILED LOAD GETS TWO MORE GOES (request 653: the stats board's most frequent "asset error" was
+   * this clip, on iPad Safari and Android phones). Before, one dropped load left every menu screen on a
+   * dead plate for the whole visit. The retry asks for ?direct, which the media cache worker lets go
+   * straight to the network, so a bad saved copy cannot fail it the same way twice. */
+  let bgRetries = 0;
+  bgVideo.addEventListener('error', () => {
+    if (bgRetries >= 2) return;
+    const n = ++bgRetries;
+    setTimeout(() => {
+      bgReady = false;
+      bgVideo.src = new URL(`../frontend/menu/uibg2.mp4?direct=${n}`, import.meta.url);
+      bgVideo.load();                    // keepBackgroundRolling() plays it once a menu is drawing
+    }, 1200 * n);
+  });
 
   function keepBackgroundRolling() {
     if (!bgReady) return;

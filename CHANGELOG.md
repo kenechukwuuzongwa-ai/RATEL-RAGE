@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-16 — iPad load failures, menu video retry, cleaner error board (v168, request 653)
+
+- iPhone/iPad: the level no longer fails to load with "null is not an object (evaluating 'cc.imageSmoothingEnabled = true')" or "sprite sheet is fully transparent after keying". WebKit refuses new canvases once live canvases reach RAM/4, and a world load kept ~1 GB of frame canvases. On iOS each prepared frame (and each rage bead mask) is now an ImageBitmap; live canvas memory falls from ~989 MB to a 142 MB peak. Android/desktop unchanged. Test: _chromakey/req653/cap.js (emulated 512 MB cap: iOS 6/6; the canvas path reproduces the players' error).
+- The aftermath "ctx.canvas" error was the same cap hit after a TRY AGAIN reload (the game canvas itself got no context).
+- Menu street video (uibg2.mp4) retries twice after a failed load, the retry bypassing the media cache worker (?direct). Test: _chromakey/req653/bgretry.js (3/3).
+- Analytics: only same-origin asset failures are reported (the Cloudflare beacon blocked by ad blockers / Firefox is gone from the board); a video/audio failure now carries its media error code in the Message column.
+- Sprite sheets get five load tries instead of three.
+
 ## 2026-11-16 — SERVER name inside its HP bar (v167, request 652)
 
 - Level 02's SERVER bar no longer shows its HP number; the name SERVER now sits inside the bar at its left end (outlined HUD ink, like + RECOVERING) instead of beside it. Shot: _chromakey/req652/shots/server-hud.png.

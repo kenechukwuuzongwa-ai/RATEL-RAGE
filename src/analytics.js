@@ -166,7 +166,16 @@
     window.addEventListener('error', function (e) {
       if (++errors > 20) return;
       var t = e && e.target;
-      if (t && t !== window && (t.src || t.href)) track('asset_error', { file: base(t.src || t.href) });
+      if (t && t !== window && (t.src || t.href)) {
+        /* Only OUR files (request 653): the Cloudflare beacon that a blocker or Firefox's tracking
+         * protection stops is not something a player hit. A video/audio failure says WHY (MediaError
+         * code 1 aborted, 2 network, 3 decode, 4 unsupported/source) so the next one can be acted on. */
+        var u = t.src || t.href;
+        try { if (new URL(u, location.href).origin !== location.origin) return; } catch (x) {}
+        var me = t.error, p = { file: base(u) };
+        if (me && me.code) p.msg = ('media error ' + me.code + (me.message ? ': ' + me.message : '')).slice(0, 160);
+        track('asset_error', p);
+      }
       else track('js_error', { msg: String((e && e.message) || 'error').slice(0, 200), file: base(e && e.filename), line: (e && e.lineno) || 0 });
     }, true);
     window.addEventListener('unhandledrejection', function (e) {

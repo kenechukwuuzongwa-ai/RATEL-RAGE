@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v167';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v168';
 import { createAftermath } from './aftermath.js?v=ratelrage-v163';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -2388,9 +2388,9 @@ const assetPath = (src) => {
   return WEBP && WEBP.has(p) ? p.replace(/\.png$/i, '.webp') : p;
 };
 
-/* Three tries, spaced out: on a phone network one dropped request used to be
+/* Five tries, spaced out (0.7 s, 1.4 s, 2.1 s, 2.8 s): on a phone network one dropped request used to be
  * the end of the whole load (the world waits on every sheet). */
-function loadImage(src, tries = 3) {
+function loadImage(src, tries = 5) {   // five (request 653: two players lost a whole load to one sheet)
   // resolve against this module so test pages in /tests load the same asset
   let url = new URL('../' + encodeURI(assetPath(src)), import.meta.url);
   return new Promise((resolve, reject) => {
@@ -2933,9 +2933,55 @@ async function prepSpriteFrames(config, animationName, img, manifest) {
    * is each frame's gap below its lowest ink, in drawn px; the draw adds it
    * back, so that lowest point always sits on his physical height. */
   const lifts = config.feetOnGround ? frames.map((f) => lowestInkGap(f)) : null;
+  if (BITMAP_FRAMES) await framesToBitmaps(frames);    // iPhone/iPad canvas cap (request 653)
   // the cut, kept so a matching overlay (the rage beads, request 563) can be cut identically
   const crop = { minX, minY, bw, bh, workW, workH: WORK_H, cols, rows };
   return { frames, anchors, footAnchors, drawW, drawH, anims, hits, faces: config.faces ?? 1, sink, lifts, crop, src: config.src };
+}
+/* THE iOS CANVAS CAP (request 653, the stats board's top load error). WebKit on iPhone/iPad refuses
+ * any new canvas once the page's LIVE canvases add up to a quarter of the device's RAM: getContext
+ * hands back null ("null is not an object (evaluating 'cc.imageSmoothingEnabled = true')"), or on
+ * newer iOS the canvas silently stays blank ("sprite sheet is fully transparent after keying"). A
+ * world load keeps ~3,000 prepared frames, ~1 GB of canvas, so a 2-3 GB iPad hit the cap part-way
+ * through and the level never loaded (and a TRY AGAIN reload could not even get the game canvas).
+ * The cap counts canvas ELEMENTS only, so on iOS each finished frame becomes an ImageBitmap and its
+ * canvas is let go: same pixels, drawn the same way, outside the count. The few places that read a
+ * frame's pixels back (frameInk, the rack pull hand, lowestInkGap, the harness measures) only ever
+ * call getContext('2d').getImageData, so each bitmap carries that one method, done on a throwaway
+ * canvas that is released the moment the read is over. Android and desktop keep plain canvases. */
+const BITMAP_FRAMES = IS_IOS && typeof createImageBitmap === 'function';
+function readableBitmap(bmp) {
+  const reader = {
+    getImageData(x, y, w, h) {
+      const c = makeCanvas(bmp.width, bmp.height);
+      try {
+        const g = c.getContext('2d', { willReadFrequently: true });
+        g.drawImage(bmp, 0, 0);
+        return g.getImageData(x, y, w, h);
+      } finally { dropCanvas(c); }
+    },
+  };
+  bmp.getContext = () => reader;
+  return bmp;
+}
+/* The same swap for a cached set of draw-only canvases built on the fly (the rage bead masks): each
+ * key keeps drawing its canvas until the bitmap is ready, then the bitmap takes its place. */
+function bitmapsInPlace(obj, keys) {
+  for (const k of keys) {
+    const c = obj[k];
+    createImageBitmap(c).then((b) => {
+      if (obj[k] === c) { obj[k] = b; dropCanvas(c); } else b.close?.();
+    }).catch(() => {});
+  }
+}
+async function framesToBitmaps(frames) {
+  const made = await Promise.all(frames.map((f) => createImageBitmap(f).catch(() => null)));
+  for (let i = 0; i < frames.length; i++) {
+    const b = made[i];
+    if (!b || b.width !== frames[i].width || b.height !== frames[i].height) { b?.close?.(); continue; }
+    dropCanvas(frames[i]);
+    frames[i] = readableBitmap(b);
+  }
 }
 function lowestInkGap(frame) {
   const { width, height } = frame;
@@ -23805,6 +23851,7 @@ function beadFrameFor(spr, fi, kind = 'beads') {
       tg.fillStyle = 'rgba(255,246,214,0.85)';
       tg.fillRect(0, 0, W, H);
       m = { core, halo, bloom, hot, n };
+      if (BITMAP_FRAMES) bitmapsInPlace(m, ['core', 'halo', 'bloom', 'hot']);   // the iOS canvas cap (request 653)
     }
   } catch { m = null; }
   B.frames[fi] = m;

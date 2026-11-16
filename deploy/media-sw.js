@@ -41,6 +41,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || !MEDIA.test(url.pathname) || STREAM_ONLY.test(url.pathname)) return;
+  if (url.searchParams.has('direct')) return;     // a page's retry after a failed load (request 653): network only
   e.respondWith(serve(req, url).catch(() => fetch(req)));
 });
 
