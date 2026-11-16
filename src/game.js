@@ -1,4 +1,4 @@
-import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v164';
+import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v165';
 import { createAftermath } from './aftermath.js?v=ratelrage-v163';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
@@ -25490,6 +25490,10 @@ function drawOutro() {
   const cardDur = OUTRO.phases.find((p) => p[0] === 'card')?.[1] ?? 0.85;
   // the panels wait for the bars to meet before they arrive over the black
   const summaryT = (name === 'card' ? outro.t : name === 'file' ? cardDur + outro.t : 0) - OUTRO.closeDur;
+  /* THE MAIN MENU'S STREET UNDER THE SUMMARY (request 650): once the bars have met, the menu plate fades up
+   * over the black, and the glass card frosts it rather than the cleared arena. */
+  const plate = Math.max(0, Math.min(1, summaryT / 0.5));
+  if (plate > 0 && ui.menuBackdrop) { ui.menuBackdrop(0.4, plate); ui.captureBackdrop(); }
   /* THE ENTRANCE (request 622: "scale in the centre piece and transition in the end pieces from the ends of
    * the frame"). One score sheet, in seconds of summaryT, cut against the score count-up and its stamp sound:
    *   0.00  the headline block drops in from ABOVE the top edge and settles
@@ -25716,6 +25720,62 @@ function drawOutro() {
     ctx.fillText(OC.where, rx, card.y + card.h - 16);
     ctx.textAlign = 'left';
   });
+
+  /* THE GRADE KEY (request 650: "i really do not understand the Grades A, C, S"). The letter is the run's
+   * TOTAL SCORE banded by SCORE.ranks, so a short ladder beside the card says it without a paragraph: every
+   * grade with the score it starts at, the one earned lit in gold, and how many points the next one needs.
+   * It slides in from the right edge once the letter has stamped. */
+  {
+    const F = run.final || computeScore();
+    const ranks = SCORE.ranks;
+    const ku = span(SCORE_COUNT.at + SCORE_COUNT.dur + SCORE_COUNT.stampAfter + 0.15, 0.5);
+    const kx = x1 + 18, ky = card.y, kw = 200, RH = 30, kh = 104 + ranks.length * RH;
+    if (ku > 0 && kx + kw <= VIEW_W - 8) {
+      ctx.save();
+      ctx.globalAlpha *= clamp01(ku * 2.5);
+      ctx.translate((1 - easeOutBack(ku, 1.1)) * (VIEW_W - kx + 20), 0);
+      ui.glass(kx, ky, kw, kh, 0, { tint: 'rgba(8,12,18,0.78)', border: dimWhite(0.10) });
+      ctx.fillStyle = C.orange;
+      ctx.fillRect(kx, ky, 3, kh);
+      ctx.textAlign = 'left';
+      ui.setFont(700, 10, 3);
+      ctx.fillStyle = C.orange;
+      ctx.fillText('GRADE', kx + 18, ky + 28);
+      ui.setFont(600, 8, 1);
+      ctx.fillStyle = dimWhite(0.42);
+      ctx.fillText('BY TOTAL SCORE', kx + 18, ky + 45);
+      ctx.fillStyle = dimWhite(0.09);
+      ctx.fillRect(kx + 14, ky + 57, kw - 28, 1);
+      ranks.forEach(([letter, min], i) => {
+        const ry = ky + 62 + i * RH, mine = letter === F.rank;
+        if (mine) {
+          ctx.fillStyle = dimWhite(0.07);
+          ctx.fillRect(kx + 8, ry, kw - 16, RH - 4);
+          ctx.fillStyle = C.gold;
+          ctx.fillRect(kx + 8, ry, 3, RH - 4);
+        }
+        ctx.textAlign = 'center';
+        ui.setDisplay(900, 18, 0);
+        ctx.fillStyle = mine ? C.gold : dimWhite(0.55);
+        ctx.fillText(letter, kx + 32, ry + 20);
+        ctx.textAlign = 'right';
+        ui.setFont(700, 10, 0.8);
+        ctx.fillStyle = mine ? C.gold : dimWhite(0.5);
+        ctx.fillText(min > 0 ? `${min.toLocaleString('en-US')}+` : `UNDER ${(ranks[i - 1]?.[1] ?? 0).toLocaleString('en-US')}`,
+          kx + kw - 16, ry + 18);
+      });
+      const at = ranks.findIndex(([l]) => l === F.rank);
+      const next = at > 0 ? ranks[at - 1] : null;
+      ctx.fillStyle = dimWhite(0.09);
+      ctx.fillRect(kx + 14, ky + kh - 36, kw - 28, 1);
+      ctx.textAlign = 'left';
+      ui.setFont(700, 9, 1.6);
+      ctx.fillStyle = C.orangeSoft;
+      ctx.fillText(next ? `${(next[1] - F.total).toLocaleString('en-US')} MORE FOR ${next[0]}` : 'TOP GRADE',
+        kx + 18, ky + kh - 14);
+      ctx.restore();
+    }
+  }
 
   /* THE ONE ACTION. It does not appear until the card has finished arriving — a prompt racing the panel
    * it sits under reads as the screen hurrying you past something you were still reading. Drawn in the
@@ -26411,7 +26471,7 @@ function draw() {
   // â€¦the mission card closes it, and the post-mission sequence takes the frame
   // from there. Only one of the two draws: the analysis screens replace the card
   // outright rather than being layered over a frosted arena nobody can see.
-  else if (aftermath.owningFrame) aftermath.draw();
+  else if (aftermath.owningFrame) { frontEnd?.ui.parkBackdrop?.(); aftermath.draw(); }   // the summary's menu plate stops rolling (request 650)
   else if (outro.active) drawOutro();
   // The HUD steps aside for the pause screen rather than showing through it: the
   // health bar sits exactly where the PAUSED title goes, and the pause panel

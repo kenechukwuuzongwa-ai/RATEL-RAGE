@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-16 — Darki on CONTROLS, menu street under the summary, grade key (v165, request 650)
+
+- The CONTROLS list page shows Darki's idle sprite where OPTIONS has him (not under the layout editor; HOW TO PLAY stays plain).
+- The level summary (MISSION COMPLETE card) now sits on the main menu's rolling street plate: it fades up once the bars meet, the card frosts it, and the video parks again when the evidence board takes the frame (ui.menuBackdrop / ui.parkBackdrop).
+- A GRADE key slides in beside the card after the letter stamps: S 32,000+, A 25,000+, B 18,000+, C 11,000+, D under 11,000, the earned grade lit gold, and how many more points the next grade needs. Read from SCORE.ranks. Shots: _chromakey/req650/shots (desktop + Android build).
+
 ## 2026-11-16 — Darki on the OPTIONS page (v164, request 649)
 
 - The OPTIONS list page now shows Darki's idle sprite standing right of the list and its card (full opacity, like the main menu). Settings pages keep the plain backdrop, as their rows run the full width. Shots: _chromakey/req649/shots (desktop + Android build).

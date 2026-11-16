@@ -6327,7 +6327,8 @@ export function createFrontEnd({
   /* The CONTROLS list (request 540), and the quiet screen under the layout editor. */
   function drawControlsMenu() {
     const editing = editingControls();
-    stage({ darken: editing ? 0.62 : 0.48 });
+    // Darki's idle stands right of the list (request 650), where OPTIONS has him; not under the layout editor
+    stage({ darken: editing ? 0.62 : 0.48, darki: editing ? null : { cx: 1066, feet: 652 } });
     beginScreen();
     screenHead('FIELD MANUAL', editing ? 'CUSTOMIZE CONTROLS' : 'CONTROLS',
       editing ? 'Drag buttons, then tap DONE.' : '');
@@ -8909,6 +8910,19 @@ export function createFrontEnd({
      * draw on the same canvas with the same fonts, and two wrap routines drift. */
     wrapLines,
     drawControlBar, drawGrain, drawVignette, captureBackdrop,
+    /* THE MAIN MENU'S STREET, for the level summary (request 650): the same rolling uibg2 plate, wash and
+     * vignette the menus stand on, laid over the closed frame at `alpha`. parkBackdrop stops the video
+     * again once the evidence board owns the frame (the menus restart it themselves). */
+    menuBackdrop(darken = 0, alpha = 1) {
+      if (!(alpha > 0)) return;
+      keepBackgroundRolling();
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, alpha);
+      drawBackground(darken);
+      drawVignette();
+      ctx.restore();
+    },
+    parkBackdrop() { if (!bgVideo.paused) bgVideo.pause(); },
     pressPulse, navForward, navBack, navScroll, navClose, navStart, navSlide, hitTest, pointerPos, isTouchUI, drawCloseButton,
     /* The case file's GO BACK, look and glimmer, for the post view's way out (request 543). */
     drawGoBack(x, y, w = 188, h = 40, focused = false) {
