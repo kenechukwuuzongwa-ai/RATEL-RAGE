@@ -6429,7 +6429,9 @@ export function createFrontEnd({
   }
 
   function drawOptions() {
-    stage({ darken: 0.46 });
+    /* Request 649: Darki's idle on the OPTIONS list page too, standing right of the list and its card, at
+     * full opacity (project rule). Not on a settings page: its rows run the full width. */
+    stage({ darken: 0.46, darki: optionPage ? null : { cx: 1066, feet: 652 } });
     beginScreen();
     if (!optionPage) {
       screenHead('SYSTEM', 'OPTIONS');

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-16 — Darki on the OPTIONS page (v164, request 649)
+
+- The OPTIONS list page now shows Darki's idle sprite standing right of the list and its card (full opacity, like the main menu). Settings pages keep the plain backdrop, as their rows run the full width. Shots: _chromakey/req649/shots (desktop + Android build).
+
 ## 2026-11-16 — Clutch saves on the hit counter, smaller reminder card, fitted case panels (v163, request 648)
 
 - Hit counter: the crumble outro now starts before the streak's window runs out (about halfway through its fall when the window ends). A blow landed during the fall saves the streak: the letters snap back with a slight overshoot, the counter flashes green-white and CLUTCH shows beside the multiplier. Every further hit in a saved streak pays +25 per save (up to 4 saves stacked), counted in the combat score part (leaderboard check unchanged). Every hit now lands with a white-hot flash; falling letters cool to ember red.
