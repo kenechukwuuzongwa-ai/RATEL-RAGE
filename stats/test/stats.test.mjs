@@ -154,6 +154,24 @@ const A1 = '22222222-aaaa-4bbb-8ccc-000000000001', A2 = '22222222-aaaa-4bbb-8ccc
   check('an empty range returns zeros, not errors', today.sessions === 0 && today.players === 0 && today.medianSeconds === 0 && today.online === 1, today);
 }
 
+// ---------- errors: the live build's rows come first (request 667)
+{
+  const env = mkEnv();
+  const now = Date.now(), DAY = 86400000;
+  const ins = env.DB.raw.prepare('INSERT INTO sessions (sid, aid, first_ts, last_ts, seconds, events, platform, device, browser, os, lang, build, country) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  ins.run('s-oldb-001', '', now - 2 * DAY, now - 2 * DAY, 60, 5, 'web', 'mobile', 'chrome 131', 'android 14', 'en', 'web-20261116T1031', 'NG');
+  ins.run('s-oldb-002', '', now - 2 * DAY, now - 2 * DAY, 60, 5, 'web', 'mobile', 'chrome 131', 'android 14', 'en', 'web-20261116T1031', 'NG');
+  ins.run('s-live-001', '', now - 3600000, now - 60000, 60, 5, 'web', 'mobile', 'chrome 157', 'android 10', 'en', 'web-20261117T0633', 'NG');
+  const e = env.DB.raw.prepare('INSERT INTO events (ts, sid, aid, e, level, props) VALUES (?,?,?,?,?,?)');
+  for (const sid of ['s-oldb-001', 's-oldb-002', 's-oldb-001']) e.run(now - 2 * DAY, sid, '', 'asset_error', null, '{"msg":"old","file":"menu/uibg2.mp4"}');
+  e.run(now - 3000000, 's-live-001', '', 'asset_error', null, '{"msg":"media error 2","file":"menu/uibg2.mp4"}');
+  const s = await (await getStats(env, `?from=${now - 7 * DAY}&to=${now + 1000}`)).json();
+  check('live build reported', s.liveBuild === 'web-20261117T0633', s.liveBuild);
+  check('rare live-build error sorts above a frequent old-build one', s.errors.length === 2
+    && s.errors[0].msg === 'media error 2' && s.errors[0].build === 'web-20261117T0633'
+    && s.errors[1].msg === 'old' && s.errors[1].n === 3 && s.errors[1].build === 'web-20261116T1031', s.errors);
+}
+
 // ---------- retention
 {
   const env = mkEnv();

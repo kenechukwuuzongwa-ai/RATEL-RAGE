@@ -79,7 +79,7 @@ footer{color:var(--text-muted);font-size:12px;margin-top:18px}
   <div class="card"><h2>Countries</h2><div id="b-country"></div></div>
   <div class="card"><h2>Difficulty picked</h2><div id="difficulty"></div><h2 style="margin-top:12px">Ranks earned</h2><div id="ranks"></div></div>
   <div class="card"><h2>Speed on players' devices</h2><div id="perf"></div></div>
-  <div class="card wide"><h2>Errors players hit</h2><p class="sub">Grouped by message. Fix the top rows first.</p><div id="errors"></div></div>
+  <div class="card wide"><h2>Errors players hit</h2><p class="sub">Grouped by message. Live build rows first: those are still happening. Old build rows were last seen before the current version went out.</p><div id="errors"></div></div>
 </section>
 <footer>Anonymous: no names, emails, IP addresses or accounts. "Online now" = a game tab seen in the last <span id="win">3</span> minutes.</footer>
 </div>
@@ -190,7 +190,8 @@ footer{color:var(--text-muted);font-size:12px;margin-top:18px}
     var e=$('errors');e.textContent='';
     e.appendChild(table([{label:'Kind',get:function(r){return r.e.replace('_',' ')}},{label:'Message',cls:'msg',get:function(r){return (r.msg||'')+(r.file?'  ('+r.file+')':'')}},
       {label:'Times',num:1,get:function(r){return fmt(r.n)}},{label:'Sessions',num:1,get:function(r){return fmt(r.sessions)}},
-      {label:'Last seen',num:1,get:function(r){return new Date(r.last).toLocaleString()}}],d.errors));
+      {label:'Last seen',num:1,get:function(r){return new Date(r.last).toLocaleString()}},
+      {label:'Status',num:1,get:function(r){return !r.build?'–':r.build===d.liveBuild?'Live build':'Old build'}}],d.errors));
     $('asof').textContent='Updated '+new Date(d.now).toLocaleTimeString()+' · '+new Date(d.from).toLocaleDateString()+' – '+new Date(d.to-1).toLocaleDateString();
   }
   function load(){

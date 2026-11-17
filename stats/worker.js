@@ -178,11 +178,20 @@ export async function stats(env, from, to, tzMin) {
             AVG(CASE WHEN e = 'perf_world' THEN json_extract(props, '$.ms') END) AS worldMs,
             AVG(CASE WHEN e = 'perf_fps' THEN json_extract(props, '$.fps') END) AS fps
        FROM events WHERE ts >= ? AND ts < ? AND e IN ('perf_boot','perf_world','perf_fps')`, from, to);
+  /* Each error row carries the NEWEST build that hit it, and the board is told which build is live now
+   * (the build of the latest session started). An error whose newest build is older than the live one was
+   * last seen before a fix went out, so it sorts below everything the live build still hits (request 667:
+   * the board kept old, already-fixed rows at the top because it ordered by all-time count). Build stamps
+   * are web-YYYYMMDDTHHMM, so MAX() is the newest. */
+  const liveBuild = (await one(
+    `SELECT build FROM sessions WHERE build != '' ORDER BY first_ts DESC LIMIT 1`))?.build || '';
   const errors = await all(
-    `SELECT e, COALESCE(json_extract(props, '$.msg'), '') AS msg, COALESCE(json_extract(props, '$.file'), '') AS file,
-            COUNT(*) AS n, COUNT(DISTINCT sid) AS sessions, MAX(ts) AS last
-       FROM events WHERE ts >= ? AND ts < ? AND e IN ('js_error','asset_error','load_error')
-      GROUP BY e, msg, file ORDER BY n DESC LIMIT 15`, from, to);
+    `SELECT v.e AS e, COALESCE(json_extract(v.props, '$.msg'), '') AS msg, COALESCE(json_extract(v.props, '$.file'), '') AS file,
+            COUNT(*) AS n, COUNT(DISTINCT v.sid) AS sessions, MAX(v.ts) AS last, COALESCE(MAX(s.build), '') AS build
+       FROM events v LEFT JOIN sessions s ON s.sid = v.sid
+      WHERE v.ts >= ? AND v.ts < ? AND v.e IN ('js_error','asset_error','load_error')
+      GROUP BY v.e, msg, file
+      ORDER BY (COALESCE(MAX(s.build), '') = ?) DESC, n DESC LIMIT 15`, from, to, liveBuild);
 
   return {
     now, from, to, tzMin: tzMin || 0, onlineWindowMin: ONLINE_MS / 60000,
@@ -192,7 +201,7 @@ export async function stats(env, from, to, tzMin) {
     seconds: tot.seconds, avgSeconds: Math.round(tot.avgSeconds), medianSeconds: med ? med.seconds : 0,
     daily, funnel, bossDeaths: bossDeaths.n, sections, difficulty, wins, ranks,
     breakdown: { platform, device, browser, os, country },
-    perf, errors,
+    perf, errors, liveBuild,
   };
 }
 
