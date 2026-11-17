@@ -2738,9 +2738,24 @@ export function createFrontEnd({
    * this clip, on iPad Safari and Android phones). Before, one dropped load left every menu screen on a
    * dead plate for the whole visit. The retry asks for ?direct, which the media cache worker lets go
    * straight to the network, so a bad saved copy cannot fail it the same way twice. */
+  /* THE STILL (request 662: the only error players hit after v168 was "media error 3: ProcessConstruct" on
+   * this clip, every time from Firefox on Android 15, where the browser cannot start its video decoder at
+   * all). A decode error (3) or an unsupported source (4) is the browser, not the network, so retrying
+   * only logs the same error three times; the menu then had nothing but a dark gradient. Those errors, or
+   * a network failure that outlives both retries, switch every menu screen to a still of the same shot
+   * (frontend/menu/uibg2-still.jpg, frame 0.5 s, _chromakey/req662/still.js), drawn exactly where the
+   * clip would be. */
+  let bgStill = null;
+  const useBgStill = () => {
+    if (bgStill) return;
+    bgStill = new Image();
+    bgStill.decoding = 'async';
+    bgStill.src = new URL('../frontend/menu/uibg2-still.jpg', import.meta.url).href;
+  };
   let bgRetries = 0;
   bgVideo.addEventListener('error', () => {
-    if (bgRetries >= 2) return;
+    const code = bgVideo.error?.code;
+    if (code === 3 || code === 4 || bgRetries >= 2) { useBgStill(); return; }
     const n = ++bgRetries;
     setTimeout(() => {
       bgReady = false;
@@ -4422,6 +4437,12 @@ export function createFrontEnd({
       const s = Math.max(W / vw, H / vh);
       const dw = vw * s, dh = vh * s;
       ctx.drawImage(bgVideo, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    } else if (bgStill && bgStill.complete && bgStill.naturalWidth) {
+      // the clip cannot play in this browser (request 662): the same shot, still, cover-fit the same way
+      const vw = bgStill.naturalWidth, vh = bgStill.naturalHeight;
+      const s = Math.max(W / vw, H / vh);
+      const dw = vw * s, dh = vh * s;
+      ctx.drawImage(bgStill, (W - dw) / 2, (H - dh) / 2, dw, dh);
     } else {
       const g = ctx.createLinearGradient(0, 0, 0, H);
       g.addColorStop(0, '#161a2c');
@@ -8653,7 +8674,7 @@ export function createFrontEnd({
     set phaseT(v) { phaseT = v; },
     get bg() {
       return {
-        ready: bgReady, paused: bgVideo.paused, t: bgVideo.currentTime,
+        ready: bgReady, still: !!(bgStill && bgStill.complete && bgStill.naturalWidth), paused: bgVideo.paused, t: bgVideo.currentTime,
         loop: bgVideo.loop, w: bgVideo.videoWidth, h: bgVideo.videoHeight,
       };
     },

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-17 — Menu street still when the clip cannot play (v172, request 662)
+
+- Stats board: since v168 the only error players hit was "media error 3: ProcessConstruct" on menu/uibg2.mp4, all from Firefox 160 on Android 15 (NG, 2 sessions, 4 reports): the browser cannot start its video decoder. Every older row (beacon, cc.imageSmoothingEnabled, ctx.canvas, sprite load / keying, splash clips) was last seen before the v168/v169 fixes and has not come back.
+- frontend.js: a decode (3) or unsupported-source (4) error no longer retries; it, or a network failure that outlives both retries, switches every menu screen (and the level summary's street) to frontend/menu/uibg2-still.jpg, the same shot at 0.5 s (_chromakey/req662/still.js), cover-fit like the clip. __rorMenu.bg.still reports it. Test _chromakey/req662/stillfallback.js: broken clip 4/4 (still drawn, one request, no retries), working clip (BROKEN=0) 3/3.
+
 ## 2026-11-17 — Aye with his machete, Rage Tornado shot, weapon accents, controller buttons, one palette (site, request 661)
 
 - Aye's cut-out is now the game's armed Aye (shaved-agbero-sharpen frame 2) as cast/aye-armed.webp.
