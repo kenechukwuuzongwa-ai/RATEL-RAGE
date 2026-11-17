@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-17 — Aye with his machete, Rage Tornado shot, weapon accents, controller buttons, one palette (site, request 661)
+
+- Aye's cut-out is now the game's armed Aye (shaved-agbero-sharpen frame 2) as cast/aye-armed.webp.
+- Rage Tornado in action: _chromakey/req657/shots.js ONLY=tornado (machete + Rage + HIT, HIT, hold among the opening wave) -> shots/tornado.webp on home, Weapons and Gallery.
+- Bat and machete accents: a large bat or machete through every page header with a one-line fact chip (links to Weapons), and weapons lying across section seams on the home page (bat-side.webp is the bat laid flat).
+- Controller: Xbox-layout button art drawn for the site (assets/img/pad/*.svg: A B X Y, LB RB LT RT, left stick, D-pad, Menu), mapped as game.js reads a standard pad. The game's own views still show no pad glyphs (rule 577).
+- One palette: green #36d67e, danfo yellow #ffc61a and near-black #12151c in every view; cream bands no longer switch to a darker green.
+
 ## 2026-11-17 — Leaner site with the cast and weapons, DOWNLOAD, in-game FULL MOVE LIST (v171, requests 659-660)
 
 - Site text cut hard on every main page (titles, inputs, one short line). Cut-outs from the game's own sprites (_chromakey/req660/cutouts.js -> site/assets/img/cast): Agbero, Agbero Senior (TASKFORCE on the HUD), Aye, SARS, Darki with bat and machete, the bat and the machete. Jimoh's portrait from the owner's JIMOH.png.

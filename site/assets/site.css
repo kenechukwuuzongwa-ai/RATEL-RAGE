@@ -98,9 +98,12 @@ figure { margin: 0; }
 figcaption { font-size: 13px; color: var(--dim); padding: 8px 2px 0; }
 
 /* ---------- LAGOS SUN: the warm cream bands (every .alt band). Components read the same variables. */
+/* ONE PALETTE (request 661): the same green #36d67e, danfo yellow #ffc61a and near-black #12151c as How to
+   play, in every view. The cream bands keep those exact shades: dark text is the near-black, and green that
+   carries text sits on near-black (or carries near-black text) so it stays readable on cream. */
 section.band.alt {
-  --bg: #fbf3e2; --panel: #f4e8cf; --panel2: #ffffff; --line: #e6d6b4; --text: #1b2233; --dim: #5e6578; --soft: #39425a;
-  --green: #138a4d; --shadow: 0 18px 36px -20px rgba(120, 80, 20, .45);
+  --bg: #fbf3e2; --panel: #f4e8cf; --panel2: #ffffff; --line: #e6d6b4; --text: #12151c; --dim: #4f5566; --soft: #2a2f3b;
+  --shadow: 0 18px 36px -20px rgba(120, 80, 20, .45);
   background: radial-gradient(900px 380px at 10% 0%, rgba(255,198,26,.25), transparent 65%), linear-gradient(180deg, #fff8ea 0%, #fbf0d9 100%);
   color: var(--text);
 }
@@ -108,8 +111,14 @@ section.band.alt .lead { color: var(--soft); }
 section.band.alt .btn.ghost { color: var(--text); background: rgba(0,0,0,.02); box-shadow: inset 0 0 0 2px rgba(27,34,51,.25); }
 section.band.alt .btn.ghost:hover { color: #1b1505; background: var(--yellow); box-shadow: inset 0 0 0 2px #e0a900, 0 12px 26px -14px rgba(224,169,0,.7); }
 section.band.alt .btn { color: #052012; }
-section.band.alt .kicker::before { background: var(--red); }
-section.band.alt a:not(.btn):hover { color: #b8860b; }
+section.band.alt .kicker { color: #12151c; }
+section.band.alt .kicker::before { background: var(--green); }
+section.band.alt :not(.cast):not(.gallery):not(.toc) > a:not(.btn) { color: #12151c; box-shadow: inset 0 -2px 0 var(--green); }
+section.band.alt :not(.cast):not(.gallery):not(.toc) > a:not(.btn):hover { color: #12151c; background: var(--yellow); box-shadow: none; }
+section.band.alt .in .then { color: #12151c; }
+section.band.alt .tag.g { background: #12151c; color: var(--green); }
+section.band.alt .card.accent { border-top-color: var(--green); }
+section.band.alt .flow .outs span { background: #12151c; color: var(--green); border-color: #12151c; }
 
 /* ---------- cards: lift, glow and a cursor spotlight (--mx/--my set by site.js) */
 .card { position: relative; background: var(--panel2); border: 1px solid var(--line); padding: 22px; box-shadow: var(--shadow);
@@ -171,6 +180,9 @@ figure:hover::after { height: 100%; }
 .in { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 12px; min-height: 44px; }
 .in .b { width: 44px; height: 44px; transition: transform .25s var(--ease); }
 .card:hover .in .b { transform: scale(1.08); }
+.in .pb { height: 40px; width: auto; flex: none; filter: drop-shadow(0 3px 4px rgba(0,0,0,.35)); transition: transform .25s var(--ease); }
+.in .pb.wide { height: 34px; }
+.card:hover .in .pb { transform: translateY(-2px) scale(1.06); }
 .in .stick { position: relative; display: inline-block; flex: none; }
 .in .stick img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 .in .stick img.knob { left: 28%; top: 28%; width: 44%; height: 44%; transition: transform .35s var(--ease); }
@@ -178,7 +190,7 @@ figure:hover::after { height: 100%; }
 .in .k { display: inline-block; min-width: 34px; padding: 6px 9px; text-align: center; background: #f4f6fb; color: #121a2b; font: 800 14px 'RR Inter';
   box-shadow: inset 0 -3px 0 #a9b4c8, 0 2px 0 rgba(0,0,0,.25); letter-spacing: .02em; transition: transform .15s, box-shadow .15s; }
 .card:hover .in .k { box-shadow: inset 0 -3px 0 var(--yellow), 0 2px 0 rgba(0,0,0,.25); }
-section.band.alt .in .k { background: #1b2233; color: #fff; box-shadow: inset 0 -3px 0 #4a5675; }
+section.band.alt .in .k { background: #12151c; color: #fff; box-shadow: inset 0 -3px 0 #4a5675; }
 .in .w { font-weight: 800; font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text); }
 .in .t { font-size: 12.5px; color: var(--dim); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .in .then { color: var(--green); font-weight: 900; }
@@ -193,7 +205,7 @@ details { border-top: 1px solid var(--line); margin-top: 14px; }
 details summary { cursor: pointer; font-weight: 700; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); padding: 12px 0; transition: color .2s; }
 details summary:hover, details[open] summary { color: var(--green); }
 .tag { display: inline-block; font-weight: 800; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; padding: 4px 8px; background: rgba(255,198,26,.16); color: #ffd54d; margin-right: 6px; }
-section.band.alt .tag { background: #1b2233; color: var(--yellow); }
+section.band.alt .tag { background: #12151c; color: var(--yellow); }
 .tag.g { background: rgba(54,214,126,.16); color: var(--green); }
 .tag.r { background: rgba(227,36,43,.16); color: #ff6b70; }
 .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
@@ -333,6 +345,35 @@ select:hover { border-color: var(--yellow); }
 .dl-sheet p { margin: 0 0 12px; }
 .dl-sheet .btns { margin-top: 8px; }
 
+/* ---------- WEAPON ACCENTS (request 661): the game's bat and machete cut through page headers and
+   lie across section seams, each with a one-line fact chip, so the plain bands also teach the game. */
+.page-head .deco { position: absolute; right: max(-40px, calc((100vw - var(--max)) / 2 - 60px)); top: 50%; z-index: 1; pointer-events: none;
+  transform: translateY(-50%) rotate(var(--rot, -22deg)); transition: transform .8s var(--ease); animation: decoIn 1s var(--ease) both .2s; }
+.page-head .deco img { width: auto; filter: drop-shadow(0 18px 22px rgba(0,0,0,.55)) drop-shadow(0 0 30px rgba(255,198,26,.18)); }
+.page-head .deco.bat img { height: clamp(220px, 30vw, 360px); }
+.page-head .deco.machete img { width: clamp(300px, 40vw, 560px); }
+.page-head .deco.machete { --rot: -14deg; }
+.page-head .deco.bat { --rot: 32deg; }
+@keyframes decoIn { from { opacity: 0; transform: translate(40px, -50%) rotate(calc(var(--rot, -22deg) - 12deg)); } to { opacity: 1; } }
+.page-head .wrap { position: relative; z-index: 2; }
+.insight { display: inline-flex; align-items: center; gap: 10px; margin-top: 20px; padding: 8px 14px 8px 8px; background: #12151c; color: #f4f6fb !important;
+  border-left: 4px solid var(--yellow); font-size: 13px; font-weight: 700; letter-spacing: .06em; text-decoration: none !important; box-shadow: var(--shadow);
+  transition: transform .25s var(--ease), border-color .25s, background .25s; }
+.insight img { height: 28px; width: auto; }
+.insight b { color: var(--yellow); text-transform: uppercase; letter-spacing: .12em; }
+.insight:hover { transform: translateX(4px); border-left-color: var(--green); background: #1b2030; }
+@media (max-width: 760px) { .page-head .deco { opacity: .35; right: -60px; } .page-head .deco.machete img { width: 300px; } }
+/* a weapon lying across the seam between two bands */
+.seam { position: relative; z-index: 3; height: 0; }
+.seam .wrap { position: relative; }
+.seam .blade { position: absolute; left: var(--x, 8%); top: -46px; display: flex; align-items: center; gap: 14px; transform: rotate(var(--rot, -4deg)); }
+.seam .blade img { width: clamp(220px, 34vw, 420px); height: auto; filter: drop-shadow(0 14px 16px rgba(0,0,0,.5)); transition: transform .6s var(--ease); }
+.seam .blade:hover img { transform: translateX(10px) rotate(-3deg); }
+.seam .blade.bat img { width: auto; height: 120px; transform: rotate(70deg); }
+.seam .blade.bat:hover img { transform: rotate(60deg) scale(1.05); }
+.seam .insight { margin-top: 0; }
+@media (max-width: 760px) { .seam .blade { left: 4%; top: -34px; } .seam .insight { display: none; } }
+
 /* ---------- scroll reveal (site.js adds .reveal, then .in-view) */
 .reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s var(--ease), transform .8s var(--ease); transition-delay: var(--d, 0s); }
 .reveal.in-view { opacity: 1; transform: none; }
@@ -353,3 +394,11 @@ select:hover { border-color: var(--yellow); }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .reveal { opacity: 1; transform: none; }
 }
+.padmap td.in { display: table-cell; margin: 0; min-height: 0; padding: 8px 16px; white-space: nowrap; }
+.padmap td.in .pb { vertical-align: middle; margin-right: 6px; height: 34px; width: auto; }
+.padmap td.in .pb.wide { height: 30px; }
+.padmap td { vertical-align: middle; }
+.padmap td.in .pb { display: inline-block; }
+.insight { white-space: nowrap; }
+.seam .blade.bat img { width: clamp(200px, 26vw, 320px); height: auto; transform: none; }
+.seam .blade.bat:hover img { transform: translateX(10px) rotate(4deg); }

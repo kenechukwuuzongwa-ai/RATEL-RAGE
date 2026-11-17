@@ -61,8 +61,8 @@
   });
 
   /* ---- inputs, per platform.
-   * The game's own touch button art (rule 577: no console glyphs anywhere), key caps
-   * for keyboard and mouse, and plain words for a controller. */
+   * The game's own touch button art, key caps for keyboard and mouse, and Xbox-layout
+   * button art for a controller (owner's request 661; rule 577 covers the game's own views). */
   var ART = '/play/frontend/ui/controls/';
   var b = function (n, label) {
     // the stick is two images in the game too: the ring, and the gold knob at 44% in its centre (touch.js)
@@ -101,6 +101,45 @@
     pause: { touch: b('pause', 'Pause'), kbd: k('P') + or + k('ENTER'), pad: w('Start / menu button') },
     mute: { touch: t('Options › Audio'), kbd: k('M'), pad: t('Options › Audio') },
   };
+  /* CONTROLLER, DRAWN (request 661): Xbox-layout button art made for the site (assets/img/pad/*.svg),
+   * mapped exactly as game.js reads a standard pad: A 0 jump, B 1 kick, X 2 jab, Y 3 uppercut,
+   * LB 4 block, RB 5 5-hit combo, LT 6 pick up / carry / throw / finisher, RT 7 grab (beat-down),
+   * D-pad 12-15 or the left stick to move, Menu to pause. (The game itself still shows no pad glyphs.) */
+  var PADART = '/assets/img/pad/';
+  var pb = function (n, label) {
+    var wide = n === 'lb' || n === 'rb';
+    return '<img class="pb' + (wide ? ' wide' : '') + '" src="' + PADART + n + '.svg" alt="' + label + '" width="' + (wide ? 58 : 40) + '" height="' + (wide ? 36 : 40) + '" loading="lazy">';
+  };
+  var A = pb('a', 'A'), B = pb('b', 'B'), X = pb('x', 'X'), Y = pb('y', 'Y'), LB = pb('lb', 'LB'), RB = pb('rb', 'RB'),
+    LT = pb('lt', 'LT'), RT = pb('rt', 'RT'), LS = pb('ls', 'Left stick'), DP = pb('dpad', 'D-pad'), MENU = pb('menu', 'Menu');
+  var PAD = {
+    move: LS + or + DP,
+    jab: X,
+    combo5: RB,
+    kick: B,
+    backkick: LS + t('away') + plus + B,
+    uppercut: Y,
+    air: A + then + X + t('or') + B,
+    grab: LT + t('hold to carry, let go to throw'),
+    beatdown: RT,
+    fist: RT + then + X + t('quickly'),
+    block: LB + t('hold'),
+    jump: A,
+    rush: LS + LS + t('double-tap'),
+    rushkick: LS + LS + then + B,
+    rushjab: LS + LS + then + X,
+    rushcombo: LS + LS + then + RB,
+    leap: LS + LS + then + A + then + B,
+    ram: LS + t('back, then forward'),
+    exec: LT + t('at the boss, then') + Y + t('on each ring'),
+    wpn: X,
+    wpn2: X + X + or + RB,
+    tornado: X + X + t('hold the second'),
+    pickup: LT + t('standing at it'),
+    throwW: LT + t('while armed'),
+    pause: MENU,
+  };
+  for (var pid in PAD) if (INPUTS[pid]) INPUTS[pid].pad = PAD[pid];
   var NAMES = { touch: 'Touch', kbd: 'Keyboard and mouse', pad: 'Controller' };
   function renderInputs(p) {
     $$('[data-in]').forEach(function (el) {
