@@ -17,6 +17,10 @@
   <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" type="image/png" href="/play/favicon.png" />
   <link rel="apple-touch-icon" href="/play/frontend/icons/icon-192.png" />
+  <!-- the game's own manifest (opens /play/): makes DOWNLOAD install the game from any site page (request 660) -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Ratel Rage" />
   <link rel="preload" href="/play/frontend/fonts/inter/InterDisplay-Black.woff2?v=i639" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/play/frontend/fonts/inter/Inter-Regular.woff2?v=i639" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/assets/site.css?v={{VER}}" />
@@ -28,6 +32,7 @@
     <a class="brand" href="/" aria-label="Ratel Rage home"><img src="/assets/img/logo.webp" alt="Ratel Rage" width="132" height="75" /></a>
     <button class="menu-btn" type="button" aria-expanded="false" aria-controls="nav">MENU</button>
     <nav id="nav" class="nav" aria-label="Main">{{NAV}}</nav>
+    <a class="btn dl-top" href="/help/#download" data-download>DOWNLOAD</a>
     <a class="btn play" href="/play/">PLAY NOW</a>
   </header>
   <main id="main">
@@ -37,8 +42,8 @@
     <div class="foot-cols">
       <div>
         <img src="/assets/img/logo.webp" alt="" width="110" height="63" />
-        <p class="dim">A 2D arcade beat-'em-up on the streets of Lagos. Free in your browser on phone and computer.</p>
-        <a class="btn" href="/play/">PLAY NOW</a>
+        <p class="dim">A beat-'em-up on the streets of Lagos. Free.</p>
+        <div class="btns" style="margin-top:12px"><a class="btn" href="/play/">PLAY NOW</a><a class="btn ghost" href="/help/#download" data-download>DOWNLOAD</a></div>
       </div>
       <div>
         <h4>PLAY</h4>

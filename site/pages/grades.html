@@ -1,52 +1,46 @@
 <section class="page-head">
   <div class="wrap">
     <span class="kicker">Results screen</span>
-    <h1>Scoring and grades</h1>
-    <p class="lead">Your grade is your total score for the level, put into bands. Nothing else decides it.</p>
+    <h1>Grades</h1>
+    <p class="lead">Your grade is your total score. Nothing else.</p>
   </div>
 </section>
 
 <section class="band">
   <div class="wrap">
-    <h2>The grades</h2>
     <div class="grades">
-      <div class="grade S"><span class="L">S</span><b><span data-fact="rank.S">32,000</span>+</b><span class="dim">A near-perfect run: fast, long combos, little damage taken.</span></div>
-      <div class="grade A"><span class="L">A</span><b><span data-fact="rank.A">25,000</span>+</b><span class="dim">Strong and quick.</span></div>
-      <div class="grade B"><span class="L">B</span><b><span data-fact="rank.B">18,000</span>+</b><span class="dim">A solid clear.</span></div>
-      <div class="grade C"><span class="L">C</span><b><span data-fact="rank.C">11,000</span>+</b><span class="dim">You made it through.</span></div>
-      <div class="grade D"><span class="L">D</span><b>below <span data-fact="rank.C">11,000</span></b><span class="dim">Room to grow.</span></div>
+      <div class="grade S"><span class="L">S</span><b><span data-fact="rank.S">32,000</span>+</b></div>
+      <div class="grade A"><span class="L">A</span><b><span data-fact="rank.A">25,000</span>+</b></div>
+      <div class="grade B"><span class="L">B</span><b><span data-fact="rank.B">18,000</span>+</b></div>
+      <div class="grade C"><span class="L">C</span><b><span data-fact="rank.C">11,000</span>+</b></div>
+      <div class="grade D"><span class="L">D</span><b>under <span data-fact="rank.C">11,000</span></b></div>
     </div>
-    <p class="dim" style="margin-top:14px">The results screen shows the key too, and how many points you needed for the next grade.</p>
   </div>
 </section>
 
 <section class="band alt">
   <div class="wrap">
-    <h2>Where the points come from</h2>
+    <h2>Points</h2>
     <div class="table-wrap"><table>
-      <tr><th>Part</th><th>Points</th><th>Notes</th></tr>
-      <tr><td>Knockouts</td><td><b data-fact="score.ko">150</b> each</td><td>Every enemy you put down.</td></tr>
-      <tr><td>Combat</td><td>damage × combo multiplier</td><td>Every point of damage you deal, raised 0.25× per <span data-fact="combo.step">10</span> hits in the streak (up to <span data-fact="combo.max">3</span>×). Rage damage counts at its raged value. A thrown body hitting another man counts; a body hitting a wall or a vehicle doesn't. Clutch saves add their bonus here.</td></tr>
-      <tr><td>Best combo</td><td><b data-fact="score.combo">50</b> per hit</td><td>Your longest streak in the level.</td></tr>
-      <tr><td>Top hit</td><td><b data-fact="score.top">5</b> per point</td><td>Your single biggest blow.</td></tr>
-      <tr><td>Time</td><td><b data-fact="score.time">40</b> per second under <span data-fact="score.par">600</span></td><td>Clear the level in under 10 minutes and every second saved scores. A 4-and-a-half minute clear is worth about 13,000.</td></tr>
-      <tr><td>Health</td><td>up to <b data-fact="score.health">2,000</b></td><td>The share of your health left at the end.</td></tr>
+      <tr><td>Knockout</td><td><b data-fact="score.ko">150</b> each</td></tr>
+      <tr><td>Damage</td><td>× combo multiplier (Rage counts)</td></tr>
+      <tr><td>Best combo</td><td><b data-fact="score.combo">50</b> per hit</td></tr>
+      <tr><td>Top hit</td><td><b data-fact="score.top">5</b> per point</td></tr>
+      <tr><td>Time</td><td><b data-fact="score.time">40</b> per second under <span data-fact="score.par">600</span></td></tr>
+      <tr><td>Health left</td><td>up to <b data-fact="score.health">2,000</b></td></tr>
     </table></div>
-    <p class="dim" style="margin-top:12px">The score at the top of the screen during a fight is knockouts, combat, best combo and top hit. Time and health are added on the results screen.</p>
   </div>
 </section>
 
 <section class="band">
   <div class="wrap">
-    <h2>How to raise it</h2>
-    <div class="grid g3">
-      <div class="card"><h3>Go fast</h3><p class="dim">Time is the biggest lever: a quick clear can be worth more than everything else together.</p></div>
-      <div class="card"><h3>Don't get hit</h3><p class="dim">A hit taken breaks your streak and its multiplier, and costs health points at the end. Block, and keep men in front of you.</p></div>
-      <div class="card"><h3>Save the counter</h3><p class="dim">Land a hit as the counter starts falling apart. Clutch saves stack up to 4.</p></div>
-      <div class="card"><h3>Use Rage on crowds</h3><p class="dim">Rage damage is <span data-fact="rage.mul">1.6</span>×. Save the burst for a full wave or the boss.</p></div>
-      <div class="card"><h3>Throw bodies</h3><p class="dim">A charged throw into a group is damage on several men at once.</p></div>
-      <div class="card"><h3>Difficulty</h3><p class="dim">Each difficulty keeps its own best score and its own leaderboard, so compare like with like.</p></div>
+    <h2>Score higher</h2>
+    <div class="grid g4">
+      <div class="card"><h3>Go fast</h3></div>
+      <div class="card"><h3>Don't get hit</h3></div>
+      <div class="card"><h3>Save the counter</h3></div>
+      <div class="card"><h3>Rage on crowds</h3><p class="dim"><span data-fact="rage.mul">1.6</span>× damage.</p></div>
     </div>
-    <div class="btns"><a class="btn" href="/leaderboards/">See the leaderboards</a></div>
+    <div class="btns"><a class="btn" href="/leaderboards/">Leaderboards</a><a class="btn ghost" href="/play/">Play</a></div>
   </div>
 </section>

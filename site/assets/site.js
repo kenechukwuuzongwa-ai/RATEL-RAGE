@@ -9,6 +9,50 @@
   var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
 
+  /* ---- motion and light (request 660). Everything here is decoration: without it the page reads the same. */
+  var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var top = $('.top');
+  var onScroll = function () {
+    if (top) top.classList.toggle('scrolled', scrollY > 8);
+    var hero = $('.hero > img');
+    if (hero && !calm && scrollY < innerHeight) hero.style.transform = 'translateY(' + (scrollY * 0.18).toFixed(1) + 'px) scale(1.04)';
+  };
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  // cards and feature tiles follow the cursor with a soft spotlight
+  document.addEventListener('pointermove', function (e) {
+    var c = e.target.closest && e.target.closest('.card, .feat > div');
+    if (!c) return;
+    var r = c.getBoundingClientRect();
+    c.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+    c.style.setProperty('--my', (e.clientY - r.top) + 'px');
+  }, { passive: true });
+  // sections slide up as they enter the view; groups stagger
+  if (!calm && 'IntersectionObserver' in window) {
+    var items = $$('main section.band .wrap > *, .grid > *, .cast > *, .feat > *, .grades > *, .steps > *, .gallery > *, .flow > .row');
+    var seen = new Set();
+    items.forEach(function (el) {
+      if (seen.has(el) || el.closest('.hero') || el.closest('.sticky-switch')) return;
+      seen.add(el);
+      var p = el.parentElement, i = p ? Array.prototype.indexOf.call(p.children, el) : 0;
+      el.classList.add('reveal');
+      el.style.setProperty('--d', Math.min(i, 6) * 0.07 + 's');
+    });
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in-view'); io.unobserve(en.target); } });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    $$('.reveal').forEach(function (el) { io.observe(el); });
+    /* Belt and braces: content must never stay hidden. Anything that has reached the screen (or is
+     * above it, after a jump to an anchor) is shown on every scroll, and everything is shown once the
+     * page has been open a few seconds without the observer firing. */
+    var sweep = function () {
+      var h = innerHeight;
+      $$('.reveal:not(.in-view)').forEach(function (el) { if (el.getBoundingClientRect().top < h * 0.98) el.classList.add('in-view'); });
+    };
+    addEventListener('scroll', sweep, { passive: true });
+    addEventListener('load', sweep);
+    setTimeout(sweep, 400);
+  }
+
   /* ---- menu (phones) */
   var mb = $('.menu-btn'), nav = $('#nav');
   if (mb && nav) mb.addEventListener('click', function () {
@@ -20,7 +64,11 @@
    * The game's own touch button art (rule 577: no console glyphs anywhere), key caps
    * for keyboard and mouse, and plain words for a controller. */
   var ART = '/play/frontend/ui/controls/';
-  var b = function (n, label) { return '<img class="b" src="' + ART + n + '.png" alt="' + label + ' button" width="44" height="44" loading="lazy">'; };
+  var b = function (n, label) {
+    // the stick is two images in the game too: the ring, and the gold knob at 44% in its centre (touch.js)
+    if (n === 'stick') return '<span class="b stick" role="img" aria-label="' + label + ' stick"><img src="' + ART + 'stick.png" alt="" width="44" height="44" loading="lazy"><img class="knob" src="' + ART + 'stick-thumb.png" alt="" width="20" height="20" loading="lazy"></span>';
+    return '<img class="b" src="' + ART + n + '.png" alt="' + label + ' button" width="44" height="44" loading="lazy">';
+  };
   var k = function (t) { return '<span class="k">' + t + '</span>'; };
   var w = function (t) { return '<span class="w">' + t + '</span>'; };
   var t = function (x) { return '<span class="t">' + x + '</span>'; };
@@ -77,6 +125,44 @@
     renderInputs(plat);
   }
 
+  /* ---- DOWNLOAD THE GAME (request 660). The game is an installable app: every site page links the
+   * game's manifest (start_url /play/?app=1), so Chrome and Edge offer their install prompt right here.
+   * iPhone and iPad get the two Safari steps; an installed copy just opens the game; anything else lands
+   * on the help page's download section. Links keep their href, so they work without this script. */
+  var installEvt = null;
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEvt = e; });
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var standalone = (window.matchMedia && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) || navigator.standalone;
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/media-sw.js', { scope: '/' }).catch(function () {});
+  var sheet = null;
+  function showSheet(html) {
+    if (sheet) sheet.remove();
+    sheet = document.createElement('div');
+    sheet.className = 'dl-sheet'; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-live', 'polite');
+    sheet.innerHTML = html + '<div class="btns"><a class="btn" href="/play/">Play now</a><button class="btn ghost" type="button">Close</button></div>';
+    sheet.querySelector('button').addEventListener('click', function () { sheet.remove(); sheet = null; });
+    document.body.appendChild(sheet);
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('[data-download]');
+    if (!a) return;
+    if (standalone) { e.preventDefault(); location.href = '/play/'; return; }
+    if (installEvt) {
+      e.preventDefault();
+      var ev = installEvt; installEvt = null;
+      ev.prompt();
+      ev.userChoice.then(function (c) {
+        if (c && c.outcome === 'accepted') showSheet('<p><b>Installed.</b> Ratel Rage is on your home screen and in your apps.</p>');
+      }).catch(function () {});
+      return;
+    }
+    if (isIOS) { e.preventDefault(); showSheet('<p><b>On iPhone and iPad:</b> tap <b>Share</b> in Safari, then <b>Add to Home Screen</b>.</p>'); return; }
+    // no prompt available (already installed, or a browser without one): the help page explains
+  });
+  // the help page's download section shows only the steps for this device
+  var here = isIOS ? 'ios' : /Android/.test(navigator.userAgent) ? 'android' : 'desktop';
+  $$('[data-device]').forEach(function (el) { el.classList.toggle('here', el.getAttribute('data-device') === here); });
+
   /* ---- story spoilers: off until the reader turns them on (decision 5) */
   var sp = $('#spoilers');
   if (sp) {
@@ -126,13 +212,11 @@
           '<div class="body"><div><span class="pill' + (open ? '' : ' no') + '">' + (bd.bookable ? (bd.freeToday > 0 ? bd.freeToday + ' of ' + bd.shares + ' shares free today' : 'Fully booked today') : 'Reserved') + '</span></div>' +
           '<h3>' + esc2(bd.name) + '</h3>' +
           '<p class="dim" style="margin:0">' + esc2(s.place || bd.where) + (s.stretch ? ' · ' + esc2(s.stretch) : '') + '</p>' +
-          (s.scene ? '<p style="margin:0">' + esc2(s.scene) + '</p>' : '') +
           '<div class="stats">' +
           '<div><b>' + (s.viewsPerDay || 0).toLocaleString() + '</b><span>views a day</span></div>' +
           '<div><b>' + (s.avgSeconds != null ? s.avgSeconds + ' s' : 'new') + '</b><span>on screen per view</span></div>' +
           '<div><b>' + (s.views30 || 0).toLocaleString() + '</b><span>views, 30 days</span></div>' +
           '<div><b>' + (s.tapRate || 0) + '%</b><span>views that tapped</span></div></div>' +
-          '<p class="dim" style="margin:0;font-size:13px">Print area ' + bd.face.w + ' × ' + bd.face.h + ' (upload ' + bd.upload.w + ' × ' + bd.upload.h + ' px)</p>' +
           '<p class="price" style="margin:0">' + share + '</p>' +
           (bd.bookable ? '<a class="btn" href="' + ADS + '/b/' + encodeURIComponent(bd.id) + '">Book this board</a>' : '<span class="dim">Not open for booking</span>') +
           '</div></article>';

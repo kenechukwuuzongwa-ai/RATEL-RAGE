@@ -1,13 +1,11 @@
 {
   "nav": [
     ["/how-to-play/", "How to play"],
-    ["/how-to-play/combos/", "Combos"],
     ["/grades/", "Grades"],
     ["/story/", "Story"],
     ["/levels/", "Levels"],
     ["/enemies/", "Enemies"],
     ["/weapons/", "Weapons"],
-    ["/gallery/", "Gallery"],
     ["/leaderboards/", "Leaderboards"],
     ["/advertise/", "Advertise"],
     ["/help/", "Help"]

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-17 — Leaner site with the cast and weapons, DOWNLOAD, in-game FULL MOVE LIST (v171, requests 659-660)
+
+- Site text cut hard on every main page (titles, inputs, one short line). Cut-outs from the game's own sprites (_chromakey/req660/cutouts.js -> site/assets/img/cast): Agbero, Agbero Senior (TASKFORCE on the HUD), Aye, SARS, Darki with bat and machete, the bat and the machete. Jimoh's portrait from the owner's JIMOH.png.
+- DOWNLOAD THE GAME: every site page links the game's manifest, so DOWNLOAD (header, home hero, home download band, help, how-to-play, story, updates, footer) opens Chrome/Edge's install prompt; iPhone gets the Add to Home Screen steps; an installed copy opens /play/.
+- Touch stick art on the site now has its gold knob (ring + stick-thumb at 44%, as in touch.js).
+- Game: CONTROLS > FULL MOVE LIST opens ratelrage.com/how-to-play/ (openLink, so the app uses RatelHost.openUrl). Test _chromakey/req657/movelist.js (5/5).
+
 ## 2026-11-17 — The website; the game moves to /play/; keyboard kick and combos; board dwell (v170, request 657)
 
 - **Website at ratelrage.com** (site/, built by deploy/build-site.js, called from build-web.js): home, how to play (touch / keyboard and mouse / controller switch, game's own button art, no console glyphs), combos, grades, story (spoilers behind a switch), levels, enemies, weapons, gallery, leaderboards (live, public, registered players' names), advertise (live board chooser), help, updates, press, terms, credits, 404, sitemap, robots. Every number a page states about the game is a `data-fact` that the build checks against game.js (50 facts); a mismatch or a missing image stops the build.

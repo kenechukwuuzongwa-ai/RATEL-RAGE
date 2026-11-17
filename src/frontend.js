@@ -1720,9 +1720,14 @@ export function createFrontEnd({
   let controlsPage = null;
   const touchEditor = () => (typeof window !== 'undefined' && window.__rorTouch && typeof window.__rorTouch.openEditor === 'function' ? window.__rorTouch : null);
   const editingControls = () => !!(typeof window !== 'undefined' && window.__rorTouch?.editing);
+  /* FULL MOVE LIST (request 657, the website's phase 2): the in-game page shows the basics only; every
+   * move, combo and system is on the site's how-to-play page, opened in the browser (the app's own
+   * browser via RatelHost.openUrl). */
+  const SITE_MOVES = 'https://ratelrage.com/how-to-play/';
   const CONTROL_ITEMS = () => [
     { label: 'HOW TO PLAY', icon: 'pad' },
     { label: 'CUSTOMIZE CONTROLS', icon: 'gear', disabled: !touchEditor(), note: 'TOUCH SCREENS' },
+    { label: 'FULL MOVE LIST', icon: 'play', link: SITE_MOVES },
   ];
   /* THE SLIDER ADJUSTER (request 451). On a phone the four directions are all
    * taken — swipe right enters, swipe left goes back, up/down moves the cursor —
@@ -3289,6 +3294,7 @@ export function createFrontEnd({
       pressPulse(`ctl:${selection}`);
       navForward();
       if (selection === 0) { controlsPage = 'howto'; phaseT = 0; return; }
+      if (it.link) { openLink(it.link); return; }
       touchEditor().openEditor();          // DONE / CANCEL close it; the list is still here underneath
       return;
     }
