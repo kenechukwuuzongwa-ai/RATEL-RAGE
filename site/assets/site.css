@@ -15,7 +15,7 @@
 @font-face { font-family: 'RR Inter'; font-weight: 700; font-display: swap; src: url('/play/frontend/fonts/inter/Inter-Bold.woff2?v=i639') format('woff2'); }
 @font-face { font-family: 'RR Inter'; font-weight: 800; font-display: swap; src: url('/play/frontend/fonts/inter/Inter-ExtraBold.woff2?v=i639') format('woff2'); }
 
-:root {
+:root { color-scheme: dark;   /* request 669: opt out of the browser's forced dark mode, which dulled the buttons */
   --ink: #050605; --bg: #080a08; --bg2: #0c100b; --panel: #0f140e; --panel2: #141b12; --line: #243020; --line2: #3b5230;
   --text: #f1f4ee; --dim: #a3af9c; --soft: #d3dccd;
   --green: #22f229; --green2: #04b80c; --lime: #7dff5c; --fog: 47,131,40; --yellow: #fcc000; --yellow2: #f59a00; --red: #f10301; --red2: #ff3b30; --sky: #6fd3ff;
@@ -121,23 +121,25 @@ body[data-page="home"] .top:not(.scrolled) .brand img { opacity: 0; transform: t
 @keyframes drop { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
 
 /* ---------- BUTTONS: the PSD's painted plates. Neon green (default), danfo yellow, black ghost. */
-.btn { --b1: #45ff3d; --b2: var(--green2); --fg: #031203; --frame: rgba(0,0,0,.62);
+/* Request 669 ("the website buttons look faint"): fuller paint, pure black lettering, the worn texture halved. */
+.btn { --b1: #5cff3a; --b2: #0fd419; --fg: #000; --frame: rgba(0,0,0,.72);
   position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 12px; isolation: isolate;
   font: 700 16px/1 var(--f-label); letter-spacing: .06em; text-transform: uppercase; color: var(--fg) !important; text-decoration: none !important;
   padding: 15px 24px 14px; border: 0; cursor: pointer; white-space: nowrap; clip-path: var(--chip);
   background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.75) 50%, transparent 62%) -160% 0 / 220% 100% no-repeat, linear-gradient(180deg, var(--b1) 0%, var(--b2) 100%);
-  box-shadow: inset 0 3px 0 rgba(255,255,255,.35), inset 0 -4px 0 rgba(0,0,0,.25);
+  box-shadow: inset 0 3px 0 rgba(255,255,255,.45), inset 0 -4px 0 rgba(0,0,0,.22);
+  text-shadow: 0 1px 0 rgba(255,255,255,.25);
   transition: transform .2s var(--ease), background-position .7s var(--ease), filter .25s; }
 /* the thin black line just inside the painted edge, and the worn paint over it */
 .btn::before { content: ''; position: absolute; inset: 4px 5px; border: 2px solid var(--frame); pointer-events: none; z-index: -1; }
-.btn::after { content: ''; position: absolute; inset: 0; background: var(--grain); background-size: 140px; opacity: .55; mix-blend-mode: multiply; pointer-events: none; }
+.btn::after { content: ''; position: absolute; inset: 0; background: var(--grain); background-size: 140px; opacity: .26; mix-blend-mode: multiply; pointer-events: none; }
 .btn:hover { background-position: 160% 0, 0 0; transform: translateY(-2px) rotate(-.6deg); filter: brightness(1.08) drop-shadow(0 0 18px rgba(34,242,41,.45)); }
 .btn:active { transform: translateY(1px) scale(.98); }
 .btn .ic { width: 20px; height: 20px; flex: none; fill: currentColor; }
 .btn .ic + span { border-left: 2px solid var(--frame); padding-left: 12px; margin-left: -1px; }
-.btn.yellow { --b1: #ffd02a; --b2: var(--yellow2); --fg: #120d00; }
+.btn.yellow { --b1: #ffd21f; --b2: #ffa400; --fg: #000; }
 .btn.yellow:hover { filter: brightness(1.06) drop-shadow(0 0 18px rgba(252,192,0,.5)); }
-.btn.ghost { --fg: var(--text); --frame: rgba(255,255,255,.38);
+.btn.ghost { --fg: #fff; --frame: rgba(255,255,255,.6); text-shadow: none;
   background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.22) 50%, transparent 62%) -160% 0 / 220% 100% no-repeat, linear-gradient(180deg, #1c211a, #090b08); color: var(--text) !important;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
 .btn.ghost::after { opacity: .25; }

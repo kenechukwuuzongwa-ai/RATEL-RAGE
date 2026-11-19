@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-19 — Road Rage hit counter, the owner's touch layout by default, bolder site buttons (v173, request 669)
+
+- Hit counter, its milestone words (BRUTAL! SAVAGE! UNSTOPPABLE! RATEL RAGE!) and CLUTCH are drawn in Road Rage (Youssef Habchi): styles.css 'RR Road Rage' -> frontend/fonts/road-rage.otf (unmodified, gitignored: its readme says free for personal use, commercial licence from the author). game.js HIT_FACE / hitFont; hitStyleText and hitInk take o.face. FIGHT!, GO, score and the rest of the HUD keep Inter. The font's zero is slashed by design.
+- Touch controls: HUD_DEFAULTS (touch.js) is now the owner's layout, read off their 1539x713 screenshot and checked by overlay (_chromakey/req669/overlay.png): stick 0.116/0.792 x0.95, jump 0.857/0.879 x1.08, block 0.955/0.454 x0.99, kick 0.849/0.548 x1.27, jab 0.756/0.708 x0.94, grab 0.949/0.696 x1.21, pause 0.961/0.233 x0.92, every control at 40% opacity. First installs and RESET get it; a saved layout still wins.
+- Website: <meta name="color-scheme" content="dark"> + :root color-scheme so Chrome/Samsung forced dark mode no longer dulls the buttons and turns their black lettering grey (reproduced with --enable-features=WebContentsForceDark: lettering 177 -> 0). Buttons: fuller paint, pure black lettering, half the worn texture. Agbero Senior is named Taskforce on the home and enemies pages.
+
 ## 2026-11-17 — Menu street still when the clip cannot play (v172, request 662)
 
 - Stats board: since v168 the only error players hit was "media error 3: ProcessConstruct" on menu/uibg2.mp4, all from Firefox 160 on Android 15 (NG, 2 sessions, 4 reports): the browser cannot start its video decoder. Every older row (beacon, cc.imageSmoothingEnabled, ctx.canvas, sprite load / keying, splash clips) was last seen before the v168/v169 fixes and has not come back.

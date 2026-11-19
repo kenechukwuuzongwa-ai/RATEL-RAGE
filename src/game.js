@@ -24801,7 +24801,7 @@ function hitInk(text, x, y, o = {}) {
   const px = fontPx(ctx.font);
   ctx.save();
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
-  ctx.font = `400 ${px}px ${FONT_BOLD}`;
+  ctx.font = `400 ${px}px ${o.face || FONT_BOLD}`;
   const m = ctx.measureText(text);
   const asc = m.actualBoundingBoxAscent || px * 0.7, desc = m.actualBoundingBoxDescent || 0;
   const k = px / 74;
@@ -24961,6 +24961,11 @@ const hitCtr = { last: 0, breakT: 0, t: 0 };
  * red down the letters (white-hot crowns with `hot`). Sizes scale off the counter's own 74 px.
  * `baseline: 'middle'` centres the caps on y (the HUD rows are laid out on middles). */
 const HIT_INK = '#140604';
+/* REQUEST 669: the HIT COUNTER and its exclamation words (the milestones BRUTAL! SAVAGE! UNSTOPPABLE! RATEL RAGE!
+ * and CLUTCH) are drawn in Road Rage (styles.css 'RR Road Rage', owner's choice), Inter Display Black behind it if
+ * the file is missing. FIGHT!, GO and the rest of the HUD keep Inter. */
+const HIT_FACE = `'RR Road Rage', ${FONT_BOLD}`;
+const hitFont = (px) => `400 ${px}px ${HIT_FACE}`;
 function hitInkFill(top, bottom, hot = false, green = false) {
   const g = ctx.createLinearGradient(0, top, 0, bottom);
   if (green) {                                       // the UI's green accent, same shape of ramp (request 616)
@@ -24979,7 +24984,7 @@ function hitInkFill(top, bottom, hot = false, green = false) {
 function hitStyleText(text, x, y, px, o = {}) {
   ctx.save();
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
-  ctx.font = pixelFont(900, px);
+  ctx.font = o.face ? `400 ${px}px ${o.face}` : pixelFont(900, px);
   ctx.textAlign = o.align ?? 'center';
   ctx.textBaseline = 'alphabetic';
   const asc = ctx.measureText(text).actualBoundingBoxAscent || px * 0.7;
@@ -25059,7 +25064,7 @@ function hitFxLayer(text, x, y, fx) {
 const hitSnap = (u) => { const c = 1.25, t = u - 1; return 1 + (c + 1) * t * t * t + c * t * t; };
 const smooth01 = (u) => { const v = Math.max(0, Math.min(1, u)); return v * v * (3 - 2 * v); };
 function hitGlyph(ch, px, asc, hot, hotter, fx) {
-  ctx.font = pixelFont(900, px);
+  ctx.font = hitFont(px);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   const k = px / 74, y = asc / 2;
@@ -25121,7 +25126,7 @@ function drawHitCounter() {
     const clutchU = run.clutchT / CLUTCH.flash;          // 1 -> 0 over the save's flash
     const pop = breaking ? 1 : 1 + 0.45 * Math.pow(run.popT / 0.2, 2) + 0.15 * clutchU * clutchU;
     ctx.save();
-    ctx.font = pixelFont(900, 74);
+    ctx.font = hitFont(74);
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
     const tw = ctx.measureText(text).width;
@@ -25140,8 +25145,8 @@ function drawHitCounter() {
     };
     if (!breaking && !falling && !snapping && wig < 0.002) {
       // a tight counter: the whole word at once (exact kerning) — the shared recipe
-      hitStyleText(text, x, y, 74, { align: 'right', hot });
-      ctx.font = pixelFont(900, 74);
+      hitStyleText(text, x, y, 74, { align: 'right', hot, face: HIT_FACE });
+      ctx.font = hitFont(74);
       hitFxLayer(text, x, y, fx);
       if (hotter) {                                    // the heat shimmer
         ctx.globalCompositeOperation = 'lighter';
@@ -25227,7 +25232,7 @@ function drawHitCounter() {
         ctx.font = pixelFont(400, 18 + 5 * clutchU);
         ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
         const ct = `CLUTCH${run.clutch > 1 ? ' x' + run.clutch : ''}${run.clutchBonus > 0 ? ' +' + run.clutchBonus : '!'}`;
-        hitInk(ct, rx - mulW, by + 14, { green: true });
+        hitInk(ct, rx - mulW, by + 14, { green: true, face: HIT_FACE });
         ctx.restore();
       }
     }
@@ -25236,7 +25241,7 @@ function drawHitCounter() {
     const u = run.milestoneT / 1.4;
     ctx.save();
     ctx.globalAlpha = Math.min(1, u * 3);
-    ctx.font = pixelFont(900, 34 + (1 - u) * 6);
+    ctx.font = hitFont(34 + (1 - u) * 6);
     ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
     ctx.lineJoin = 'miter'; ctx.miterLimit = 2;
     ctx.strokeStyle = '#140604'; ctx.lineWidth = 6;
@@ -29482,7 +29487,7 @@ const FONT_FACES = ["40px 'RR Pixel'", "40px 'RR Pixel Bold'"];
  * missing file is a note, not an error. calibrateFontFit() then sizes whichever face loaded. */
 /* Request 639: Inter (every cut the canvas names) + Uni Sans Heavy, which only the KenCrafts wordmark uses. */
 const UNI_FACES = ["40px 'RR Inter 300'", "40px 'RR Inter 400'", "40px 'RR Inter 500'", "40px 'RR Inter 600'", "40px 'RR Inter 700'",
-  "40px 'RR Inter 800'", "40px 'RR Inter Black'", "40px 'RR Inter Black Italic'", "40px 'RR Uni Heavy'"];
+  "40px 'RR Inter 800'", "40px 'RR Inter Black'", "40px 'RR Inter Black Italic'", "40px 'RR Uni Heavy'", "40px 'RR Road Rage'"];
 let fontFit = null;
 /* THE FONT MAY NEVER BLOCK BOOT. This ceiling is not belt-and-braces.
  *

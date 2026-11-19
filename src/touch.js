@@ -158,19 +158,22 @@
    * exact block from the live layout (see layoutCode). That is the same route
    * the menu's Darki placement takes, and it is how a position stops being
    * somebody's estimate and becomes the source. */
+  /* REQUEST 669: THE OWNER'S LAYOUT IS THE DEFAULT ("use the appended button layout and transparency as
+   * the default button layout on initial download. BY DEFAULT."). Read off the owner's 1539x713 gameplay
+   * screenshot: each centre as a fraction of the screen, each size from the glass sphere's diameter (the
+   * art's sphere fills 0.88 of its box, 0.857 for the gear, 0.867 for the stick ring), checked by drawing
+   * these circles back over the screenshot (_chromakey/req669/overlay.png). All at 40% opacity, which is
+   * how see-through the buttons are there. Grab (green hand) sits far right, jab (yellow fist) inside it,
+   * kick (red foot) above them, block under the gear, jump at the bottom. A player's saved layout still
+   * wins; RESET comes back here. */
   const HUD_DEFAULTS = () => ({
-    stick: { x: 0.116, y: 0.791, scale: 1.00, opacity: 1.00, visible: true, base: 132 },
-    jump:  { x: 0.913, y: 0.852, scale: 1.00, opacity: 1.00, visible: true, base: 67 },
-    /* NOT IN THE PLACEMENT REFERENCE. Block is the only control the reference
-     * does not show, and it is kept rather than dropped: removing it would take
-     * the guard away from touch players entirely, which is a mechanic, not a
-     * button. Parked in the gap the reference leaves between the gear and the
-     * kick — say the word and it hides (visible: false) instead. */
-    block: { x: 0.959, y: 0.345, scale: 1.00, opacity: 1.00, visible: true, base: 56 },
-    kick:  { x: 0.959, y: 0.469, scale: 1.00, opacity: 1.00, visible: true, base: 56 },
-    jab:   { x: 0.861, y: 0.621, scale: 1.00, opacity: 1.00, visible: true, base: 82 },
-    grab:  { x: 0.958, y: 0.687, scale: 1.00, opacity: 1.00, visible: true, base: 63 },
-    pause: { x: 0.959, y: 0.231, scale: 1.00, opacity: 1.00, visible: true, base: 47 },
+    stick: { x: 0.116, y: 0.792, scale: 0.95, opacity: 0.40, visible: true, base: 132 },
+    jump:  { x: 0.857, y: 0.879, scale: 1.08, opacity: 0.40, visible: true, base: 67 },
+    block: { x: 0.955, y: 0.454, scale: 0.99, opacity: 0.40, visible: true, base: 56 },
+    kick:  { x: 0.849, y: 0.548, scale: 1.27, opacity: 0.40, visible: true, base: 56 },
+    jab:   { x: 0.756, y: 0.708, scale: 0.94, opacity: 0.40, visible: true, base: 82 },
+    grab:  { x: 0.949, y: 0.696, scale: 1.21, opacity: 0.40, visible: true, base: 63 },
+    pause: { x: 0.961, y: 0.233, scale: 0.92, opacity: 0.40, visible: true, base: 47 },
   });
 
   /* The live layout, printed as the HUD_DEFAULTS block above.

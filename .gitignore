@@ -33,3 +33,7 @@ deploy/.webp-cache/
 # redistributing the files, and this repo is public - keep them local (request 608).
 frontend/fonts/uni-sans-*.otf
 frontend/fonts/UniSans-Fontfabric-FFF-EULA.pdf
+# Road Rage (Youssef Habchi, "free for PERSONAL USE ONLY"; commercial licence from the author): the hit
+# counter's face on the live game (request 669), kept out of this public repo like Uni Sans.
+frontend/fonts/road-rage.otf
+frontend/fonts/road-rage-READ-ME.txt

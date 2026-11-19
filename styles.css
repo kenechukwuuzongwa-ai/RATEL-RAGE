@@ -37,6 +37,17 @@
   font-display: block;
   src: url('frontend/fonts/uni-sans-heavy.otf?v=uni137b') format('opentype');
 }
+/* REQUEST 669 — ROAD RAGE for the HIT COUNTER and its exclamation words (BRUTAL! SAVAGE! ... CLUTCH),
+ * owner's choice. Youssef Habchi's "Road Rage" (2016), shipped UNMODIFIED as .otf; its readme says free
+ * for personal use, commercial licence from the author (contact@youssef-habchi.com). Gitignored like
+ * Uni Sans. Its zero is drawn slashed (Ø) by design. */
+@font-face {
+  font-family: 'RR Road Rage';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url('frontend/fonts/road-rage.otf?v=rr669') format('opentype');
+}
 /* REQUEST 639 — INTER EVERYWHERE (rsms/inter 4.1, SIL OFL 1.1: frontend/fonts/inter/OFL-Inter.txt).
  * Uni Sans Heavy above stays for ONE thing: the KenCrafts studio wordmark on the splash, which is a logo
  * drawn to match the filmed clip, not UI text.
