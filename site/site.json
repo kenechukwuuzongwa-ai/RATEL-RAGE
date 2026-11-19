@@ -11,7 +11,7 @@
     ["/help/", "Help"]
   ],
   "pages": [
-    { "src": "home.html", "path": "/", "title": "Ratel Rage: Streets of Justice. A beat-'em-up on the streets of Lagos", "desc": "Fight the street tax as Darki in Ratel Rage, a free 2D arcade beat-'em-up set in Lagos. Play in your browser on phone or computer.", "og": "og-home.jpg" },
+    { "src": "home.html", "path": "/", "title": "Ratel Rage: Streets of Justice. A beat-'em-up on the streets of Lagos", "desc": "Fight the street tax as Darki in Ratel Rage, a free 2D arcade beat-'em-up set in Lagos. Play in your browser on phone or computer.", "og": "og-home-v2.jpg" },
     { "src": "how-to-play.html", "path": "/how-to-play/", "title": "How to play Ratel Rage: controls, moves and systems", "desc": "Every control and move in Ratel Rage for touch, keyboard and mouse, and controller: jabs, kicks, grabs, rush, RamRage, rage, blocking and more.", "og": "og-howto.jpg" },
     { "src": "combos.html", "path": "/how-to-play/combos/", "title": "Ratel Rage combos and chains", "desc": "The 5-hit combo, the grab beat-down and fist combo, rush follow-ups, RamRage, air kicks, throws and the machete Rage Tornado, with the exact inputs.", "og": "og-howto.jpg" },
     { "src": "grades.html", "path": "/grades/", "title": "Scoring and grades in Ratel Rage (S, A, B, C, D)", "desc": "What the S, A, B, C and D grades mean in Ratel Rage, what earns points, and how to raise your score.", "og": "og-home.jpg" },

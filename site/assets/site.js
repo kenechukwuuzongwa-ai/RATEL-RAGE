@@ -12,10 +12,15 @@
   /* ---- motion and light (request 660). Everything here is decoration: without it the page reads the same. */
   var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var top = $('.top');
+  /* The city drifts slower than the page (request 668). The <picture> moves, not its <img>: the img's
+   * entrance animation holds its own transform. */
+  var heroBg = $('.hero-bg'), heroIn = $('.hero-in');
   var onScroll = function () {
     if (top) top.classList.toggle('scrolled', scrollY > 8);
-    var hero = $('.hero > img');
-    if (hero && !calm && scrollY < innerHeight) hero.style.transform = 'translateY(' + (scrollY * 0.18).toFixed(1) + 'px) scale(1.04)';
+    if (!calm && scrollY < innerHeight * 1.2) {
+      if (heroBg) heroBg.style.transform = 'translateY(' + (scrollY * 0.28).toFixed(1) + 'px)';
+      if (heroIn) heroIn.style.transform = 'translateY(' + (scrollY * 0.12).toFixed(1) + 'px)';
+    }
   };
   addEventListener('scroll', onScroll, { passive: true }); onScroll();
   // cards and feature tiles follow the cursor with a soft spotlight

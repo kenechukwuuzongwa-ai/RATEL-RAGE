@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>{{TITLE}}</title>
   <meta name="description" content="{{DESC}}" />
-  <meta name="theme-color" content="#07090d" />
+  <meta name="theme-color" content="#050605" />
   <link rel="canonical" href="https://ratelrage.com{{PATH}}" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Ratel Rage" />
@@ -21,40 +21,53 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Ratel Rage" />
-  <link rel="preload" href="/play/frontend/fonts/inter/InterDisplay-Black.woff2?v=i639" as="font" type="font/woff2" crossorigin />
+  <!-- STREET LOOK (request 668): Anton headlines, Oswald labels, Knewave brush accents (all SIL OFL,
+       self-hosted), the game's Inter for reading -->
+  <link rel="preload" href="/assets/fonts/anton.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/assets/fonts/oswald-700.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/play/frontend/fonts/inter/Inter-Regular.woff2?v=i639" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/assets/site.css?v={{VER}}" />
   {{HEAD}}
 </head>
 <body data-page="{{PAGE}}">
   <a class="skip" href="#main">Skip to content</a>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-dl" viewBox="0 0 24 24"><path d="M10 2h4v9h4l-6 7-6-7h4z"/><path d="M3 16h3v3h12v-3h3v6H3z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3l15 9-15 9z"/></symbol>
+    <symbol id="i-fist" viewBox="0 0 24 24"><path d="M6 4h3v3H6zM9.5 3h3v4h-3zM13 3.5h3V7h-3zM16.5 4.5h3V8h-3zM5 8h15v5.5c0 3.6-2.9 6.5-6.5 6.5H12v3H8v-3.6A6 6 0 0 1 5 13.2zM3 9.5h1.6v4H3z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 1.5a7.5 7.5 0 0 0-7.5 7.5c0 5.6 7.5 13.5 7.5 13.5s7.5-7.9 7.5-13.5A7.5 7.5 0 0 0 12 1.5zm0 4a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 1.8l2.9 7h7.4l-6 4.6 2.3 7.3L12 16.3l-6.6 4.4 2.3-7.3-6-4.6h7.4z"/></symbol>
+  </svg>
   <header class="top">
-    <a class="brand" href="/" aria-label="Ratel Rage home"><img src="/assets/img/logo.webp" alt="Ratel Rage" width="132" height="75" /></a>
-    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="nav">MENU</button>
+    <a class="brand" href="/" aria-label="Ratel Rage home"><img src="/assets/img/street/wordmark-800.webp" alt="Ratel Rage" width="800" height="366" /></a>
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="nav"><span class="bars" aria-hidden="true"></span>MENU</button>
     <nav id="nav" class="nav" aria-label="Main">{{NAV}}</nav>
-    <a class="btn dl-top" href="/help/#download" data-download>DOWNLOAD</a>
-    <a class="btn play" href="/play/">PLAY NOW</a>
+    <div class="top-cta">
+      <a class="btn yellow dl-top" href="/help/#download" data-download><svg class="ic" aria-hidden="true"><use href="#i-dl"/></svg><span>Download</span></a>
+      <a class="btn play" href="/play/"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play now</span></a>
+    </div>
   </header>
   <main id="main">
 {{CONTENT}}
   </main>
   <footer class="foot">
     <div class="foot-cols">
-      <div>
-        <img src="/assets/img/logo.webp" alt="" width="110" height="63" />
+      <div class="foot-brand">
+        <img src="/assets/img/street/wordmark-800.webp" alt="Ratel Rage" width="800" height="366" loading="lazy" />
+        <p class="brush-line"><b>Justice</b> for common man...</p>
         <p class="dim">A beat-'em-up on the streets of Lagos. Free.</p>
-        <div class="btns" style="margin-top:12px"><a class="btn" href="/play/">PLAY NOW</a><a class="btn ghost" href="/help/#download" data-download>DOWNLOAD</a></div>
+        <div class="btns"><a class="btn" href="/play/"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span>Play now</span></a><a class="btn yellow" href="/help/#download" data-download><svg class="ic" aria-hidden="true"><use href="#i-dl"/></svg><span>Download</span></a></div>
       </div>
       <div>
-        <h4>PLAY</h4>
+        <h4>Play</h4>
         <a href="/how-to-play/">How to play</a><a href="/how-to-play/combos/">Combos</a><a href="/grades/">Scoring and grades</a><a href="/leaderboards/">Leaderboards</a><a href="/help/">Help</a>
       </div>
       <div>
-        <h4>THE GAME</h4>
+        <h4>The game</h4>
         <a href="/story/">Story</a><a href="/levels/">Levels</a><a href="/enemies/">Enemies</a><a href="/weapons/">Weapons</a><a href="/gallery/">Gallery</a><a href="/updates/">Updates</a>
       </div>
       <div>
-        <h4>BUSINESS</h4>
+        <h4>Business</h4>
         <a href="/advertise/">Advertise on a billboard</a><a href="/press/">Press kit</a><a href="/privacy">Privacy</a><a href="/terms/">Terms</a><a href="/credits/">Credits</a>
       </div>
     </div>
