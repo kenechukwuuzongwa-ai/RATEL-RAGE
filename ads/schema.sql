@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   refund_due INTEGER NOT NULL DEFAULT 0, refunded INTEGER NOT NULL DEFAULT 0,
   refund_ref TEXT NOT NULL DEFAULT '', refund_note TEXT NOT NULL DEFAULT '',
   cancelled_by TEXT NOT NULL DEFAULT '',   -- '' | advertiser | owner
-  policy TEXT NOT NULL DEFAULT '1'          -- the advertising policy version agreed to at booking
+  policy TEXT NOT NULL DEFAULT '1',         -- the advertising policy version agreed to at booking
+  scan TEXT NOT NULL DEFAULT ''             -- request 685 (migrations/0006_scan.sql): the artwork scan, JSON {by, why, at, scan}
 );
 CREATE INDEX IF NOT EXISTS bookings_slot ON bookings (slot, status, paid);
 CREATE TABLE IF NOT EXISTS creatives (

@@ -11,7 +11,7 @@ Built 2026-10-23 (request 446). The plan it follows is `LAUNCH_ADS_STATS_PLAN.md
    - upload their artwork, then fit, zoom and position it while watching it on the real board art
    - download a template if they need one
    - fill in their business, brand and contact details, a tap link, a start date and the number of weeks (1 to 52)
-   - send the booking
+   - press **Place billboard** (the artwork is scanned there and then: most adverts are approved in seconds)
 3. They get a private status page (`/status/<token>`). It shows review and payment state, dates, the artwork on the board, and views and taps once it is live.
 
 ## Advertising policy (request 590)
@@ -59,11 +59,25 @@ Refunds go back to the card or account paid with (Paystack dashboard: Transactio
 
 **Database change:** `migrations/0003_refunds.sql` adds `refund_due`, `refunded`, `refund_ref`, `refund_note`, `cancelled_by` and `policy`.
 
+## Automatic approval (request 685)
+
+Every new booking's artwork is scanned the moment it is placed, and clean ones are approved on the spot. Code: `ads/scan.js`. Decision is in `decide()`, and it can only approve or hand over to you; it never rejects anyone.
+
+- **The scan:** Cloudflare Workers AI (the `[ai]` binding, `env.AI`) runs the vision model **Llama 4 Scout** (`@cf/meta/llama-4-scout-17b-16e-instruct`) on the artwork. It reads every word, says what the image shows, and lists policy problems. If Scout errors, **Llama 3.2 Vision** is the backup.
+- **Approved automatically only when:** the scan answered, it listed no problem, it is not betting or alcohol, the brand can be read on the art, no risky word (a fixed list in `scan.js`: betting, alcohol, tobacco, sex, weapons, crypto/loans, politics, cures) is on the art or in the business name, brand or link, the advertiser left no note, and the board still has the shares free.
+- **Everything else waits for you** on /admin exactly as before: betting and alcohol adverts always do (a person checks the licence on the link page, "18+" and the responsible message), and so does anything doubtful, or a scan that fails or times out (30 s).
+- **On /admin:** each booking has an **Artwork check** row: "Approved automatically" or "Needs you", the reason, the words the scan read and what it saw. Spot-check the automatic ones and **open their tap links**: the scan does not visit links. **Take down** still works on any of them.
+- **Tested live (20 Nov 2026):** a food advert was approved in about 10 s; a betting advert waited for review; a "Fine smokes" advert was flagged as tobacco by Scout itself. (Llama 3.2 alone called a cigarette advert fine, which is why Scout is first.)
+- **Cost:** about 29 Workers AI "neurons" a scan; the free allowance is 10,000 a day (about 340 scans).
+- **Switch off:** set `AUTO_APPROVE = "off"` in `ads/wrangler.toml` and redeploy; every booking then waits for you.
+- **Policy:** version 4 (20 Nov 2026) says most adverts are approved by an automatic scan and that a later breach still comes down.
+- **Database:** `migrations/0006_scan.sql` adds `bookings.scan` (JSON: by, why, at, scan).
+
 ## What you do (the owner)
 
 **https://rr-ads.kenechukwuuzongwa.workers.dev/admin**. The user name can be anything; the password is the `ADMIN_PASSWORD` secret.
 
-- **Review:** look at the artwork and press **Approve** or **Reject** (the reason is shown to the advertiser). Approving refuses dates that clash with another approved booking on the same board.
+- **Review:** bookings the scan handed to you show **to review**. Look at the artwork and press **Approve** or **Reject** (the reason is shown to the advertiser). Approving refuses dates that clash with another approved booking on the same board.
 - **Payment:** without Paystack, send an invoice yourself, then press **Mark paid** and enter the reference.
 - **Live rule:** a board shows the advert only when it is **approved + paid + today is inside its dates**. Otherwise it shows the house art. Players pick up changes within about 5 minutes: at the next level start, or the next page load.
 - **Boards:** edit each board's price per week and whether it is open for booking. Board 1, the Ratel Open University board, is reserved.

@@ -28,9 +28,14 @@
  * The board's price is for the WHOLE board; a share costs its fraction.
  *
  * WEEKLY (request 674): prices are naira per WEEK and bookings run 1 to 52 whole weeks
- * (bookings.weeks). Bookings made before it keep their months and amount (weeks = 0). */
+ * (bookings.weeks). Bookings made before it keep their months and amount (weeks = 0).
+ *
+ * AUTO-APPROVAL (request 685): a new booking's artwork is scanned by a vision model
+ * (scan.js). A clean scan approves it on the spot, if its shares still fit the board;
+ * anything doubtful waits for the owner in /admin. bookings.scan keeps what the scan said. */
 import { BOARDS, boardById, uploadSize, ART_SCALE, SAFE_MARGIN } from './boards.js';
 import { landingPage, boardPage, statusPage, adminPage, policyPage, POLICY } from './pages.js';
+import { scanArtwork } from './scan.js';
 
 const DAY = 86400000;
 const MAX_ART_B64 = 1_600_000;       // ~1.2 MB of image; D1 rows top out at 2 MB
@@ -241,7 +246,28 @@ async function createBooking(req, env) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`).bind(id, token, b.id, f.business, f.brand, f.name, f.email, f.phone, f.link, f.note, start, end, weeks, shares, amount, POLICY.version, now, now),
     env.DB.prepare('INSERT INTO creatives (booking, mime, w, h, data) VALUES (?, ?, ?, ?, ?)').bind(id, info.mime, info.w, info.h, m[2]),
   ]);
-  return json({ ok: true, id, token, status: `/status/${token}`, amount, end, shares, pay: env.PAYSTACK_SECRET ? `/api/pay/${token}` : null });
+
+  // request 685: scan the artwork; a clean scan approves it now, a doubt waits for the owner
+  const s = await scanArtwork(env, b64bytes(m[2]), info.mime, f);
+  let approved = false, why = s.why;
+  if (s.decision === 'approve') {
+    const fit = await sharesFit(env, { id, slot: b.id, start_day: start, end_day: end, shares });
+    if (fit.ok) approved = true; else why = 'Passed the check, but the board filled up meanwhile: ' + fit.error;
+  }
+  const note = JSON.stringify({ by: approved ? 'auto' : 'review', why, at: Date.now(), scan: s.scan, raw: s.raw }).slice(0, 4000);
+  await env.DB.prepare(`UPDATE bookings SET ${approved ? "status = 'approved', " : ''}scan = ?, updated = ? WHERE id = ?`).bind(note, Date.now(), id).run();
+  return json({ ok: true, id, token, status: `/status/${token}`, amount, end, shares, approved,
+    pay: env.PAYSTACK_SECRET ? `/api/pay/${token}` : null });
+}
+
+// Would this booking's shares still fit next to the board's approved bookings, on its busiest day?
+async function sharesFit(env, r) {
+  const board = (await boardRows(env)).find((x) => x.id === r.slot);
+  const others = (await env.DB.prepare(`SELECT id, start_day, end_day, shares FROM bookings WHERE slot = ? AND status = 'approved' AND id != ?`).bind(r.slot, r.id).all()).results || [];
+  const peak = peakShares(others, r.start_day, r.end_day);
+  if (peak + (r.shares || 1) <= board.shares) return { ok: true };
+  const hits = others.filter((o) => overlaps(o, r)).map((o) => `${o.id} (${o.shares} share${o.shares > 1 ? 's' : ''}, ${o.start_day} to ${o.end_day})`);
+  return { ok: false, error: `Not enough free shares: this booking needs ${r.shares}, ${board.shares - peak} of ${board.shares} are free on its busiest day. Approved alongside: ${hits.join(', ')}.` };
 }
 
 async function bookingByToken(env, token) {
@@ -352,13 +378,8 @@ async function adminAction(req, env, id) {
   switch (body.action) {
     case 'approve': {
       if (r.status === 'cancelled') return json({ error: 'A cancelled booking cannot be approved again. The advertiser can make a new booking.' }, 409);
-      const board = (await boardRows(env)).find((x) => x.id === r.slot);
-      const others = (await env.DB.prepare(`SELECT id, start_day, end_day, shares FROM bookings WHERE slot = ? AND status = 'approved' AND id != ?`).bind(r.slot, id).all()).results || [];
-      const peak = peakShares(others, r.start_day, r.end_day);
-      if (peak + (r.shares || 1) > board.shares) {
-        const hits = others.filter((o) => overlaps(o, r)).map((o) => `${o.id} (${o.shares} share${o.shares > 1 ? 's' : ''}, ${o.start_day} to ${o.end_day})`);
-        return json({ error: `Not enough free shares: this booking needs ${r.shares}, ${board.shares - peak} of ${board.shares} are free on its busiest day. Approved alongside: ${hits.join(', ')}.` }, 409);
-      }
+      const fit = await sharesFit(env, r);
+      if (!fit.ok) return json({ error: fit.error }, 409);
       await set("status = 'approved', reason = ''"); break;
     }
     case 'reject': {
@@ -401,7 +422,7 @@ async function adminAction(req, env, id) {
 }
 async function adminData(env) {
   const bookings = (await env.DB.prepare(`SELECT id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, weeks, shares, amount, status, paid, pay_ref, reason,
-    refund_due, refunded, refund_ref, refund_note, cancelled_by, policy, created FROM bookings ORDER BY created DESC LIMIT 500`).all()).results || [];
+    refund_due, refunded, refund_ref, refund_note, cancelled_by, policy, scan, created FROM bookings ORDER BY created DESC LIMIT 500`).all()).results || [];
   const live = new Set((await liveBookings(env)).map((b) => b.id));
   const since = today(Date.now() - 30 * DAY);
   const stats = (await env.DB.prepare('SELECT slot, booking, SUM(views) views, SUM(taps) taps FROM ad_stats WHERE day >= ? GROUP BY slot, booking').bind(since).all()).results || [];

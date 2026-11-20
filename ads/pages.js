@@ -20,7 +20,9 @@ h2{font-size:19px;margin:0 0 6px}h3{font-size:16px;margin:18px 0 6px}.dim{color:
 .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}.btn:disabled{opacity:.5;cursor:default}
 .btn.small{padding:6px 10px;font-size:13px}
 label{display:block;margin:10px 0 4px;font-weight:600;font-size:14px}
-input,select,textarea{width:100%;background:#0b0d10;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit}
+input,select,textarea{width:100%;background:#0b0d10;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,197,24,.18)}
+::placeholder{color:#7f8a97;font-style:italic;opacity:1;transition:opacity .15s}:focus::placeholder{opacity:.45}
 input[type=range]{padding:0}input[type=checkbox]{width:auto}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:760px){.two{grid-template-columns:1fr}}
 .cols{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;align-items:start}@media(max-width:900px){.cols{grid-template-columns:1fr}}
@@ -42,10 +44,10 @@ const el = `const $=(s)=>document.querySelector(s);const mk=(t,a={},...k)=>{cons
  * conditions in `regulated`; never ban them outright. This is the one source: /policy renders it, the
  * booking form links to it and asks the advertiser to agree, the admin page links to it. */
 export const POLICY = {
-  version: '3',
-  updated: '12 November 2026',
+  version: '4',
+  updated: '20 November 2026',
   intro: 'It is played by people of all ages, so adverts must be honest, legal and fit to be seen by anyone. '
-    + 'Betting and alcohol adverts are welcome, under the extra rules below. We check every advert, and the page its tap link opens, before it goes live. If an advert does not meet this policy, we do not approve it.',
+    + 'Betting and alcohol adverts are welcome, under the extra rules below. Every advert is checked before it goes live: an automatic scan approves most artwork within seconds, and a person checks anything it is unsure about, including every betting and alcohol advert. We may check the page its tap link opens at any time. If an advert does not meet this policy, we do not approve it, or we take it down.',
   allowed: [
     'Food, restaurants and drinks',
     'Licensed betting, lotteries and gaming, and alcoholic drinks, under the extra rules below',
@@ -101,7 +103,8 @@ export const POLICY = {
     'If the page changes and breaks this policy after you are live, the advert comes down.',
   ],
   terms: [
-    'Every advert is reviewed before it goes live, usually within 2 working days. If we reject it, we tell you why on your status page.',
+    'Every advert is checked before it goes live. Most are approved within seconds by an automatic scan of the artwork; anything the scan is unsure about, every betting or alcohol advert, and every booking with a note waits for a person, usually within 2 working days. If we reject it, we tell you why on your status page.',
+    'An automatic approval is not a promise that the advert follows this policy: if we later find it does not, the rules below on taking adverts down apply.',
     'We may take down a live advert that breaks this policy, or that players report and we find breaks it.',
     'You are responsible for your advert and for any approval it needs under Nigerian advertising law (for example, ARCON vetting).',
     'We may update this policy. Approved bookings keep the version they agreed to, unless the law requires a change.',
@@ -141,9 +144,9 @@ export function landingPage({ boards, gameOrigin, notFound = false }) {
   return shell('Advertise in Ratel Rage', `
 <header><h1>Advertise in Ratel Rage</h1><p>Put your brand on a billboard inside the game. Players fight past it on every run.</p></header>
 <main>${notFound ? '<p class="err">That board does not exist. Pick one below.</p>' : ''}
-<div class="card" style="margin-bottom:16px"><b>How it works:</b> pick a board, upload your artwork (we show you exactly how it looks in the game), choose your dates and how much of the board you want, and send the booking.
+<div class="card" style="margin-bottom:16px"><b>How it works:</b> pick a board, upload your artwork (we show you exactly how it looks in the game), choose your dates and how much of the board you want, and place your billboard.
 Each board is shared by up to three advertisers who take turns on it; take all of its shares and it is yours alone.
-We check every advert before it goes live; once it is approved and paid, it appears on that board for every player. Your private status page shows views and taps.</div>
+Your artwork is checked automatically, so most adverts are approved in seconds; once it is approved and paid, it appears on that board for every player. Your private status page shows views and taps.</div>
 <div class="grid" id="boards"></div>
 <p class="small dim" style="margin-top:24px">Play the game: <a id="play"></a>. Ratel Rage is played by people of all ages. Betting and alcohol adverts are welcome under extra rules; tobacco, adult content and politics are not. Read the <a href="/policy">advertising policy</a> before you book.</p>
 </main>${data({ boards, gameOrigin })}<script>${el}${naira}
@@ -183,23 +186,23 @@ export function boardPage({ board, today, gameOrigin, payments, artScale }) {
 <section class="card">
   <div id="facts"></div>
   <form id="f" autocomplete="on">
-    <label for="business">Business name</label><input id="business" required maxlength="80">
-    <label for="brand">Brand shown in the game's pause menu (short)</label><input id="brand" required maxlength="30" placeholder="e.g. Mama Put Kitchen">
-    <div class="two"><div><label for="name">Contact name</label><input id="name" required maxlength="80"></div>
-    <div><label for="phone">Phone (optional)</label><input id="phone" maxlength="30" inputmode="tel"></div></div>
-    <label for="email">Email</label><input id="email" type="email" required maxlength="120">
-    <label for="link">Where a tap takes players (optional)</label><input id="link" type="url" maxlength="300" placeholder="https://your-site.com">
+    <label for="business">Business name</label><input id="business" required maxlength="80" placeholder="e.g. Mama Put Kitchen Ltd">
+    <label for="brand">Brand shown in the game's pause menu (short)</label><input id="brand" required maxlength="30" placeholder="e.g. Mama Put">
+    <div class="two"><div><label for="name">Contact name</label><input id="name" required maxlength="80" placeholder="Who should we talk to?"></div>
+    <div><label for="phone">Phone (optional)</label><input id="phone" maxlength="30" inputmode="tel" placeholder="e.g. 0803 123 4567"></div></div>
+    <label for="email">Email</label><input id="email" type="email" required maxlength="120" placeholder="you@yourbusiness.com">
+    <label for="link">Where a tap takes players (optional)</label><input id="link" type="url" maxlength="300" placeholder="https://your-site.com - where players land when they tap">
     <div class="two"><div><label for="start">Start date</label><input id="start" type="date" required></div>
     <div><label for="weeks">Weeks</label><select id="weeks"></select></div></div>
     <label for="shares">How much of the board</label><select id="shares"></select>
     <p class="small dim" id="sharehelp"></p>
-    <label for="note">Anything we should know (optional)</label><textarea id="note" rows="2" maxlength="600"></textarea>
+    <label for="note">Anything we should know (optional)</label><textarea id="note" rows="2" maxlength="600" placeholder="Got a question? Ask here and a person will answer when they check your advert. Leave it empty for an instant check."></textarea>
     <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
     <p><b id="total"></b></p>
-    <p class="small dim">We review every advert before it goes live (usually within 2 working days). ${payments ? 'After booking you can pay securely with Paystack.' : 'After review we send you an invoice; your advert goes live once it is paid.'}</p>
+    <p class="small dim">Your artwork is checked automatically the moment you place it: most adverts are approved in seconds. Anything the check is unsure about, betting and alcohol adverts, and bookings with a note are checked by a person (usually within 2 working days). ${payments ? 'Then pay securely with Paystack and your billboard goes live on its start date.' : 'We send you an invoice; your advert goes live once it is paid.'}</p>
     <label style="font-weight:400"><input type="checkbox" id="agree" required> My advert and its tap link follow the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>, and I accept its <a href="/policy#refunds" target="_blank" rel="noopener">refund terms</a>. The game is for players of all ages.</label>
     <p class="err" id="err"></p>
-    <button class="btn" id="send" type="submit">Send booking</button>
+    <button class="btn" id="send" type="submit">Place billboard</button>
   </form>
   <div id="done" hidden></div>
 </section></div></main>
@@ -222,8 +225,18 @@ if(!B.bookable){$('#send').disabled=true;$('#err').textContent='This board is re
 // the artwork, made at the exact upload size
 const art=document.createElement('canvas');art.width=W;art.height=H;const ac=art.getContext('2d');
 let img=null;
+// request 685: an inviting stand-in until the artwork is chosen, sized to fit every board's shape
+function placeholder(){const g=ac.createLinearGradient(0,0,W,H);g.addColorStop(0,'#f5c518');g.addColorStop(1,'#ff8a00');ac.fillStyle=g;ac.fillRect(0,0,W,H);
+  ac.textAlign='center';ac.textBaseline='middle';ac.fillStyle='#111';const wmax=W*(1-2*B.safe)*0.92;
+  const lines=W/H>1.6?['YOUR BRAND HERE']:['YOUR','BRAND','HERE'];
+  let fs=Math.round(H/(lines.length>1?4.6:3.4));ac.font='900 '+fs+'px system-ui';
+  const widest=Math.max(...lines.map(l=>ac.measureText(l).width));if(widest>wmax){fs=Math.floor(fs*wmax/widest);ac.font='900 '+fs+'px system-ui'}
+  const lh=fs*1.02,top=H/2-(lines.length-1)*lh/2-fs*0.3;lines.forEach((l,i)=>ac.fillText(l,W/2,top+i*lh));
+  const sub='Upload your artwork to see it here';let ss=Math.max(10,Math.round(fs*0.3));ac.font='600 '+ss+'px system-ui';
+  const sw=ac.measureText(sub).width;if(sw>wmax){ss=Math.max(8,Math.floor(ss*wmax/sw));ac.font='600 '+ss+'px system-ui'}
+  ac.fillStyle='rgba(17,17,17,.72)';ac.fillText(sub,W/2,top+(lines.length-1)*lh+fs*0.9)}
 function drawArt(){ac.fillStyle=$('#bg').value;ac.fillRect(0,0,W,H);
-  if(!img){ac.fillStyle='#d9dde3';ac.fillRect(0,0,W,H);ac.fillStyle='#555';ac.font='bold '+Math.round(H/9)+'px system-ui';ac.textAlign='center';ac.textBaseline='middle';ac.fillText('YOUR ADVERT HERE',W/2,H/2);return}
+  if(!img){placeholder();return}
   const z=Number($('#zoom').value),fill=$('#fit').value==='fill';
   const s=(fill?Math.max(W/img.width,H/img.height):Math.min(W/img.width,H/img.height))*z;
   const dw=img.width*s,dh=img.height*s;
@@ -253,14 +266,15 @@ $('#f').onsubmit=async(e)=>{e.preventDefault();$('#err').textContent='';
   let q=.92,dataUrl=art.toDataURL('image/jpeg',q);while(dataUrl.length>1500000&&q>.5){q-=.1;dataUrl=art.toDataURL('image/jpeg',q)}
   const body={slot:B.id,art:dataUrl,weeks:Number($('#weeks').value),shares:Number($('#shares').value),start:$('#start').value,website:$('#website').value,agree:$('#agree').checked};
   for(const k of ['business','brand','name','email','phone','link','note'])body[k]=$('#'+k).value;
-  $('#send').disabled=true;$('#send').textContent='Sending...';
+  $('#send').disabled=true;$('#send').textContent='Checking your artwork...';
   try{const r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const o=await r.json();if(!r.ok)throw new Error(o.error||'The booking could not be sent.');
+    const o=await r.json();if(!r.ok)throw new Error(o.error||'Your billboard could not be placed.');
     $('#f').hidden=true;const d=$('#done');d.hidden=false;
-    d.append(mk('h2',{text:'Booking received'}),mk('p',{text:'Total '+naira(o.amount)+', from '+body.start+' to '+o.end+'. We will review your artwork and email you.'}),
+    d.append(mk('h2',{text:o.approved?'Your billboard is approved':'Billboard placed'}),mk('p',{cls:o.approved?'okmsg':'',text:o.approved?'Your artwork passed the check.'+(o.pay?' Pay now and it goes live on '+body.start+'.':' It goes live once it is paid.'):'A person will check your artwork, usually within 2 working days. You can pay now; if it is not approved, you get everything back.'}),
+      mk('p',{text:'Total '+naira(o.amount)+', from '+body.start+' to '+o.end+'.'}),
       mk('p',{},'Keep this link to follow your booking, pay and see your numbers: ',mk('a',{href:o.status,text:location.origin+o.status})));
     if(o.pay){const b=mk('button',{cls:'btn',type:'button',text:'Pay now with Paystack'});b.onclick=async()=>{b.disabled=true;const r=await fetch(o.pay,{method:'POST'});const p=await r.json();if(p.url)location.href=p.url;else{b.disabled=false;alert(p.error||'Payment could not start.')}};d.append(b)}
-  }catch(x){$('#err').textContent=x.message;$('#send').disabled=false;$('#send').textContent='Send booking'}};
+  }catch(x){$('#err').textContent=x.message;$('#send').disabled=false;$('#send').textContent='Place billboard'}};
 </script>`);
 }
 
@@ -308,7 +322,7 @@ bi.onload=draw;ai.onload=draw;bi.onerror=draw;bi.src=D.gameOrigin+'/'+B.art;ai.s
 
 export function adminPage({ gameOrigin }) {
   return shell('Ratel Rage ads - admin', `
-<header><h1>Billboard admin</h1><p>Review, approve, mark paid. A board shows an advert only when it is approved, paid and inside its dates.</p>
+<header><h1>Billboard admin</h1><p>Review, approve, mark paid. A board shows an advert only when it is approved, paid and inside its dates. Clean artwork is approved automatically ("Artwork check" on each booking); spot-check those and their tap links too.</p>
 <p class="small">Before approving, check the artwork <b>and open its tap link</b> against the <a href="/policy" target="_blank" rel="noopener">advertising policy</a>. No tobacco, sexual content, weapons, get-rich-quick schemes, politics, health claims or other people's brands. Betting and alcohol are allowed: check the licence number on the link page, "18+" and the responsible-play / "Drink responsibly" message.</p></header>
 <main><div class="card"><h2>Boards</h2><table id="boards"></table></div>
 <h2 style="margin-top:22px">Bookings</h2><p class="small"><label style="display:inline"><input type="checkbox" id="all"> show closed (rejected / cancelled / ended)</label></p>
@@ -331,6 +345,8 @@ function render(){
     const pill=owed>0?['bad','REFUND OWED '+naira(owed)]:b.live?['ok','LIVE']:b.status==='approved'&&b.paid?['ok','approved + paid']:b.status==='approved'?['warn','approved, unpaid']:b.status==='review'?['warn','to review']:['bad',b.status+(b.cancelled_by?' by '+b.cancelled_by:'')];
     const info=mk('div',{},mk('p',{},mk('span',{cls:'pill '+pill[0],text:pill[1]}),' ',mk('b',{text:b.brand}),' ',mk('span',{cls:'dim',text:'('+b.business+') on '+b.slot})));
     const rows=[['Dates',b.start_day+' to '+b.end_day+' ('+(b.weeks?b.weeks+' wk':b.months+' mo')+')'],['Shares',String(b.shares)],['Amount',naira(b.amount)+(b.paid?' - paid ('+b.pay_ref+')':' - unpaid')],['Contact',b.name+', '+b.email+(b.phone?', '+b.phone:'')],['Tap link',b.link||'(none)'],['Note',b.note||''],['Numbers',b.views+' views, '+b.taps+' taps'],['Status page','/status/'+b.token],['Booked',new Date(b.created).toLocaleString()+' (policy v'+b.policy+')']];
+    let sc=null;try{sc=b.scan?JSON.parse(b.scan):null}catch{}
+    if(sc)rows.push(['Artwork check',(sc.by==='auto'?'Approved automatically. ':'Needs you: ')+sc.why+(sc.scan?' | Reads: "'+sc.scan.text+'" | Shows: '+sc.scan.shows:'')]);
     if(b.reason)rows.push(['Reason',b.reason]);
     if(b.refund_due>0||b.refunded>0)rows.push(['Refund',naira(b.refund_due)+' owed, '+naira(b.refunded)+' sent'+(b.refund_ref?' (ref '+b.refund_ref+')':'')+(b.refund_note?' - '+b.refund_note:'')]);
     const t=mk('table');for(const[k,v]of rows)t.append(mk('tr',{},mk('th',{text:k}),mk('td',{text:v})));info.append(t);

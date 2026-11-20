@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-20 — Artwork scanned and approved automatically; "Place billboard" (ads, request 685)
+
+- rr-ads: a new booking's artwork is scanned by Workers AI (Llama 4 Scout, Llama 3.2 Vision as backup; ads/scan.js) the moment it is placed. A clean scan approves it on the spot if the board still has the shares; betting and alcohol adverts, anything flagged, risky words, notes, and failed scans wait for the owner. Never auto-rejects. bookings.scan (migrations/0006_scan.sql, applied live) records the verdict; /admin shows it as "Artwork check". AUTO_APPROVE = "off" turns it off.
+- Booking page: the button is **Place billboard** ("Checking your artwork..." while it scans); the result says "Your billboard is approved" or that a person will check it. Every field has an inviting example placeholder (soft italic, dims on focus, yellow focus ring), and the empty board shows a bright "YOUR BRAND HERE" that fits every board's shape.
+- Policy version 4: most adverts are approved within seconds by an automatic scan; a person checks the rest; an automatic approval does not stop a later take-down. Website /advertise: "Checked in seconds."
+- Live tests: food advert approved, betting advert to review, "Fine smokes" flagged as tobacco; test bookings deleted. ads tests 126/126.
+
 ## 2026-11-20 — Billboards priced by the week, sized to Paystack's Starter limit (ads, request 674)
 
 - rr-ads: prices are naira per week for the whole board and bookings run 1 to 52 whole weeks (bookings.weeks, addWeeks). The three bookable boards, fully booked for 52 weeks, take ₦7,987,200, just under Paystack's ₦8,000,000 Starter Business lifetime limit: board-2 ₦28,800, board-3 ₦76,800, board-4 ₦48,000 a week (₦9,600 / ₦25,600 / ₦16,000 a share; old 3 : 8 : 5 ratio). Board 1 stays reserved (₦57,600 if opened). migrations/0005_weekly.sql applied to the live database; the existing monthly booking keeps its month and amount.

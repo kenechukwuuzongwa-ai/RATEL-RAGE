@@ -79,7 +79,7 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   const notAllowed = polText.slice(polText.indexOf('<h2>Not allowed</h2>'), polText.indexOf('<h2>Your artwork</h2>'));
   check('betting and alcohol are allowed with conditions, not in the banned list',
     /<h2>Betting and alcohol<\/h2>/.test(polText) && /National Lottery Regulatory Commission/.test(polText) && /Drink responsibly/.test(polText) && /18\+/.test(polText)
-    && notAllowed.length > 0 && !/betting|alcohol/i.test(notAllowed) && /Licensed betting/.test(polText) && /Version 3/.test(polText));
+    && notAllowed.length > 0 && !/betting|alcohol/i.test(notAllowed) && /Licensed betting/.test(polText) && /Version 4/.test(polText));
   check('the board list no longer says no betting or alcohol', !/no betting/i.test(landText) && /Betting and alcohol adverts are welcome/.test(landText));
   check('board page asks for policy agreement', text.includes('id="agree"') && text.includes('href="/policy"'));
   check('admin page links the policy', (await (await call(env, '/admin', { headers: admin })).text()).includes('href="/policy"'));
@@ -256,12 +256,12 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   const cancel = (token) => call(env, `/api/cancel/${token}`, { method: 'POST' });
   const row = (id) => env.DB.raw.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
   const pol = await (await call(env, '/policy')).text();
-  check('policy page has the refund terms, version 3', /id="refunds"/.test(pol) && /Cancel after it starts/.test(pol) && /12\/28/.test(pol) && /10 working days/.test(pol) && /Version 3/.test(pol));
+  check('policy page has the refund terms, version 4', /id="refunds"/.test(pol) && /Cancel after it starts/.test(pol) && /12\/28/.test(pol) && /10 working days/.test(pol) && /Version 4/.test(pol));
   check('board page: agreeing covers the refund terms', (await (await call(env, '/b/board-3')).text()).includes('href="/policy#refunds"'));
 
   // unpaid: cancel at no cost
   const u = await post({ brand: 'U', shares: 1, start: shift(3), weeks: 4 });
-  check('a booking records the policy version agreed to', row(u.id).policy === '3');
+  check('a booking records the policy version agreed to', row(u.id).policy === '4');
   const cu = await cancel(u.token); const cuo = await cu.json();
   check('advertiser cancels an unpaid booking: nothing owed', cu.status === 200 && cuo.refundDue === 0 && row(u.id).status === 'cancelled' && row(u.id).cancelled_by === 'advertiser');
   check('cancelling twice is refused; an unknown token is a 404', (await cancel(u.token)).status === 409 && (await cancel('0'.repeat(36))).status === 404);
@@ -317,6 +317,65 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   check('status page shows the refund as sent', sp2.includes('"refunded":2000') && sp2.includes('"refundRef":"RF-1"'));
   const ap = await (await call(env, '/admin', { headers: admin })).text();
   check('admin page has the refund controls', ap.includes('Mark refund sent') && ap.includes('broke the policy (no refund)') && ap.includes('Set refund'));
+}
+
+// ---------- request 685: the artwork scan and automatic approval
+{
+  const { parseScan, decide, riskyWord } = await import('../scan.js');
+  const clean = { text: 'MAMA PUT hot jollof daily 0803 123 4567', shows: 'A plate of jollof rice with the Mama Put logo', brand_visible: true, betting: false, alcohol: false, problems: [], verdict: 'approve' };
+  const F = { business: 'Mama Put Kitchen Ltd', brand: 'Mama Put', link: 'https://mamaput.example.com', note: '' };
+  check('scan: the model answer is read even with words around it', parseScan('Here you go: ' + JSON.stringify(clean) + ' done')?.verdict === 'approve');
+  check('scan: nonsense is not an answer', parseScan('looks fine to me') === null && parseScan('{"verdict":"maybe"}') === null);
+  check('scan: a clean answer approves', decide(parseScan(JSON.stringify(clean)), F).decision === 'approve');
+  const why = (o, f = F) => decide(parseScan(JSON.stringify({ ...clean, ...o })), f);
+  check('scan: no answer waits for a person', decide(null, F).decision === 'review');
+  check('scan: a flagged problem waits for a person', why({ problems: ['weapon'], verdict: 'review' }).decision === 'review');
+  check('scan: betting and alcohol always wait for a person (allowed, but checked)', why({ betting: true }).decision === 'review' && why({ alcohol: true }).decision === 'review');
+  check('scan: the model saying approve with a problem listed still waits', why({ problems: ['cigarette'] }).decision === 'review');
+  check('scan: an unreadable brand waits', why({ brand_visible: false }).decision === 'review');
+  check('scan: risky words on the art or in the form wait', why({ text: 'MAMA PUT - BET NOW' }).decision === 'review' && why({}, { ...F, brand: 'Star Lager' }).decision === 'review'
+    && why({}, { ...F, link: 'https://crypto-profits.example.com' }).decision === 'review');
+  check('scan: risky words match whole words only', riskyWord('Gingerbread') === '' && riskyWord('Abet Ventures') === '' && riskyWord('cold beer here') === 'beer' && riskyWord('Strictly 18+') === '18+');
+  check('scan: a note waits for a person', why({}, { ...F, note: 'Is this okay?' }).decision === 'review');
+
+  // through the worker, with a pretend Workers AI
+  const ai = (answer) => ({ run: async (model, input) => { ai.calls.push({ model, input }); if (answer instanceof Error) throw answer; return { response: answer }; } });
+  ai.calls = [];
+  const post = (env, o) => call(env, '/api/bookings', { method: 'POST', body: form(o), headers: { 'Content-Type': 'application/json' } });
+  const rowOf = (env, id) => env.DB.raw.prepare('SELECT status, scan FROM bookings WHERE id = ?').get(id);
+
+  let env = mkEnv({ AI: ai(JSON.stringify(clean)) });
+  let o = await (await post(env, {})).json();
+  check('a clean scan approves the booking on the spot', o.approved === true && rowOf(env, o.id).status === 'approved' && JSON.parse(rowOf(env, o.id).scan).by === 'auto', o);
+  { const c = ai.calls[0]?.input?.messages?.[0]?.content || [];
+    check('the scan sent the artwork and the brand to the vision model (Scout, content parts)', /scout/.test(ai.calls[0].model) && /Mama Put/.test(c[0]?.text) && String(c[1]?.image_url?.url).startsWith('data:image/png;base64,')); }
+  check('auto-approved and unpaid is not live yet', ((await (await call(env, '/api/slots?level=1')).json()).slots.flatMap((s) => s.rotation)).length === 0);
+  const ad = await (await call(env, '/api/admin/data', { headers: admin })).json();
+  check('admin sees what the scan said', /"by":"auto"/.test(ad.bookings.find((b) => b.id === o.id).scan));
+  // the whole board is taken now (form() books every share): a second clean booking on the same dates must not be approved
+  o = await (await post(env, { art: jpeg(size3.w, size3.h) })).json();
+  check('a clean scan is not approved if the board is full', o.approved === false || o.error, o);
+
+  env = mkEnv({ AI: ai(JSON.stringify({ ...clean, betting: true, verdict: 'review' })) });
+  o = await (await post(env, {})).json();
+  check('a betting advert waits for review', o.approved === false && rowOf(env, o.id).status === 'review' && /Betting/.test(JSON.parse(rowOf(env, o.id).scan).why));
+
+  { // Scout errors: the 3.2 backup answers with prompt + image
+    const calls = []; const env2 = mkEnv({ AI: { run: async (model, input) => { calls.push(model); if (/scout/.test(model)) throw new Error('busy'); return { response: JSON.stringify(clean) }; } } });
+    const o2 = await (await post(env2, {})).json();
+    check('Scout failing: the backup model scans it instead', o2.approved === true && calls.length === 2 && /llama-3.2/.test(calls[1]), calls);
+  }
+  env = mkEnv({ AI: ai(new Error('upstream 500')) });
+  o = await (await post(env, {})).json();
+  check('the AI failing: the booking is kept and waits for review', o.approved === false && rowOf(env, o.id).status === 'review');
+
+  env = mkEnv({ AI: ai(JSON.stringify(clean)), AUTO_APPROVE: 'off' });
+  o = await (await post(env, {})).json();
+  check('AUTO_APPROVE=off: everything waits for review', o.approved === false && rowOf(env, o.id).status === 'review');
+
+  const bp = await (await call(env, '/b/board-3')).text();
+  check('the form button says Place billboard, with inviting placeholders', bp.includes('>Place billboard</button>') && !bp.includes('Send booking') && bp.includes('placeholder="Who should we talk to?"') && bp.includes('::placeholder'));
+  check('the policy says most adverts are approved automatically', /approved within seconds by an automatic scan/.test(await (await call(env, '/policy')).text()));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

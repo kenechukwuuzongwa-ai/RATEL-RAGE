@@ -15,6 +15,12 @@ ALLOWED_ORIGINS = "https://ratelrage.com,https://www.ratelrage.com,https://ratel
 # the game itself lives at /play/ since request 657 (the website took the root): board art and the play link
 GAME_ORIGIN = "https://ratelrage.com/play"
 CURRENCY = "NGN"
+# request 685: scan new artwork and approve clean ones on the spot ("off" = every booking waits for /admin)
+AUTO_APPROVE = "on"
+
+# Workers AI: the vision model that scans artwork (scan.js)
+[ai]
+binding = "AI"
 # Secrets (npx wrangler secret put NAME):
 #   ADMIN_PASSWORD   the /admin page (HTTP Basic, any user name)
 #   PAYSTACK_SECRET  optional; without it bookings are paid by invoice and marked paid on /admin
