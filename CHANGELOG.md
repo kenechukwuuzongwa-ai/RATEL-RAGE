@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-20 — Home page: HOW TO PLAY cue, The basics first (site, request 671)
+
+- Hero: the lead line (A free beat-'em-up on the streets of Lagos. Phone, tablet or computer.) and the three feature items with their icons (Epic beat 'em up action / Inspired by Lagos / Bigger threats, bolder fights) are gone. In their place a HOW TO PLAY plate with a green down arrow that bobs downward, linking to #basics (centred on phones, under the buttons).
+- The basics is now the first section under the hero, above What you get (then The street); band shading re-alternated. section[id] scroll-margin keeps an anchor jump below the fixed header. Test _chromakey/req671/basicscheck.js 8/8.
+
 ## 2026-11-20 — Analysis screens cover wide phones, centred site logo on phones (v174, request 670)
 
 - CONNECTION TO NEXT TARGET and CONNECTION TO THE CABAL (and the rest of the post-mission sequence) now read the view's width every frame (createAftermath getW). The width used to be frozen at boot; a phone boots narrower (browser bar, app before immersive fullscreen) and widens after, so the room stopped short of the right edge and the street showed beside it. Test _chromakey/req670/widescreens.js (boot 1388 -> 1554 wide): the grade covers 1554 of 1554 on both screens; the v173 control covers 1390 and fails. aftermath.js import stamp bumped (was v163).
