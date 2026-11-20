@@ -1,7 +1,7 @@
 -- rr-ads: the billboard register, bookings, artwork and view/tap counts (docs/ADS.md)
 CREATE TABLE IF NOT EXISTS boards (
   id TEXT PRIMARY KEY,
-  price INTEGER NOT NULL,              -- naira per month
+  price INTEGER NOT NULL,              -- naira per WEEK (request 674; per month before it)
   bookable INTEGER NOT NULL DEFAULT 1,
   shares INTEGER NOT NULL DEFAULT 3     -- rotation: how many advertisers can share it at once
 );
@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   slot TEXT NOT NULL,
   business TEXT NOT NULL, brand TEXT NOT NULL, name TEXT NOT NULL,
   email TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', link TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
-  start_day TEXT NOT NULL, end_day TEXT NOT NULL, months INTEGER NOT NULL,
+  start_day TEXT NOT NULL, end_day TEXT NOT NULL, months INTEGER NOT NULL,   -- months: bookings before request 674 (0 after)
+  weeks INTEGER NOT NULL DEFAULT 0,    -- request 674 (migrations/0005_weekly.sql): 1..52 whole weeks
   shares INTEGER NOT NULL DEFAULT 1,   -- how many of the board's shares it takes (its rotation weight)
   amount INTEGER NOT NULL,             -- naira, fixed at booking time
   status TEXT NOT NULL DEFAULT 'review',   -- review | approved | rejected | cancelled

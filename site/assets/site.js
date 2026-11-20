@@ -251,7 +251,7 @@
       var list = (o.boards || []).slice().sort(function (a, c) { return ((a.insights || {}).order || 0) - ((c.insights || {}).order || 0); });
       bx.innerHTML = list.map(function (bd) {
         var s = bd.insights || {}, open = bd.bookable && bd.freeToday > 0;
-        var share = bd.shares > 1 ? naira(Math.round(bd.price / bd.shares)) + ' a month per share (' + bd.shares + ' shares), ' + naira(bd.price) + ' for the whole board' : naira(bd.price) + ' a month';
+        var share = bd.shares > 1 ? naira(Math.round(bd.price / bd.shares)) + ' a week per share (' + bd.shares + ' shares), ' + naira(bd.price) + ' a week for the whole board' : naira(bd.price) + ' a week';
         return '<article class="board-card"><div class="art"><img src="/assets/img/boards/' + esc2(bd.id) + '.webp" alt="' + esc2(bd.name) + ' in the game" loading="lazy"></div>' +
           '<div class="body"><div><span class="pill' + (open ? '' : ' no') + '">' + (bd.bookable ? (bd.freeToday > 0 ? bd.freeToday + ' of ' + bd.shares + ' shares free today' : 'Fully booked today') : 'Reserved') + '</span></div>' +
           '<h3>' + esc2(bd.name) + '</h3>' +

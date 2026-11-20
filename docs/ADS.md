@@ -10,7 +10,7 @@ Built 2026-10-23 (request 446). The plan it follows is `LAUNCH_ADS_STATS_PLAN.md
 2. On a board's page (`/b/board-3`, for example) they:
    - upload their artwork, then fit, zoom and position it while watching it on the real board art
    - download a template if they need one
-   - fill in their business, brand and contact details, a tap link, a start date and the number of months
+   - fill in their business, brand and contact details, a tap link, a start date and the number of weeks (1 to 52)
    - send the booking
 3. They get a private status page (`/status/<token>`). It shows review and payment state, dates, the artwork on the board, and views and taps once it is live.
 
@@ -66,11 +66,32 @@ Refunds go back to the card or account paid with (Paystack dashboard: Transactio
 - **Review:** look at the artwork and press **Approve** or **Reject** (the reason is shown to the advertiser). Approving refuses dates that clash with another approved booking on the same board.
 - **Payment:** without Paystack, send an invoice yourself, then press **Mark paid** and enter the reference.
 - **Live rule:** a board shows the advert only when it is **approved + paid + today is inside its dates**. Otherwise it shows the house art. Players pick up changes within about 5 minutes: at the next level start, or the next page load.
-- **Boards:** edit each board's price per month and whether it is open for booking. Board 1, the Ratel Open University board, is reserved.
+- **Boards:** edit each board's price per week and whether it is open for booking. Board 1, the Ratel Open University board, is reserved.
 - **Numbers:** views and taps per board for the last 30 days, and running totals per booking.
 - **Cancel / Delete:** cancelling works out the refund under the terms above; delete removes the booking and its artwork for good.
 
 Nothing emails you or the advertiser yet. Check `/admin` for new bookings, and email advertisers yourself.
+
+## Weekly prices (request 674)
+
+Prices are naira **per week** for the whole board, and bookings run 1 to 52 whole weeks. They are set so the three bookable boards, fully booked for a year (52 weeks), take **₦7,987,200**, just under Paystack's ₦8,000,000 lifetime limit for a Starter Business. They keep the old 3 : 8 : 5 ratio, and each splits evenly into its 3 shares.
+
+| Board | Whole board / week | One share / week | Full year (52 weeks) |
+|---|---|---|---|
+| board-2, the portrait sign | ₦28,800 | ₦9,600 | ₦1,497,600 |
+| board-3, the big two-post board | ₦76,800 | ₦25,600 | ₦3,993,600 |
+| board-4, the mural board | ₦48,000 | ₦16,000 | ₦2,496,000 |
+| **All three** | **₦153,600** | | **₦7,987,200** |
+| board-1 (reserved, not counted) | ₦57,600 | ₦19,200 | |
+
+Database change: `migrations/0005_weekly.sql` adds `bookings.weeks` and sets these prices. Bookings made before it keep their months and amount (`weeks` = 0). Opening board 1, or raising prices on /admin, takes a full year past ₦8,000,000: upgrade Paystack to a Registered Business first.
+
+### Paystack Starter Business (no CAC registration yet)
+
+1. Sign up at paystack.com and choose the Starter (unregistered) business when asked. Activation needs your ID, BVN and a personal bank account in the same name as the ID.
+2. Limit: ₦8,000,000 collected over the account's life. At the limit Paystack stops taking payments until you upgrade to a Registered Business (CAC). Payouts go to your personal account.
+3. Then follow **Turning on Paystack** below: the secret key first (test key, one booking end to end, then the live key) and the webhook URL.
+4. Ask Paystack whether a Starter account can refund from the dashboard. If not, send refunds by bank transfer and record them with **Mark refund sent**.
 
 ## Turning on Paystack
 
@@ -93,7 +114,7 @@ Each board is sold in **shares**: 3 by default, from 1 to 6, set on /admin.
 **Booking shares**
 - An advertiser books 1 to 3 shares.
 - Booking every share gives them the whole board: their advert is the only one on it.
-- The board's price on /admin is for the **whole board**. One share costs its fraction (₦80,000 / 3 = ₦26,667 a month on board 3).
+- The board's price on /admin is for the **whole board**. One share costs its fraction (₦76,800 / 3 = ₦25,600 a week on board 3).
 
 **Approval limits**
 - Approved bookings on one board may overlap in time.
@@ -117,7 +138,7 @@ Each board is sold in **shares**: 3 by default, from 1 to 6, set on /admin.
 |---|---|---|
 | Who sees what | Everyone sees the same cycle; it advances per pass | Each player is matched to adverts by city, device, time of day, or age/gender from the opt-in profile |
 | What the advertiser buys | A share of a board's views for set dates | An audience, with a budget spread across dates |
-| Price | Flat, per share per month | Per view or per tap, once view numbers are steady |
+| Price | Flat, per share per week | Per view or per tap, once view numbers are steady |
 | Server work per request | None: one list for everyone, cached for 60 s | A decision per player: campaign matching, pacing and a frequency cap |
 | Data needed | None about the player | Location from the connection, plus profile data only for players who chose to give it |
 | Fairness | Guaranteed by the weighted cycle | Depends on how much each audience plays; small audiences may under-deliver |

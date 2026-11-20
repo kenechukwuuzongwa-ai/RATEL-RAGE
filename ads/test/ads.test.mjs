@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createHmac } from 'node:crypto';
 import path from 'node:path';
-import worker, { today, addMonths, imageInfo, peakShares, priceFor, refundFor } from '../worker.js';
+import worker, { today, addMonths, addWeeks, imageInfo, peakShares, priceFor, refundFor } from '../worker.js';
 import { BOARDS, uploadSize } from '../boards.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -47,9 +47,17 @@ function jpeg(w, h) {
 const b3 = BOARDS.find((b) => b.id === 'board-3');
 const size3 = uploadSize(b3);
 const form = (o = {}) => ({ slot: 'board-3', business: 'Mama Put Kitchen Ltd', brand: 'Mama Put', name: 'Ada Obi', email: 'ada@example.com',
-  phone: '0800', link: 'https://mamaput.example.com', start: today(), months: 2, art: png(size3.w, size3.h), agree: true, ...o });
+  phone: '0800', link: 'https://mamaput.example.com', start: today(), weeks: 8, art: png(size3.w, size3.h), agree: true, ...o });
 
 // ---------- helpers
+check('addWeeks adds whole weeks across month and year ends', addWeeks('2026-11-20', 1) === '2026-11-27' && addWeeks('2026-12-28', 2) === '2027-01-11' && addWeeks('2026-01-01', 52) === '2026-12-31');
+{
+  // request 674: the three bookable boards, fully booked for 52 weeks, stay under Paystack's NGN 8,000,000 Starter limit
+  const open = BOARDS.filter((b) => b.bookable);
+  const year = open.reduce((a, b) => a + b.price * 52, 0);
+  check('weekly prices: three bookable boards, a full year = NGN 7,987,200 (under 8,000,000)', open.length === 3 && year === 7987200, year);
+  check('every weekly price splits evenly into its shares', BOARDS.every((b) => b.price % b.shares === 0));
+}
 check('addMonths keeps the day, clamps month ends', addMonths('2026-01-31', 1) === '2026-02-28' && addMonths('2026-10-23', 2) === '2026-12-23' && addMonths('2026-11-15', 3) === '2027-02-15');
 check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from(png(1262, 502).split(',')[1], 'base64'))) === JSON.stringify({ mime: 'image/png', w: 1262, h: 502 })
   && imageInfo(Buffer.from(jpeg(940, 378).split(',')[1], 'base64')).w === 940);
@@ -58,7 +66,7 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
 {
   const env = mkEnv();
   const r = await call(env, '/api/boards'); const o = await r.json();
-  check('boards are seeded from the register', o.boards.length === BOARDS.length && o.boards.find((b) => b.id === 'board-3').price === 80000);
+  check('boards are seeded from the register', o.boards.length === BOARDS.length && o.boards.find((b) => b.id === 'board-3').price === 76800);
   check('board-1 is reserved (house advert)', o.boards.find((b) => b.id === 'board-1').bookable === false);
   const page = await call(env, '/b/board-3');
   const text = await page.text();
@@ -91,7 +99,7 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   check('a javascript: link refused', (await post({ link: 'javascript:alert(1)' })).status === 400);
   check('the reserved board refuses bookings', (await post({ slot: 'board-1', art: png(978, 416) })).status === 409);
   const ok = await post({ art: jpeg(size3.w, size3.h) }); const o = await ok.json();
-  check('a good booking is accepted, priced and dated', ok.status === 200 && o.amount === 160000 && o.end === addMonths(today(), 2) && /^[0-9a-f]{36}$/.test(o.token), o);
+  check('a good booking is accepted, priced and dated', ok.status === 200 && o.amount === 76800 * 8 && o.end === addWeeks(today(), 8) && /^[0-9a-f]{36}$/.test(o.token), o);
   check('no Paystack key: no pay link (invoice mode)', o.pay === null);
   const row = env.DB.raw.prepare('SELECT status, paid FROM bookings').get();
   check('it waits for review, unpaid', row.status === 'review' && row.paid === 0);
@@ -123,7 +131,7 @@ check('imageInfo reads PNG and JPEG sizes', JSON.stringify(imageInfo(Buffer.from
   // a second booking that clashes
   const two = await (await post({ business: 'Other', brand: 'Other' })).json();
   check('a clashing booking for taken dates is refused at booking time', two.error && /fully booked/.test(two.error), two);
-  const later = await (await post({ business: 'Later Co', brand: 'Later', start: addMonths(today(), 2), months: 1 })).json();
+  const later = await (await post({ business: 'Later Co', brand: 'Later', start: addWeeks(today(), 8), weeks: 4 })).json();
   check('the next free dates can be booked', !!later.id, later);
   check('approving it does not clash', (await act(later.id, 'approve')).status === 200);
   env.DB.raw.prepare("UPDATE bookings SET status = 'review' WHERE id = ?").run(later.id);
@@ -196,7 +204,15 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   const act = (id, action, extra = {}) => call(env, `/api/admin/bookings/${id}`, { method: 'POST', headers: { ...admin, 'Content-Type': 'application/json' }, body: { action, ...extra } });
   const a = await (await post({ brand: 'A', shares: 1 })).json();
   const b = await (await post({ brand: 'B', shares: 2 })).json();
-  check('a one-share booking costs a third of the board', a.amount === Math.round(80000 / 3) * 2 && a.shares === 1, a);
+  check('a one-share booking costs a third of the board', a.amount === 25600 * 8 && a.shares === 1, a);
+  // request 674: 1 to 52 whole weeks; the old months field alone is not a duration any more
+  check('0 or 53 weeks are refused', (await post({ weeks: 0 })).status === 400 && (await post({ weeks: 53 })).status === 400);
+  check('a months-only booking is refused', (await post({ weeks: undefined, months: 2 })).status === 400);
+  const wk = await (await post({ brand: 'W', shares: 1, weeks: 1, start: addWeeks(today(), 60) })).json();
+  check('one week ahead of the year is refused, a year ahead is the limit', !!wk.error, wk);
+  const one = await (await post({ brand: 'W1', shares: 1, weeks: 1, start: addWeeks(today(), 20) })).json();
+  check('a one-week, one-share booking costs a third of a week', one.amount === 25600 && one.end === addWeeks(addWeeks(today(), 20), 1), one);
+  env.DB.raw.prepare('DELETE FROM bookings WHERE id = ?').run(one.id);
   check('shares outside 1..3 are refused', (await post({ shares: 4 })).status === 400 && (await post({ shares: 0 })).status === 400);
   for (const x of [a, b]) { await act(x.id, 'approve'); await act(x.id, 'paid'); }
   const slots = await (await call(env, '/api/slots?level=1')).json();
@@ -204,7 +220,7 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   check('both live bookings rotate on the board, weighted by shares', s3.rotation.length === 2 && s3.rotation.map((r) => r.weight).sort().join() === '1,2' && s3.live.id === s3.rotation[0].id, s3.rotation);
   const full = await post({ brand: 'C', shares: 1 });
   check('the board is full (1 + 2 of 3): a new booking for those dates is refused', full.status === 409, await full.json());
-  const later = await (await post({ brand: 'D', shares: 3, start: addMonths(today(), 2), months: 1 })).json();
+  const later = await (await post({ brand: 'D', shares: 3, start: addWeeks(today(), 8), weeks: 4 })).json();
   check('the whole board is still bookable once those end', !!later.id, later);
   await act(b.id, 'cancel');
   const c = await (await post({ brand: 'C', shares: 2 })).json();
@@ -240,11 +256,11 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   const cancel = (token) => call(env, `/api/cancel/${token}`, { method: 'POST' });
   const row = (id) => env.DB.raw.prepare('SELECT * FROM bookings WHERE id = ?').get(id);
   const pol = await (await call(env, '/policy')).text();
-  check('policy page has the refund terms, version 3', /id="refunds"/.test(pol) && /Cancel after it starts/.test(pol) && /12\/30/.test(pol) && /10 working days/.test(pol) && /Version 3/.test(pol));
+  check('policy page has the refund terms, version 3', /id="refunds"/.test(pol) && /Cancel after it starts/.test(pol) && /12\/28/.test(pol) && /10 working days/.test(pol) && /Version 3/.test(pol));
   check('board page: agreeing covers the refund terms', (await (await call(env, '/b/board-3')).text()).includes('href="/policy#refunds"'));
 
   // unpaid: cancel at no cost
-  const u = await post({ brand: 'U', shares: 1, start: shift(3), months: 1 });
+  const u = await post({ brand: 'U', shares: 1, start: shift(3), weeks: 4 });
   check('a booking records the policy version agreed to', row(u.id).policy === '3');
   const cu = await cancel(u.token); const cuo = await cu.json();
   check('advertiser cancels an unpaid booking: nothing owed', cu.status === 200 && cuo.refundDue === 0 && row(u.id).status === 'cancelled' && row(u.id).cancelled_by === 'advertiser');
@@ -256,7 +272,7 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   check('paid by Paystack after it was cancelled: all of it is owed back', row(u.id).paid === 1 && row(u.id).refund_due === u.amount);
 
   // paid, not started: full refund
-  const f = await post({ brand: 'F', shares: 1, start: shift(5), months: 1 });
+  const f = await post({ brand: 'F', shares: 1, start: shift(5), weeks: 4 });
   await act(f.id, 'approve'); await act(f.id, 'paid', { ref: 'INV-9' });
   const sp0 = await (await call(env, `/status/${f.token}`)).text();
   check('status page offers Cancel with the full refund before the start', sp0.includes('id="cancelbox"') && sp0.includes(`"refundIfCancelled":${f.amount}`));
@@ -266,7 +282,7 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   check('status page shows the refund owed', sp1.includes(`"refundDue":${f.amount}`) && sp1.includes('"cancelledBy":"advertiser"'));
 
   // paid and live for 10 of 30 days: the days left after today
-  const L = await post({ brand: 'L', shares: 1, start: today(), months: 1 });
+  const L = await post({ brand: 'L', shares: 1, start: today(), weeks: 4 });
   env.DB.raw.prepare('UPDATE bookings SET start_day = ?, end_day = ? WHERE id = ?').run(shift(-10), shift(20), L.id);
   await act(L.id, 'approve'); await act(L.id, 'paid');
   const cl = await (await cancel(L.token)).json();
@@ -274,13 +290,13 @@ check('priceFor: a share is its fraction of the whole board', priceFor({ price: 
   check('the cancelled advert is off the board', !(await (await call(env, '/api/slots?level=1')).json()).slots.find((s) => s.id === 'board-3').rotation.some((x) => x.id === L.id));
 
   // owner: reject a paid booking, reopen it, take one down for a breach or not
-  const R = await post({ brand: 'R', shares: 1, start: shift(2), months: 1 });
+  const R = await post({ brand: 'R', shares: 1, start: shift(2), weeks: 4 });
   await act(R.id, 'paid');
   await act(R.id, 'reject', { reason: 'Tobacco advert' });
   check('rejecting a paid booking owes everything back', row(R.id).refund_due === R.amount && /full refund/.test(row(R.id).refund_note));
   await act(R.id, 'review');
   check('reopening it for review clears a refund not yet sent', row(R.id).refund_due === 0 && row(R.id).status === 'review');
-  const T = await post({ brand: 'T', shares: 1, start: today(), months: 1 });
+  const T = await post({ brand: 'T', shares: 1, start: today(), weeks: 4 });
   env.DB.raw.prepare('UPDATE bookings SET start_day = ?, end_day = ? WHERE id = ?').run(shift(-10), shift(20), T.id);
   await act(T.id, 'approve'); await act(T.id, 'paid');
   const adm = await (await call(env, '/api/admin/data', { headers: admin })).json();

@@ -25,7 +25,10 @@
  * board to yourself. Approved bookings on one board may overlap as long as their
  * shares never add up past the board's on any day. The game rotates the live
  * ones per pass, weighted by shares, so each gets about its share of the views.
- * The board's price is for the WHOLE board; a share costs its fraction. */
+ * The board's price is for the WHOLE board; a share costs its fraction.
+ *
+ * WEEKLY (request 674): prices are naira per WEEK and bookings run 1 to 52 whole weeks
+ * (bookings.weeks). Bookings made before it keep their months and amount (weeks = 0). */
 import { BOARDS, boardById, uploadSize, ART_SCALE, SAFE_MARGIN } from './boards.js';
 import { landingPage, boardPage, statusPage, adminPage, policyPage, POLICY } from './pages.js';
 
@@ -50,6 +53,7 @@ export function addMonths(day, months) {
   t.setUTCDate(Math.min(d, last));
   return t.toISOString().slice(0, 10);
 }
+export const addWeeks = (day, weeks) => new Date(Date.parse(day + 'T00:00:00Z') + weeks * 7 * DAY).toISOString().slice(0, 10);
 const nextDay = (d) => new Date(Date.parse(d + 'T00:00:00Z') + DAY).toISOString().slice(0, 10);
 const validDay = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s + 'T00:00:00Z'))
   && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
@@ -62,8 +66,8 @@ export function peakShares(list, start, end) {
   for (const d of days) peak = Math.max(peak, inRange.filter((b) => b.start_day <= d && b.end_day > d).reduce((a, b) => a + (b.shares || 1), 0));
   return peak;
 }
-// What a booking costs: the whole board's monthly price, times the fraction of it taken, times the months.
-export const priceFor = (board, shares, months) => Math.round(board.price * shares / board.shares) * months;
+// What a booking costs: the whole board's weekly price, times the fraction of it taken, times the weeks.
+export const priceFor = (board, shares, weeks) => Math.round(board.price * shares / board.shares) * weeks;
 /* REFUNDS (request 593): the refund terms in POLICY.refunds, as arithmetic. Naira owed back
  * for a booking closed on `day`:
  *   'rejected'  not approved: everything paid
@@ -202,13 +206,13 @@ async function createBooking(req, env) {
   if (!f.business || !f.brand || !f.name) return json({ error: 'Business, brand and contact name are required.' }, 400);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) return json({ error: 'Please give a valid email address.' }, 400);
   if (f.link && !/^https?:\/\/[^\s<>"']+\.[^\s<>"']+$/i.test(f.link)) return json({ error: 'The link must start with https:// (or leave it empty).' }, 400);
-  const months = Math.round(Number(body.months));
-  if (!(months >= 1 && months <= 12)) return json({ error: 'Choose 1 to 12 months.' }, 400);
+  const weeks = Math.round(Number(body.weeks));
+  if (!(weeks >= 1 && weeks <= 52)) return json({ error: 'Choose 1 to 52 weeks.' }, 400);
   const start = str(body.start, 10);
   if (!validDay(start)) return json({ error: 'Choose a start date.' }, 400);
   if (start < today()) return json({ error: 'The start date is in the past.' }, 400);
   if (start > addMonths(today(), 12)) return json({ error: 'Bookings open up to a year ahead.' }, 400);
-  const end = addMonths(start, months);
+  const end = addWeeks(start, weeks);
   const shares = body.shares == null ? board.shares : Math.round(Number(body.shares));
   if (!(shares >= 1 && shares <= board.shares)) return json({ error: `Choose 1 to ${board.shares} shares.` }, 400);
   const clash = (await env.DB.prepare(`SELECT start_day, end_day, shares FROM bookings WHERE slot = ? AND status = 'approved'`).bind(b.id).all()).results || [];
@@ -231,10 +235,10 @@ async function createBooking(req, env) {
   if (info.w < b.face.w) return json({ error: `The artwork is too small: at least ${b.face.w} px wide, ideally ${want.w}.` }, 400);
 
   const id = 'rr' + rid(8), token = rid(18), now = Date.now();
-  const amount = priceFor(board, shares, months);
+  const amount = priceFor(board, shares, weeks);
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO bookings (id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, policy, created, updated)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, token, b.id, f.business, f.brand, f.name, f.email, f.phone, f.link, f.note, start, end, months, shares, amount, POLICY.version, now, now),
+    env.DB.prepare(`INSERT INTO bookings (id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, weeks, shares, amount, policy, created, updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`).bind(id, token, b.id, f.business, f.brand, f.name, f.email, f.phone, f.link, f.note, start, end, weeks, shares, amount, POLICY.version, now, now),
     env.DB.prepare('INSERT INTO creatives (booking, mime, w, h, data) VALUES (?, ?, ?, ?, ?)').bind(id, info.mime, info.w, info.h, m[2]),
   ]);
   return json({ ok: true, id, token, status: `/status/${token}`, amount, end, shares, pay: env.PAYSTACK_SECRET ? `/api/pay/${token}` : null });
@@ -252,7 +256,7 @@ async function bookingStats(env, id) {
     avgSeconds: dv ? Math.round(d / dv * 10) / 10 : null };
 }
 const publicBooking = (r) => ({ id: r.id, slot: r.slot, business: r.business, brand: r.brand, link: r.link,
-  start: r.start_day, end: r.end_day, months: r.months, shares: r.shares, amount: r.amount, status: r.status, paid: !!r.paid, reason: r.reason,
+  start: r.start_day, end: r.end_day, months: r.months, weeks: r.weeks || 0, shares: r.shares, amount: r.amount, status: r.status, paid: !!r.paid, reason: r.reason,
   refundDue: r.refund_due || 0, refunded: r.refunded || 0, refundRef: r.refund_ref || '', refundNote: r.refund_note || '', cancelledBy: r.cancelled_by || '' });
 
 // The advertiser cancels from their status page. Refund per the terms ('cancel').
@@ -396,7 +400,7 @@ async function adminAction(req, env, id) {
   return json({ ok: true, booking: { ...(await env.DB.prepare('SELECT * FROM bookings WHERE id = ?').bind(id).first()), token: undefined } });
 }
 async function adminData(env) {
-  const bookings = (await env.DB.prepare(`SELECT id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, shares, amount, status, paid, pay_ref, reason,
+  const bookings = (await env.DB.prepare(`SELECT id, token, slot, business, brand, name, email, phone, link, note, start_day, end_day, months, weeks, shares, amount, status, paid, pay_ref, reason,
     refund_due, refunded, refund_ref, refund_note, cancelled_by, policy, created FROM bookings ORDER BY created DESC LIMIT 500`).all()).results || [];
   const live = new Set((await liveBookings(env)).map((b) => b.id));
   const since = today(Date.now() - 30 * DAY);
@@ -476,7 +480,7 @@ export default {
           let body; try { body = await req.json(); } catch { return json({ error: 'bad body' }, 400); }
           await boardRows(env);
           const price = Math.round(Number(body.price));
-          if (!(price >= 0 && price <= 100_000_000)) return json({ error: 'Price must be a number of naira.' }, 400);
+          if (!(price >= 0 && price <= 100_000_000)) return json({ error: 'Price must be a number of naira a week.' }, 400);
           const cur = (await boardRows(env)).find((x) => x.id === m[1]);
           const shares = body.shares == null ? cur.shares : Math.round(Number(body.shares));
           if (!(shares >= 1 && shares <= 6)) return json({ error: 'A board has 1 to 6 shares.' }, 400);

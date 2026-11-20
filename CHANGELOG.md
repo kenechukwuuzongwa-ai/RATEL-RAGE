@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-20 — Billboards priced by the week, sized to Paystack's Starter limit (ads, request 674)
+
+- rr-ads: prices are naira per week for the whole board and bookings run 1 to 52 whole weeks (bookings.weeks, addWeeks). The three bookable boards, fully booked for 52 weeks, take ₦7,987,200, just under Paystack's ₦8,000,000 Starter Business lifetime limit: board-2 ₦28,800, board-3 ₦76,800, board-4 ₦48,000 a week (₦9,600 / ₦25,600 / ₦16,000 a share; old 3 : 8 : 5 ratio). Board 1 stays reserved (₦57,600 if opened). migrations/0005_weekly.sql applied to the live database; the existing monthly booking keeps its month and amount.
+- Booking form: a Weeks picker (default 4); board list, booking page, status page and admin say per week; the refund example is a 4-week booking. Website /advertise: "1 to 52 weeks" and weekly share prices.
+- Paystack: still off until the owner opens a Starter Business and sets PAYSTACK_SECRET + the webhook (docs/ADS.md). ads tests 104/104.
+
 ## 2026-11-20 — Home page: HOW TO PLAY cue, The basics first (site, request 671)
 
 - Hero: the lead line (A free beat-'em-up on the streets of Lagos. Phone, tablet or computer.) and the three feature items with their icons (Epic beat 'em up action / Inspired by Lagos / Bigger threats, bolder fights) are gone. In their place a HOW TO PLAY plate with a green down arrow that bobs downward, linking to #basics (centred on phones, under the buttons).

@@ -110,7 +110,7 @@ export const POLICY = {
   refunds: [
     ['Not approved', 'if we do not approve your advert, we refund everything you paid.'],
     ['Cancel before it starts', 'cancel from your status page before your start date and we refund everything you paid.'],
-    ['Cancel after it starts', 'we refund the days left after the day you cancel, worked out day by day. For example, a 30-day booking cancelled with 12 days left gets 12/30 of its price back.'],
+    ['Cancel after it starts', 'we refund the days left after the day you cancel, worked out day by day. For example, a 4-week (28-day) booking cancelled with 12 days left gets 12/28 of its price back.'],
     ['Taken down for breaking this policy', 'no refund, when the advert or the page its link opens breaks this policy, including a page changed after we approved it.'],
     ['Taken down for any other reason', 'if we take your advert down for a reason that is not your fault, we refund the days left, as above.'],
     ['Our faults', 'if the game or your board is not working through a fault on our side for 2 days or more in a row, we refund those days.'],
@@ -155,7 +155,7 @@ for(const b of D.boards){
   if(b.views30) c.append(mk('div',{cls:'small',text:b.views30.toLocaleString()+' views in the last 30 days'}));
   const st=!b.bookable?mk('span',{cls:'pill',text:'Reserved'}):b.freeToday<=0?mk('span',{cls:'pill warn',text:'Fully booked today'}):mk('span',{cls:'pill ok',text:b.freeToday+' of '+b.shares+' shares free today'});
   c.append(mk('p',{},st));
-  c.append(mk('p',{},mk('b',{text:naira(Math.round(b.price/b.shares))+' / month per share'}),mk('span',{cls:'dim small',text:' (whole board '+naira(b.price)+')'})));
+  c.append(mk('p',{},mk('b',{text:naira(Math.round(b.price/b.shares))+' / week per share'}),mk('span',{cls:'dim small',text:' (whole board '+naira(b.price)+')'})));
   if(b.bookable) c.append(mk('a',{cls:'btn',href:'/b/'+b.id,text:'Book this board'}));
   $('#boards').append(c);
 }</script>`);
@@ -190,7 +190,7 @@ export function boardPage({ board, today, gameOrigin, payments, artScale }) {
     <label for="email">Email</label><input id="email" type="email" required maxlength="120">
     <label for="link">Where a tap takes players (optional)</label><input id="link" type="url" maxlength="300" placeholder="https://your-site.com">
     <div class="two"><div><label for="start">Start date</label><input id="start" type="date" required></div>
-    <div><label for="months">Months</label><select id="months"></select></div></div>
+    <div><label for="weeks">Weeks</label><select id="weeks"></select></div></div>
     <label for="shares">How much of the board</label><select id="shares"></select>
     <p class="small dim" id="sharehelp"></p>
     <label for="note">Anything we should know (optional)</label><textarea id="note" rows="2" maxlength="600"></textarea>
@@ -206,17 +206,18 @@ export function boardPage({ board, today, gameOrigin, payments, artScale }) {
 ${data({ board, today, gameOrigin, payments, artScale })}<script>${el}${naira}
 const B=D.board,W=B.upload.w,H=B.upload.h,S=D.artScale;
 $('#title').textContent=B.name;$('#where').textContent=B.where;$('#size').textContent=W+' x '+H;
-const facts=$('#facts');facts.append(mk('h2',{text:naira(Math.round(B.price/B.shares))+' per share per month'}),mk('p',{cls:'small dim',text:'The whole board ('+B.shares+' shares): '+naira(B.price)+' per month.'}));
+const facts=$('#facts');facts.append(mk('h2',{text:naira(Math.round(B.price/B.shares))+' per share per week'}),mk('p',{cls:'small dim',text:'The whole board ('+B.shares+' shares): '+naira(B.price)+' per week.'}));
 if(B.views30)facts.append(mk('p',{cls:'small',text:B.views30.toLocaleString()+' views on this board in the last 30 days'}));
 if(B.taken.length){facts.append(mk('p',{cls:'small',text:'Already booked: '+B.taken.map(t=>t.start+' to '+t.end+' ('+t.shares+' of '+B.shares+' shares)').join(', ')}))}
-for(let m=1;m<=12;m++)$('#months').append(mk('option',{value:m,text:m+(m>1?' months':' month')}));
+for(let w=1;w<=52;w++)$('#weeks').append(mk('option',{value:w,text:w+(w>1?' weeks':' week')}));
+$('#weeks').value='4';
 $('#start').min=D.today;$('#start').value=D.today;
 for(let n=1;n<=B.shares;n++)$('#shares').append(mk('option',{value:n,text:n===B.shares?'The whole board ('+n+' of '+n+' shares)':n+' of '+B.shares+' shares'}));
 $('#shares').value=String(B.shares);
 const total=()=>{const n=Number($('#shares').value);
-  $('#total').textContent='Total: '+naira(Math.round(B.price*n/B.shares)*Number($('#months').value));
+  $('#total').textContent='Total: '+naira(Math.round(B.price*n/B.shares)*Number($('#weeks').value));
   $('#sharehelp').textContent=n===B.shares?'Your advert is the only one on this board.':'Advertisers on this board take turns: each time a player reaches the board it shows the next advert, so yours gets about '+Math.round(100*n/B.shares)+'% of the views.'};
-$('#months').onchange=total;$('#shares').onchange=total;total();
+$('#weeks').onchange=total;$('#shares').onchange=total;total();
 if(!B.bookable){$('#send').disabled=true;$('#err').textContent='This board is reserved and not open for booking.'}
 // the artwork, made at the exact upload size
 const art=document.createElement('canvas');art.width=W;art.height=H;const ac=art.getContext('2d');
@@ -250,7 +251,7 @@ $('#f').onsubmit=async(e)=>{e.preventDefault();$('#err').textContent='';
   if(!img){$('#err').textContent='Add your artwork first.';return}
   if(!$('#agree').checked){$('#err').textContent='Please confirm your advert follows the advertising policy.';return}
   let q=.92,dataUrl=art.toDataURL('image/jpeg',q);while(dataUrl.length>1500000&&q>.5){q-=.1;dataUrl=art.toDataURL('image/jpeg',q)}
-  const body={slot:B.id,art:dataUrl,months:Number($('#months').value),shares:Number($('#shares').value),start:$('#start').value,website:$('#website').value,agree:$('#agree').checked};
+  const body={slot:B.id,art:dataUrl,weeks:Number($('#weeks').value),shares:Number($('#shares').value),start:$('#start').value,website:$('#website').value,agree:$('#agree').checked};
   for(const k of ['business','brand','name','email','phone','link','note'])body[k]=$('#'+k).value;
   $('#send').disabled=true;$('#send').textContent='Sending...';
   try{const r=await fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -276,7 +277,7 @@ const st=b.status==='rejected'?['bad','Not approved']:b.status==='cancelled'?['b
   b.status==='approved'&&b.paid?['ok','Approved and paid: goes live on '+b.start]:b.status==='approved'?['warn','Approved: waiting for payment']:['warn','Waiting for review'];
 $('#state').append(mk('p',{},mk('span',{cls:'pill '+st[0],text:st[1]})));
 if(b.reason)$('#state').append(mk('p',{cls:'err',text:'Reason: '+b.reason}));
-const rows=[['Board',B.name],['Brand',b.brand],['Dates',b.start+' to '+b.end+' ('+b.months+(b.months>1?' months)':' month)')],['Share of the board',b.shares===B.shares?'The whole board':b.shares+' of '+B.shares+' shares (taking turns with other advertisers)'],['Total',naira(b.amount)],['Payment',b.paid?'Paid':'Not paid yet'],['Tap link',b.link||'(none)']];
+const rows=[['Board',B.name],['Brand',b.brand],['Dates',b.start+' to '+b.end+' ('+(b.weeks?b.weeks+(b.weeks>1?' weeks)':' week)'):b.months+(b.months>1?' months)':' month)'))],['Share of the board',b.shares===B.shares?'The whole board':b.shares+' of '+B.shares+' shares (taking turns with other advertisers)'],['Total',naira(b.amount)],['Payment',b.paid?'Paid':'Not paid yet'],['Tap link',b.link||'(none)']];
 if(b.cancelledBy)rows.push(['Cancelled by',b.cancelledBy==='advertiser'?'You':'Us']);
 if(b.refundDue>0)rows.push(['Refund',b.refunded>=b.refundDue?'Sent: '+naira(b.refunded)+(b.refundRef?' (ref '+b.refundRef+')':''):naira(b.refundDue)+' on its way: paid back within 10 working days, with no fees taken'+(b.refunded?' ('+naira(b.refunded)+' sent so far)':'')]);
 else if(b.refundNote)rows.push(['Refund',b.refundNote]);
@@ -317,7 +318,7 @@ let A=null;
 async function load(){const r=await fetch('/api/admin/data');A=await r.json();render()}
 async function act(id,action,extra={}){$('#err').textContent='';const r=await fetch('/api/admin/bookings/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...extra})});const o=await r.json();if(!r.ok)$('#err').textContent=o.error||'Failed';await load()}
 function render(){
-  const bt=$('#boards');bt.textContent='';bt.append(mk('tr',{},...['Board','Whole-board price / month (naira)','Shares','Open for booking','Views 30 days','Taps 30 days',''].map(t=>mk('th',{text:t}))));
+  const bt=$('#boards');bt.textContent='';bt.append(mk('tr',{},...['Board','Whole-board price / week (naira)','Shares','Open for booking','Views 30 days','Taps 30 days',''].map(t=>mk('th',{text:t}))));
   for(const b of A.boards){const s=A.stats30.filter(x=>x.slot===b.id);const v=s.reduce((a,x)=>a+x.views,0),t=s.reduce((a,x)=>a+x.taps,0);
     const price=mk('input',{type:'number',min:'0',value:b.price});const shares=mk('input',{type:'number',min:'1',max:'6',value:b.shares});shares.style.width='70px';const open=mk('input',{type:'checkbox'});open.checked=b.bookable;
     const save=mk('button',{cls:'btn small',type:'button',text:'Save'});save.onclick=async()=>{const r=await fetch('/api/admin/boards/'+b.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({price:Number(price.value),shares:Number(shares.value),bookable:open.checked})});if(!r.ok)$('#err').textContent=(await r.json()).error;await load()};
@@ -329,7 +330,7 @@ function render(){
     const owed=b.refund_due-b.refunded;
     const pill=owed>0?['bad','REFUND OWED '+naira(owed)]:b.live?['ok','LIVE']:b.status==='approved'&&b.paid?['ok','approved + paid']:b.status==='approved'?['warn','approved, unpaid']:b.status==='review'?['warn','to review']:['bad',b.status+(b.cancelled_by?' by '+b.cancelled_by:'')];
     const info=mk('div',{},mk('p',{},mk('span',{cls:'pill '+pill[0],text:pill[1]}),' ',mk('b',{text:b.brand}),' ',mk('span',{cls:'dim',text:'('+b.business+') on '+b.slot})));
-    const rows=[['Dates',b.start_day+' to '+b.end_day+' ('+b.months+' mo)'],['Shares',String(b.shares)],['Amount',naira(b.amount)+(b.paid?' - paid ('+b.pay_ref+')':' - unpaid')],['Contact',b.name+', '+b.email+(b.phone?', '+b.phone:'')],['Tap link',b.link||'(none)'],['Note',b.note||''],['Numbers',b.views+' views, '+b.taps+' taps'],['Status page','/status/'+b.token],['Booked',new Date(b.created).toLocaleString()+' (policy v'+b.policy+')']];
+    const rows=[['Dates',b.start_day+' to '+b.end_day+' ('+(b.weeks?b.weeks+' wk':b.months+' mo')+')'],['Shares',String(b.shares)],['Amount',naira(b.amount)+(b.paid?' - paid ('+b.pay_ref+')':' - unpaid')],['Contact',b.name+', '+b.email+(b.phone?', '+b.phone:'')],['Tap link',b.link||'(none)'],['Note',b.note||''],['Numbers',b.views+' views, '+b.taps+' taps'],['Status page','/status/'+b.token],['Booked',new Date(b.created).toLocaleString()+' (policy v'+b.policy+')']];
     if(b.reason)rows.push(['Reason',b.reason]);
     if(b.refund_due>0||b.refunded>0)rows.push(['Refund',naira(b.refund_due)+' owed, '+naira(b.refunded)+' sent'+(b.refund_ref?' (ref '+b.refund_ref+')':'')+(b.refund_note?' - '+b.refund_note:'')]);
     const t=mk('table');for(const[k,v]of rows)t.append(mk('tr',{},mk('th',{text:k}),mk('td',{text:v})));info.append(t);
