@@ -225,7 +225,13 @@ figcaption { font: 700 13px/1.4 var(--f-label); letter-spacing: .1em; text-trans
   .hero::before { background: linear-gradient(180deg, rgba(3,5,3,.7) 0%, rgba(3,6,3,.2) 30%, rgba(3,6,3,.35) 60%, rgba(5,6,5,.95) 100%); }
   .hero-bg img { object-position: 50% 40%; }
   .hero-in { justify-content: flex-end; padding-top: calc(var(--top-h) + 40px); }
-  .tagline, .hero-lead, .hero-btns { margin-left: 4px; }
+  /* phones: the mark, tagline and lead stand centred over the full-width buttons (request 670).
+     The mark's ink leans left in its image (mass centre 46%) but RAGE's brush tail runs right,
+     so a 1% nudge puts the letters on the centre line with even gaps either side. */
+  .hero-in { align-items: center; text-align: center; }
+  .wordmark { margin: 0 auto; width: min(760px, 88vw); position: relative; left: 1%; }
+  .tagline, .hero-lead { margin-left: auto; margin-right: auto; }
+  .hero-btns { margin-left: 4px; align-self: stretch; }
   .hero-foot-in { flex-direction: column; align-items: stretch; }
   .strip { padding: 0; }
   .strip li { flex: 1; flex-direction: column; text-align: center; gap: 7px; padding: 12px 6px; font-size: 12px; max-width: none; }

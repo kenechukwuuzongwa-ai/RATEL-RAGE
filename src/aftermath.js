@@ -286,7 +286,12 @@ function makeTraceAudio() {
  * exists, and holding a stale null would leave the whole sequence unable to
  * draw. Same reason `frontEnd?.ui` is re-read everywhere else in that file.
  */
-export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) {
+export function createAftermath({ ctx, W: bootW, getW, H, getUi, onChooseLevel, getVolume }) {
+  /* The view's width is READ EVERY FRAME (request 670). On a phone the game boots at one width (the
+   * browser bar, the app before immersive fullscreen) and widens after; a width frozen at boot left the
+   * NEXT TARGET and CABAL backgrounds short of the right edge, with the street showing beside them. */
+  let W = bootW;
+  const syncW = () => { const w = getW?.(); if (w > 0) W = w; };
   const type = { narration: makeTypewriter(), cabal: makeTypewriter(), detail: makeTypewriter() };
   const narration = makeNarration();
   const traceAudio = makeTraceAudio();
@@ -2478,6 +2483,7 @@ export function createAftermath({ ctx, W, H, getUi, onChooseLevel, getVolume }) 
     if (!active) return;
     const ui = getUi();
     if (!ui) return;
+    syncW();
 
     /* MISSION_COMPLETE and WAIT_FOR_X are drawn by game.js's own mission card —
      * this sequence does not redraw the screen the fight ends on, it waits on

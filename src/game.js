@@ -1,5 +1,5 @@
 import { createFrontEnd, FONT, FONT_BOLD, pixelFont, calibrateFontFit, FONT_MONO, DISPLAY_FIT, drawSubtitleScroll, keepMediaAlive, keepContextAlive, makeDoubleTap, drawSkipHint, drawTapCue, tapCueState, SKIP_TAP, TAP_CUE, isTouchUI, keepAwake, fontPx, trackedWidth } from './frontend.js?v=ratelrage-mobile-v172';
-import { createAftermath } from './aftermath.js?v=ratelrage-v163';
+import { createAftermath } from './aftermath.js?v=ratelrage-v174';
 import { LEVELS, resolveIdentity, auditPlayerStrings, containsInternalReference } from './story.js?v=ratelrage-copy567-v1';
 /* THE PLAYAREA — where Darki is allowed to go on this street. `playarea.js` owns
  * the geometry and answers "is he in it, which bound stopped him"; `PLAYAREA` is
@@ -19402,7 +19402,7 @@ const outro = { active: false, phase: 0, t: 0, letterbox: 0, wash: 0, card: 0, s
  * the front end's real widgets rather than a second set (see `ui` there), and it
  * owns the frame only once the player has pressed X on the card. */
 const aftermath = createAftermath({
-  ctx, W: VIEW_W, H: VIEW_H,
+  ctx, W: VIEW_W, getW: () => VIEW_W, H: VIEW_H,   // live: the view widens after boot on phones (request 670)
   getUi: () => frontEnd?.ui ?? null,
   getVolume: () => {
     const s = frontEnd?.settings;

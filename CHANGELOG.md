@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-20 — Analysis screens cover wide phones, centred site logo on phones (v174, request 670)
+
+- CONNECTION TO NEXT TARGET and CONNECTION TO THE CABAL (and the rest of the post-mission sequence) now read the view's width every frame (createAftermath getW). The width used to be frozen at boot; a phone boots narrower (browser bar, app before immersive fullscreen) and widens after, so the room stopped short of the right edge and the street showed beside it. Test _chromakey/req670/widescreens.js (boot 1388 -> 1554 wide): the grade covers 1554 of 1554 on both screens; the v173 control covers 1390 and fails. aftermath.js import stamp bumped (was v163).
+- Website, phones (<= 860 px): the RATEL RAGE wordmark, tagline and lead line are centred over the full-width buttons; the mark is 88vw and nudged 1% right for its ink.
+
 ## 2026-11-19 — Road Rage hit counter, the owner's touch layout by default, bolder site buttons (v173, request 669)
 
 - Hit counter, its milestone words (BRUTAL! SAVAGE! UNSTOPPABLE! RATEL RAGE!) and CLUTCH are drawn in Road Rage (Youssef Habchi): styles.css 'RR Road Rage' -> frontend/fonts/road-rage.otf (unmodified, gitignored: its readme says free for personal use, commercial licence from the author). game.js HIT_FACE / hitFont; hitStyleText and hitInk take o.face. FIGHT!, GO, score and the rest of the HUD keep Inter. The font's zero is slashed by design.
